@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://ds5xu8gs4pgd2"]
+
+[ext_resource type="Script" uid="uid://bil1foiuqhrbd" path="res://sw_draw_manager.gd" id="1_o40xw"]
+[ext_resource type="Resource" uid="uid://csjirldjgwi6y" path="res://res/地图.tres" id="2_17dom"]
+
+[node name="SWDrawManager" type="Node" unique_id=805409719]
+script = ExtResource("1_o40xw")
+preLoadwidth = null
+max_chunks_per_frame = null
+mapDefine = ExtResource("2_17dom")
+
+[node name="TestViewRect" type="ColorRect" parent="." unique_id=1981301758]
+visible = false
+show_behind_parent = true
+z_index = 100
+offset_right = 338.0
+offset_bottom = 267.0
+mouse_filter = 1
+color = Color(1, 0.19607843, 0.05490196, 0.5058824)

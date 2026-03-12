@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://d4ibjxwj8wp56"]
+
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_6d7fi"]
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="1_s4nln"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0sal7"]
+atlas = ExtResource("1_s4nln")
+region = Rect2(512, 0, 128, 128)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_6d7fi")
+atlasTexture = SubResource("AtlasTexture_0sal7")
+buildName = "灯泡"
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://b0p61tq7m0m6q"]
+
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="1_wgx1k"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_xid3e"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1402x"]
+atlas = ExtResource("1_wgx1k")
+region = Rect2(384, 128, 128, 128)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_xid3e")
+atlasTexture = SubResource("AtlasTexture_1402x")
+buildName = "非门"
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

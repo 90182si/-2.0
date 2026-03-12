@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://d1xlrwg74qhwa"]
+
+[ext_resource type="Script" uid="uid://kteqstaofwnm" path="res://sw_build_layer.gd" id="1_unbag"]
+
+[node name="SWBuildLayer" type="Node" unique_id=1243757311 groups=["SWLayer"]]
+script = ExtResource("1_unbag")

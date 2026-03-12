@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://c3joxf6qdeus0"]
+
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="1_tkoim"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_x5p15"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0n4nv"]
+atlas = ExtResource("1_tkoim")
+region = Rect2(640, 0, 128, 128)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_x5p15")
+atlasTexture = SubResource("AtlasTexture_0n4nv")
+buildName = "电线桥梁"
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

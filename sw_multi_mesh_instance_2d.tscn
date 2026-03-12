@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://cwqe1304xuj56"]
+
+[ext_resource type="Script" uid="uid://cfxso13u01abs" path="res://sw_multi_mesh_instance_2d.gd" id="1_k78qt"]
+[ext_resource type="Shader" uid="uid://dp60b6pee8rr7" path="res://sw_grid_draw.gdshader" id="1_ki1jd"]
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="2_ampn7"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ampn7"]
+shader = ExtResource("1_ki1jd")
+shader_parameter/srcImg = ExtResource("2_ampn7")
+
+[sub_resource type="QuadMesh" id="QuadMesh_aibla"]
+resource_local_to_scene = true
+
+[sub_resource type="MultiMesh" id="MultiMesh_idjyr"]
+resource_local_to_scene = true
+use_custom_data = true
+mesh = SubResource("QuadMesh_aibla")
+
+[node name="SWMultiMeshInstance2D" type="MultiMeshInstance2D" unique_id=1904069596]
+material = SubResource("ShaderMaterial_ampn7")
+multimesh = SubResource("MultiMesh_idjyr")
+script = ExtResource("1_k78qt")

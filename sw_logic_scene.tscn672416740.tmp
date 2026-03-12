@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://bcrtwm1jv1lli"]
+
+[ext_resource type="Script" uid="uid://bpysq7yqoc78j" path="res://sw_zoom_com.gd" id="1_vd5co"]
+[ext_resource type="Script" uid="uid://b5kf4ybljiam8" path="res://sw_move_com.gd" id="2_2fetj"]
+[ext_resource type="Script" uid="uid://dj2gxthmo4sqc" path="res://sw_camera_2d.gd" id="3_lh502"]
+
+[node name="SWLogicScene" type="Node2D" unique_id=81650143]
+
+[node name="SWLayerManager" type="Control" parent="." unique_id=1232855753]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="SWMapLayer" type="Control" parent="SWLayerManager" unique_id=1038568397]
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="SWZoomCom" type="Node" parent="." unique_id=457514501]
+script = ExtResource("1_vd5co")
+
+[node name="SWMoveCom" type="Node" parent="." unique_id=745008026]
+script = ExtResource("2_2fetj")
+
+[node name="SWCamera2D" type="Camera2D" parent="." unique_id=891435687]
+script = ExtResource("3_lh502")

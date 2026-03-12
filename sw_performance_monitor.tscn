@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://d0rsseeae8ejg"]
+
+[ext_resource type="Script" uid="uid://ctvefsrpmujfu" path="res://sw_performance_monitor.gd" id="1_xmabp"]
+[ext_resource type="PackedScene" path="res://sw_crash_log_viewer.tscn" id="2_viewer"]
+
+[node name="SWPerformanceMonitor" type="CanvasLayer" unique_id=1125474679]
+script = ExtResource("1_xmabp")
+
+[node name="StatsContainer" type="PanelContainer" parent="." unique_id=435148339]
+offset_right = 72.0
+offset_bottom = 174.0
+
+[node name="StatsDisplay" type="VBoxContainer" parent="StatsContainer" unique_id=2100790750]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="StatsContainer/StatsDisplay" unique_id=71694010]
+layout_mode = 2
+text = "←"
+
+[node name="FPSLabel" type="Label" parent="StatsContainer/StatsDisplay" unique_id=993736999]
+layout_mode = 2
+
+[node name="MemoryLabel" type="Label" parent="StatsContainer/StatsDisplay" unique_id=123457598]
+layout_mode = 2
+
+[node name="ObjectLabel" type="Label" parent="StatsContainer/StatsDisplay" unique_id=1282775833]
+layout_mode = 2
+
+[node name="DrawLabel" type="Label" parent="StatsContainer/StatsDisplay" unique_id=2047118601]
+layout_mode = 2
+
+[node name="LogBtn" type="Button" parent="StatsContainer/StatsDisplay" unique_id=536422780]
+layout_mode = 2
+text = "崩溃日志"
+
+[node name="VsyncCheck" type="CheckButton" parent="StatsContainer/StatsDisplay" layout_mode = 2]
+layout_mode = 2
+text = "垂直同步"
+
+[node name="CrashLogViewer" parent="." unique_id=391639325 instance=ExtResource("2_viewer")]
+visible = false
+
+[connection signal="pressed" from="StatsContainer/StatsDisplay/Button" to="." method="_on_button_pressed"]

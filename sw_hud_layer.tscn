@@ -1,0 +1,155 @@
+[gd_scene format=3 uid="uid://08awj5donysx"]
+
+[ext_resource type="Script" uid="uid://cn8f067d4ut35" path="res://sw_hud_layer.gd" id="1_vnhh4"]
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="2_1ohtd"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kmd2l"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(768, 0, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bonik"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(256, 128, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ie8fv"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(512, 0, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_w0m7m"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(384, 128, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_80dyw"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(128, 256, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hmxvy"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(512, 256, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ygg11"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(640, 0, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_smq7v"]
+atlas = ExtResource("2_1ohtd")
+region = Rect2(896, 0, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
+[node name="SWHudLayer" type="Node" unique_id=1512405539]
+script = ExtResource("1_vnhh4")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="." unique_id=1752257383]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -26.0
+offset_top = -8.0
+offset_right = 26.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer" unique_id=1442071930]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_bottom = 7
+
+[node name="ColorRect" type="ColorRect" parent="HBoxContainer/MarginContainer" unique_id=1272706627]
+layout_mode = 2
+color = Color(0.3372549, 0.5372549, 0.5568628, 0.27058825)
+
+[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MarginContainer" unique_id=1789981918]
+layout_mode = 2
+theme_override_constants/margin_left = 3
+theme_override_constants/margin_top = 3
+theme_override_constants/margin_right = 3
+theme_override_constants/margin_bottom = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/MarginContainer/MarginContainer" unique_id=1646537926]
+layout_mode = 2
+alignment = 1
+
+[node name="开关" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=2090626024 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_kmd2l")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="按钮" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=1413579705 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_bonik")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="灯泡" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=1393743398 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_ie8fv")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="非门" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=250214608 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_w0m7m")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="电线A" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=343387165 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_80dyw")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="电线B" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=1366146007 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_hmxvy")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="电线桥梁" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=826265503 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_ygg11")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="电线隧道" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=2121561960 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_smq7v")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="保存" type="Button" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=1764650912]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "保存"
+
+[node name="加载" type="Button" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=236887820]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "加载"

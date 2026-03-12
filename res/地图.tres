@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://csjirldjgwi6y"]
+
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_h0xp7"]
+[ext_resource type="Texture2D" uid="uid://cbxfi7ncswaip" path="res://res/atlasTexture/地图texture.tres" id="1_r4pps"]
+
+[resource]
+script = ExtResource("1_h0xp7")
+atlasTexture = ExtResource("1_r4pps")
+buildName = "地图"
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"
