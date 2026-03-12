@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://bysn6qa4xtydj"]
+
+[ext_resource type="Texture2D" uid="uid://cmoy4whv1c4e5" path="res://res/atlasTexture/格子texture.tres" id="1_1yvme"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_n857i"]
+
+[resource]
+script = ExtResource("1_n857i")
+atlasTexture = ExtResource("1_1yvme")
+buildName = "格子"
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

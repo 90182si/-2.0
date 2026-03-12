@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://us85u265wmve"]
+
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="1_cwgjj"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_ny4gd"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_iqwy4"]
+atlas = ExtResource("1_cwgjj")
+region = Rect2(128, 256, 128, 128)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_ny4gd")
+atlasTexture = SubResource("AtlasTexture_iqwy4")
+buildName = "电线A"
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

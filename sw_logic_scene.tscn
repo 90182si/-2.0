@@ -1,0 +1,62 @@
+[gd_scene format=3 uid="uid://bcrtwm1jv1lli"]
+
+[ext_resource type="Script" uid="uid://cy6va8i6pjkxk" path="res://sw_layer_manager.gd" id="1_5e6f2"]
+[ext_resource type="Script" uid="uid://c7xrdlloy337v" path="res://sw_logic_scene.gd" id="1_mwese"]
+[ext_resource type="Script" uid="uid://bpysq7yqoc78j" path="res://sw_zoom_com.gd" id="1_vd5co"]
+[ext_resource type="Script" uid="uid://b5kf4ybljiam8" path="res://sw_move_com.gd" id="2_2fetj"]
+[ext_resource type="Script" uid="uid://dj2gxthmo4sqc" path="res://sw_camera_2d.gd" id="3_lh502"]
+[ext_resource type="Script" uid="uid://cq8ob084udlh6" path="res://sw_map_layer.gd" id="3_w4f4c"]
+[ext_resource type="PackedScene" uid="uid://ds5xu8gs4pgd2" path="res://sw_draw_manager.tscn" id="4_nuqc4"]
+[ext_resource type="PackedScene" uid="uid://08awj5donysx" path="res://sw_hud_layer.tscn" id="5_w4f4c"]
+[ext_resource type="PackedScene" uid="uid://d1xlrwg74qhwa" path="res://sw_build_layer.tscn" id="6_oocr2"]
+[ext_resource type="Script" uid="uid://cnart3gf8r4gj" path="res://sw_hold_layer.gd" id="6_u2kex"]
+[ext_resource type="Resource" uid="uid://bysn6qa4xtydj" path="res://res/格子.tres" id="7_tshjl"]
+[ext_resource type="PackedScene" uid="uid://d0rsseeae8ejg" path="res://sw_performance_monitor.tscn" id="9_nuqc4"]
+
+[node name="SWLogicScene" type="Node" unique_id=1920520235]
+script = ExtResource("1_mwese")
+
+[node name="SWLayerManager" type="Node" parent="." unique_id=902654908]
+script = ExtResource("1_5e6f2")
+
+[node name="SWMapLayer" type="Node" parent="SWLayerManager" unique_id=1497280557 groups=["SWLayer"]]
+script = ExtResource("3_w4f4c")
+
+[node name="SWDrawManager" parent="SWLayerManager/SWMapLayer" unique_id=805409719 instance=ExtResource("4_nuqc4")]
+preLoadwidth = 1
+max_chunks_per_frame = 8
+
+[node name="SWHudCanvasLayer" type="CanvasLayer" parent="SWLayerManager" unique_id=1157091531]
+
+[node name="SWHudLayer" parent="SWLayerManager/SWHudCanvasLayer" unique_id=1512405539 groups=["SWLayer"] instance=ExtResource("5_w4f4c")]
+
+[node name="SWBuildLayer" parent="SWLayerManager" unique_id=1243757311 instance=ExtResource("6_oocr2")]
+
+[node name="SWHoldLayer" type="Node" parent="SWLayerManager" unique_id=2058632708 groups=["SWLayer"]]
+script = ExtResource("6_u2kex")
+_hold_shadow_define = ExtResource("7_tshjl")
+
+[node name="SWDrawManager2" parent="SWLayerManager/SWHoldLayer" unique_id=875026827 instance=ExtResource("4_nuqc4")]
+preLoadwidth = 1
+max_chunks_per_frame = 8
+
+[node name="SWDrawManager" parent="SWLayerManager/SWHoldLayer" unique_id=1226479401 instance=ExtResource("4_nuqc4")]
+_drawMode = 2
+preLoadwidth = 1
+max_chunks_per_frame = 8
+
+[node name="SWZoomCom" type="Control" parent="." unique_id=270444491]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_vd5co")
+
+[node name="SWMoveCom" type="Control" parent="." unique_id=1528870562]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("2_2fetj")
+
+[node name="SWCamera2D" type="Camera2D" parent="." unique_id=891435687]
+anchor_mode = 0
+script = ExtResource("3_lh502")
+
+[node name="SWPerformanceMonitor" parent="." unique_id=1125474679 instance=ExtResource("9_nuqc4")]
