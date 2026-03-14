@@ -5,8 +5,6 @@
 
 [node name="SWDrawManager" type="Node" unique_id=805409719]
 script = ExtResource("1_o40xw")
-preLoadwidth = null
-max_chunks_per_frame = null
 mapDefine = ExtResource("2_17dom")
 
 [node name="TestViewRect" type="ColorRect" parent="." unique_id=1981301758]

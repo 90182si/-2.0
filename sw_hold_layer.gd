@@ -12,9 +12,9 @@ class_name SWHoldLayer extends SWLayer
 var _hold_smoothed_world_pos: Vector2
 var _hold_smoothed_world_vel := Vector2.ZERO
 var _hold_pos_inited := false
-var _cur_hold_builds:Array[SWBuildDefine] = []
+var _cur_hold_builds:Array[SWDefine.SWBuildItemDefine] = []
 
-signal holdIdleBuilds(builds:Array[SWBuildDefine])
+signal holdIdleBuilds(builds:SWDefine.SWBuildItemDefine,pos:Vector2)
 
 func _ready() -> void:
 	sw_draw_manager.setDrawMode(SWDefine.GridDrawMode.ByHold)
@@ -28,10 +28,11 @@ func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 		var world_pos = getCurWorldPosByMouse()
 		if _cur_hold_builds.size() != 1:
 			return
+		
 		if abs(world_pos.x-last_world_pos.x)>=SWDefine.GRID_SIZE.x or abs(world_pos.y-last_world_pos.y)>=SWDefine.GRID_SIZE.y:
 			last_world_pos = world_pos
-			holdIdleBuilds.emit(_cur_hold_builds)
-			print("idle")
+			holdIdleBuilds.emit(_cur_hold_builds,last_world_pos)
+			#print("idle")
 	pass
 
 func on_sel_tool(buildDefine:SWBuildDefine) -> void:
@@ -49,7 +50,7 @@ func on_sel_tool(buildDefine:SWBuildDefine) -> void:
 	sw_draw_manager_2.setHoldBuild(drawData2)
 	_hold_pos_inited = false
 	
-	_cur_hold_builds.append(buildDefine)
+	_cur_hold_builds = drawData.mapDatas
 	pass
 	
 func getCurWorldPosByMouse() -> Vector2:
@@ -101,7 +102,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.button_index == MOUSE_BUTTON_LEFT:
 				if _cur_hold_builds.size() > 0:
 					last_world_pos = getCurWorldPosByMouse()
-					holdIdleBuilds.emit(_cur_hold_builds)
+					holdIdleBuilds.emit(_cur_hold_builds,last_world_pos)
 					left_mouse_pressed = true
 					#print("idle")
 		elif event.is_released():
@@ -113,7 +114,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			var world_pos = getCurWorldPosByMouse()
 			if _cur_hold_builds.size() != 1:
 				return
-			if abs(world_pos.x-last_world_pos.x)>=SWDefine.GRID_SIZE.x or abs(world_pos.y-last_world_pos.y)>=SWDefine.GRID_SIZE.y:
+			if world_pos.distance_to(last_world_pos) >= SWDefine.GRID_SIZE.x:
+			#if abs(world_pos.x-last_world_pos.x)>=SWDefine.GRID_SIZE.x or abs(world_pos.y-last_world_pos.y)>=SWDefine.GRID_SIZE.y:
 				last_world_pos = world_pos
-				holdIdleBuilds.emit(_cur_hold_builds)
+				holdIdleBuilds.emit(_cur_hold_builds,last_world_pos)
 				#print("idle")

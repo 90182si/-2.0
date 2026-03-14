@@ -13,6 +13,7 @@ var hasNewPlan = false
 var e = Vector2i(SWDefine.CHUNK_SIZE,SWDefine.CHUNK_SIZE)#floor((_drawRect.end-b)/gridSizeTmp)+Vector2(1,1)
 var n = e.x*e.y	
 var planIsRunning = false
+var mutex:Mutex
 var semaphore: Semaphore
 
 func setDrawMode(mode:SWDefine.GridDrawMode) -> void:
@@ -38,6 +39,7 @@ func _init() -> void:
 	_swTransform = SWDefine.SWTransformData.new()
 	thread = Thread.new()
 	semaphore = Semaphore.new()
+	mutex = Mutex.new()
 	multimesh.instance_count = n
 	thread.start(calBuffer)
 	
@@ -45,53 +47,22 @@ var mapDataIns:SWDefine.SWBuildItemDefine = null
 var gridSizeTmp:Vector2
 
 var hadDraw = false
+var curMapData:Array[SWDefine.SWBuildItemDefine]
+var bufferSize = 0
 func drawMap(mapData:Array[SWDefine.SWBuildItemDefine],_flashDrawRegion:bool = false) -> void:
-	#var thread_start = Time.get_ticks_msec()
 	gridSizeTmp = _gridSize*_swTransform.scale
-	var bs = floor(-_swTransform.offset/gridSizeTmp)
-	var _b = _swTransform.offset+bs*gridSizeTmp
-	if _drawMode == SWDefine.GridDrawMode.ByContent or _drawMode == SWDefine.GridDrawMode.ByHold or _drawMode == SWDefine.GridDrawMode.HoldShadow:
-		var mapDataTmp:Array[SWDefine.SWBuildItemDefine]
-		for i in range(mapData.size()):
-			mapDataIns = mapData[i]
-			if mapDataIns.buildAxisPos.x < bs.x or mapDataIns.buildAxisPos.y < bs.y:
-				continue
-			if mapDataIns.buildAxisPos.x > bs.x+e.x or mapDataIns.buildAxisPos.y > bs.y + e.y:
-				continue
-			mapDataTmp.append(mapDataIns)
-		multimesh.instance_count = mapDataTmp.size()
+	if hadDraw and _drawMode == SWDefine.GridDrawMode.Tiling:
+		return
+	mutex.lock()
+	curMapData = mapData
+	mutex.unlock()
+	mutex.lock()
+	if buffer.size() == 0:
 		buffer = multimesh.get_buffer()
-		for i in range(multimesh.instance_count):
-			mapDataIns = mapDataTmp[i]
-			var t = Transform2D(mapDataIns.rotation,
-				Vector2(mapDataIns.buildAxisPos.x * gridSizeTmp.x+gridSizeTmp.x/2.0, 
-						mapDataIns.buildAxisPos.y * gridSizeTmp.y+gridSizeTmp.y/2.0))
-			buffer[i*12+0] = t.x.x
-			buffer[i*12+1] = t.y.x
-			buffer[i*12+2] = 0
-			buffer[i*12+3] = t.origin.x
-			buffer[i*12+4] = t.x.y
-			buffer[i*12+5] = t.y.y
-			buffer[i*12+6] = 0
-			buffer[i*12+7] = t.origin.y
-			buffer[i*12+8] = float(mapDataIns.buildDefine.atlasTexture.region.position.x)
-			buffer[i*12+9] = float(mapDataIns.buildDefine.atlasTexture.region.position.y)
-			buffer[i*12+10] = float(mapDataIns.buildDefine.atlasTexture.region.size.x)
-			buffer[i*12+11] = float(mapDataIns.buildDefine.atlasTexture.region.size.y)
-		multimesh.set_buffer(buffer)
-		multimesh.emit_changed()
-		multimesh.visible_instance_count = multimesh.instance_count
-	elif _drawMode == SWDefine.GridDrawMode.Tiling:
-		if hadDraw:
-			return
-		if mapData.size()==0:
-			print("显示模式为Tiling，但是mapData数据为空")
-			return
-		mapDataIns = mapData[0]
-		if buffer.size() == 0:
-			buffer = multimesh.get_buffer()
-		hasNewPlan = true
-		semaphore.post()
+		bufferSize = buffer.size()
+	mutex.unlock()
+	hasNewPlan = true
+	semaphore.post()
 	pass
 
 func calBuffer() -> void:
@@ -100,37 +71,71 @@ func calBuffer() -> void:
 		if not alive:
 			continue
 		var index = 0
-		for i in range(e.x):
-			if stopThread:
-				break
-			for j in range(e.y):
+		var newBuffer:PackedFloat32Array
+		newBuffer.resize(bufferSize)
+		if _drawMode == SWDefine.GridDrawMode.Tiling:
+			mapDataIns = curMapData[0]
+			for i in range(e.x):
 				if stopThread:
 					break
-				var gridPos = Vector2i(i,j)
+				for j in range(e.y):
+					if stopThread:
+						break
+					var gridPos = Vector2i(gridSizeTmp.x*i,gridSizeTmp.y*j)
+					var t = Transform2D(
+						deg_to_rad(mapDataIns.rotation),
+						Vector2(gridPos.x+gridSizeTmp.x/2.0, 
+								gridPos.y+gridSizeTmp.y/2.0))
+					#mutex.lock()
+					newBuffer[index*12+0] = t.x.x
+					newBuffer[index*12+1] = t.y.x
+					newBuffer[index*12+2] = 0
+					newBuffer[index*12+3] = t.origin.x
+					newBuffer[index*12+4] = t.x.y
+					newBuffer[index*12+5] = t.y.y
+					newBuffer[index*12+6] = 0
+					newBuffer[index*12+7] = t.origin.y
+					newBuffer[index*12+8] = float(mapDataIns.buildDefine.atlasTexture.region.position.x)
+					newBuffer[index*12+9] = float(mapDataIns.buildDefine.atlasTexture.region.position.y)
+					newBuffer[index*12+10] = float(mapDataIns.buildDefine.atlasTexture.region.size.x)
+					newBuffer[index*12+11] = float(mapDataIns.buildDefine.atlasTexture.region.size.y)
+					#mutex.unlock()
+					index += 1
+			n = e.x*e.y
+		else:
+			mutex.lock()
+			for mapData in curMapData:
+				if stopThread:
+					break
+				var gridPos = mapData.buildAxisPos-Vector2i(_swTransform.offset)
 				var t = Transform2D(
-					deg_to_rad(mapDataIns.rotation),
-					Vector2(gridPos.x * gridSizeTmp.x+gridSizeTmp.x/2.0, 
-							gridPos.y * gridSizeTmp.y+gridSizeTmp.y/2.0))
-				buffer[index*12+0] = t.x.x
-				buffer[index*12+1] = t.y.x
-				buffer[index*12+2] = 0
-				buffer[index*12+3] = t.origin.x
-				buffer[index*12+4] = t.x.y
-				buffer[index*12+5] = t.y.y
-				buffer[index*12+6] = 0
-				buffer[index*12+7] = t.origin.y
-				buffer[index*12+8] = float(mapDataIns.buildDefine.atlasTexture.region.position.x)
-				buffer[index*12+9] = float(mapDataIns.buildDefine.atlasTexture.region.position.y)
-				buffer[index*12+10] = float(mapDataIns.buildDefine.atlasTexture.region.size.x)
-				buffer[index*12+11] = float(mapDataIns.buildDefine.atlasTexture.region.size.y)
-				index += 1
-		call_deferred("bufferCalFinish")
+					deg_to_rad(mapData.rotation),
+					Vector2(gridPos.x+gridSizeTmp.x/2.0, 
+							gridPos.y+gridSizeTmp.y/2.0))
+				#mutex.lock()
+				newBuffer[index*12+0] = t.x.x
+				newBuffer[index*12+1] = t.y.x
+				newBuffer[index*12+2] = 0
+				newBuffer[index*12+3] = t.origin.x
+				newBuffer[index*12+4] = t.x.y
+				newBuffer[index*12+5] = t.y.y
+				newBuffer[index*12+6] = 0
+				newBuffer[index*12+7] = t.origin.y
+				newBuffer[index*12+8] = float(mapData.buildDefine.atlasTexture.region.position.x)
+				newBuffer[index*12+9] = float(mapData.buildDefine.atlasTexture.region.position.y)
+				newBuffer[index*12+10] = float(mapData.buildDefine.atlasTexture.region.size.x)
+				newBuffer[index*12+11] = float(mapData.buildDefine.atlasTexture.region.size.y)
+				#mutex.unlock()
+				index+=1
+			n = curMapData.size()
+			mutex.unlock()
+		call_deferred("bufferCalFinish",newBuffer)
 
-func bufferCalFinish()->void:
+func bufferCalFinish(newBuffer:PackedFloat32Array)->void:
 	#hadDraw = true
 	if not is_instance_valid(self):
 		return
 	
-	multimesh.set_buffer(buffer)
+	multimesh.set_buffer(newBuffer)
 	multimesh.emit_changed()
 	multimesh.visible_instance_count = n

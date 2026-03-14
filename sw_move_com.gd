@@ -1,7 +1,7 @@
 class_name SWMoveCom extends Control
 
 @export var speed = 1000
-@export var speedUp = 3
+@export var speedUp = 10
 @export var acceleration = 8.0  # 加速度系数，数值越大加速越快
 @export var deceleration = 10.0  # 减速度系数，数值越大减速越快
 
