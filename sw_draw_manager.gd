@@ -29,7 +29,20 @@ var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
 #地图相关：地图资源定义
 @export var mapDefine:SWBuildDefine = null
 
+var sw_build_manager:SWDefine.SWBuildManager = null
+func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
+	sw_build_manager = buildManager
+func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
+	if not _pending_tasks.has(0):
+		_pending_tasks[0] = {}
+	for chunkPos in chunkPosArr:
+		if _chunkInstance.has(chunkPos):
+			_chunkInstance[chunkPos].status = SWDefine.ChunkStatus.UNLOADING
+		_pending_tasks[0][chunkPos] = false
+	pass
 #TODO _blockSize根据mapDefine来设置
+
+
 
 func initDrawMap() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*2
@@ -39,6 +52,7 @@ func initDrawMap() -> void:
 		mapDataArray.append(mapData)
 	
 func initDrawContent() -> void:
+	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
 	_blockSize = Vector2(128,128)
 	pass
 	
@@ -76,9 +90,15 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		if not _curViewRect.has_point(chunkPos) and (_drawMode != SWDefine.GridDrawMode.ByHold and _drawMode != SWDefine.GridDrawMode.HoldShadow):
 			_pending_tasks[priority].erase(chunkPos)
 			continue
+		if _drawMode == SWDefine.GridDrawMode.ByContent:
+			var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
+			if chunkBuilds.size() == 0:
+				tasks.erase(chunkPos)
+				continue
+			mapDataArray = chunkBuilds
 		if count >= max_chunks_per_frame:
 			break
-		if _chunkInstance.has(chunkPos):
+		if _chunkInstance.has(chunkPos) and _drawMode != SWDefine.GridDrawMode.ByContent:
 			tasks.erase(chunkPos)
 			continue
 		count+=1
@@ -146,9 +166,11 @@ func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 		speedVecTmp.x/=abs(speedVecTmp.x)
 	if speedVecTmp.y != 0:
 		speedVecTmp.y/=abs(speedVecTmp.y)
+	preloadMmiCount+=Vector2i(speedVecTmp)*mmiCount
 	for x in range(preloadMmiCount.x):
 		for y in range(preloadMmiCount.y):
-			var chunkPos = Vector2i(preloadBeginChunkPos.x+(x+speedVecTmp.x)*_chunkSize.x,preloadBeginChunkPos.y+(y+speedVecTmp.y)*_chunkSize.y)
+			#var chunkPos = Vector2i(preloadBeginChunkPos.x+(x+speedVecTmp.x)*_chunkSize.x,preloadBeginChunkPos.y+(y+speedVecTmp.y)*_chunkSize.y)
+			var chunkPos = Vector2i(preloadBeginChunkPos.x+(x)*_chunkSize.x,preloadBeginChunkPos.y+(y)*_chunkSize.y)
 			if not _chunkInstance.has(chunkPos) and not _pending_tasks[0].has(chunkPos):
 				_pending_tasks[1][chunkPos]=false
 				#print("Preload: ", chunkPos)

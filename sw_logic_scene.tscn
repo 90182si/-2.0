@@ -23,8 +23,6 @@ script = ExtResource("1_5e6f2")
 script = ExtResource("3_w4f4c")
 
 [node name="SWDrawManager" parent="SWLayerManager/SWMapLayer" unique_id=805409719 instance=ExtResource("4_nuqc4")]
-preLoadwidth = 1
-max_chunks_per_frame = 8
 
 [node name="SWHudCanvasLayer" type="CanvasLayer" parent="SWLayerManager" unique_id=1157091531]
 
@@ -37,13 +35,9 @@ script = ExtResource("6_u2kex")
 _hold_shadow_define = ExtResource("7_tshjl")
 
 [node name="SWDrawManager2" parent="SWLayerManager/SWHoldLayer" unique_id=875026827 instance=ExtResource("4_nuqc4")]
-preLoadwidth = 1
-max_chunks_per_frame = 8
 
 [node name="SWDrawManager" parent="SWLayerManager/SWHoldLayer" unique_id=1226479401 instance=ExtResource("4_nuqc4")]
 _drawMode = 2
-preLoadwidth = 1
-max_chunks_per_frame = 8
 
 [node name="SWZoomCom" type="Control" parent="." unique_id=270444491]
 layout_mode = 3

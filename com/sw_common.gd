@@ -20,5 +20,11 @@ static func GetGlobalPosByViewPos(viewPos: Vector2, viewport: Viewport) -> Vecto
 static func GetGridPos(worldPos:Vector2i) -> Vector2i:
 	var pos1 = Vector2(worldPos)/Vector2(SWDefine.GRID_SIZE)
 	var pos = pos1.floor()
-	var gridSize:Vector2i = Vector2i(pos)*SWDefine.GRID_SIZE
-	return gridSize
+	var gridPos:Vector2i = Vector2i(pos)*SWDefine.GRID_SIZE
+	return gridPos
+
+static func GetChunkPos(worldPos:Vector2i) -> Vector2i:
+	var pos1 = Vector2(worldPos)/(Vector2(SWDefine.GRID_SIZE)*SWDefine.CHUNK_SIZE)
+	var pos = pos1.floor()
+	var chunkPos:Vector2i = Vector2i(pos)*SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
+	return chunkPos

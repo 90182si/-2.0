@@ -2,7 +2,7 @@ class_name SWDefine extends Node
 
 const CHUNK_SIZE = 16
 const VIEW_MAX_LEVEL = 4
-const VIEW_MIN_LEVEL = -30-5
+const VIEW_MIN_LEVEL = -30-15
 const VIEW_NEXT_LEVEL = -14
 const GRID_SIZE = Vector2i(128,128)
 
@@ -93,25 +93,25 @@ class SWChunkBuildData extends Object:
 	
 	func _init(chunkPos:Vector2i) -> void:
 		chunk_pos = chunkPos
-		chunk_key = "{}|{}"%[chunkPos.x,chunkPos.y]
+		chunk_key = "{}|{}".format([chunkPos.x,chunkPos.y])
 		for index in range(CHUNK_SIZE*CHUNK_SIZE):
 			builds.append(null)
 	
 	func addBuild(build:SWBuildItemDefine) -> bool:
-		var curChunkRect := Rect2i(chunk_pos.x,chunk_pos.y,CHUNK_SIZE,CHUNK_SIZE)
+		var curChunkRect := Rect2i(chunk_pos,CHUNK_SIZE*GRID_SIZE)
 		if not curChunkRect.has_point(build.buildAxisPos):
 			return false
-		var inChunkPos:Vector2i = build.buildAxisPos%CHUNK_SIZE
+		var inChunkPos:Vector2i = (build.buildAxisPos-curChunkRect.position)/GRID_SIZE
 		if builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y] != null:
 			return false
 		builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y] = build
 		return true
 		
 	func delBuild(build:SWBuildItemDefine) -> bool:
-		var curChunkRect := Rect2i(chunk_pos.x,chunk_pos.y,CHUNK_SIZE,CHUNK_SIZE)
+		var curChunkRect := Rect2i(chunk_pos,CHUNK_SIZE*GRID_SIZE)
 		if not curChunkRect.has_point(build.buildAxisPos):
 			return false
-		var inChunkPos:Vector2i = build.buildAxisPos%CHUNK_SIZE
+		var inChunkPos:Vector2i = (build.buildAxisPos-curChunkRect.position)/GRID_SIZE
 		if builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y] == null:
 			return false
 		var realBuild = builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y]
@@ -119,17 +119,18 @@ class SWChunkBuildData extends Object:
 		builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y] = null
 		return true
 		
-	func getBuild(axisPos:Vector2i) -> SWBuildItemDefine:
-		var curChunkRect := Rect2i(chunk_pos.x,chunk_pos.y,CHUNK_SIZE,CHUNK_SIZE)
-		if not curChunkRect.has_point(axisPos):
-			return null
-		var inChunkPos:Vector2i = axisPos%CHUNK_SIZE
-		return builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y]
+	#func getBuild(axisPos:Vector2i) -> SWBuildItemDefine:
+		#var curChunkRect := Rect2i(chunk_pos.x,chunk_pos.y,CHUNK_SIZE,CHUNK_SIZE)
+		#if not curChunkRect.has_point(axisPos):
+			#return null
+		#var inChunkPos:Vector2i = axisPos%CHUNK_SIZE
+		#return builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y]
 		
 	func getAllBuilds() -> Array[SWBuildItemDefine]:
-		var allBuild = []
+		var allBuild:Array[SWBuildItemDefine] = []
 		for build in builds:
-			allBuild.append(build)
+			if build:
+				allBuild.append(build)
 		return allBuild
 
 #管理所有区块的建筑物信息
@@ -137,9 +138,13 @@ class SWBuildManager extends Object:
 	var chunkMap:Dictionary[Vector2i,SWChunkBuildData] = {}
 	
 	func getChunkOrCreate(axisPos:Vector2i,create:bool = false) -> SWChunkBuildData:
-		var chunkPos = (axisPos/CHUNK_SIZE)*CHUNK_SIZE
-		if not chunkMap.has(chunkPos) and create:
-			chunkMap[chunkPos] = SWChunkBuildData.new(chunkPos)
+		var chunkPos1 = (Vector2(axisPos)/Vector2(CHUNK_SIZE*GRID_SIZE)).floor()
+		var chunkPos = Vector2i(chunkPos1*CHUNK_SIZE*Vector2(GRID_SIZE))
+		if not chunkMap.has(chunkPos):
+			if create:
+				chunkMap[chunkPos] = SWChunkBuildData.new(chunkPos)
+			else:
+				return null
 		return chunkMap[chunkPos]
 		
 	func addBuild(build:SWBuildItemDefine) -> bool:
@@ -164,13 +169,13 @@ class SWBuildManager extends Object:
 			var ok = addBuild(build)
 			if ok == false:
 				success = false
-				assert("在{},{}添加{}失败"%[build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName])
+				assert("在{},{}添加{}失败".format([build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName]))
 		return success
 		
 	func delBuilds(builds:Array[SWBuildItemDefine]) -> bool:
 		var success = true
 		for build in builds:
-			var assertStr = "在{},{}删除{}失败"%[build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName]
+			var assertStr = "在{},{}删除{}失败".format([build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName])
 			var ok = delBuild(build)
 			if ok == false:
 				success = false
@@ -204,9 +209,16 @@ class SWBuildManager extends Object:
 				if not curChunk:
 					continue
 				var build = curChunk.getBuild(pos)
-				builds.append(build)
+				if build:
+					builds.append(build)
 			pass
 		return builds
+
+	func getBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
+		var curChunk = getChunkOrCreate(chunkPos)
+		if not curChunk:
+			return []
+		return curChunk.getAllBuilds()
 
 	func getAllBuilds() -> Array[SWBuildItemDefine]:
 		var builds = []
