@@ -134,7 +134,6 @@ class SWChunkBuildData extends Object:
 class SWBuildManager extends Object:
 	var chunkMap:Dictionary[Vector2i,SWChunkBuildData] = {}
 	# 方案 3: 缓存 chunkPos→builds 映射
-	var chunkBuildsCache:Dictionary[Vector2i, Array[SWBuildItemDefine]] = {}
 	var cacheValid:bool = false
 	
 	func getChunkOrCreate(axisPos:Vector2i,create:bool = false) -> SWChunkBuildData:
@@ -146,15 +145,10 @@ class SWBuildManager extends Object:
 			else:
 				return null
 		return chunkMap[chunkPos]
-		
-	func _invalidateCache():
-		cacheValid = false
-		chunkBuildsCache.clear()
 	
 	func addBuild(build:SWBuildItemDefine) -> bool:
 		if not build:
 			return false
-		_invalidateCache()
 		var curChunk = getChunkOrCreate(build.buildAxisPos,true)
 		if not curChunk:
 			return false
@@ -163,14 +157,12 @@ class SWBuildManager extends Object:
 	func delBuild(build:SWBuildItemDefine) -> bool:
 		if not build:
 			return false
-		_invalidateCache()
 		var curChunk = getChunkOrCreate(build.buildAxisPos)
 		if not curChunk:
 			return false
 		return curChunk.delBuild(build)
 	
 	func addBuilds(builds:Array[SWBuildItemDefine]) -> bool:
-		_invalidateCache()
 		var success = true
 		for build in builds:
 			var ok = addBuild(build)
@@ -180,7 +172,6 @@ class SWBuildManager extends Object:
 		return success
 		
 	func delBuilds(builds:Array[SWBuildItemDefine]) -> bool:
-		_invalidateCache()
 		var success = true
 		for build in builds:
 			var assertStr = "在{},{}删除{}失败".format([build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName])
@@ -224,13 +215,10 @@ class SWBuildManager extends Object:
 
 	func getBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
 		# 方案 3: 缓存优化
-		if cacheValid and chunkBuildsCache.has(chunkPos):
-			return chunkBuildsCache[chunkPos]
 		var curChunk = getChunkOrCreate(chunkPos)
 		if not curChunk:
 			return []
 		var builds = curChunk.getAllBuilds()
-		chunkBuildsCache[chunkPos] = builds
 		return builds
 
 	func getAllBuilds() -> Array[SWBuildItemDefine]:
