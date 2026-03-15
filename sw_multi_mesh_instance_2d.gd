@@ -18,7 +18,15 @@ var semaphore: Semaphore
 
 func setDrawMode(mode:SWDefine.GridDrawMode) -> void:
 	_drawMode = mode
-
+	if _drawMode == SWDefine.GridDrawMode.Tiling:
+		z_index = -100
+	elif _drawMode == SWDefine.GridDrawMode.ByContent:
+		z_index = 0
+	elif _drawMode == SWDefine.GridDrawMode.HoldShadow:
+		z_index = 50
+	elif _drawMode == SWDefine.GridDrawMode.ByHold:
+		z_index = 100
+		
 func resetOffsetAndScale(_swTf:SWDefine.SWTransformData) -> void:
 	_swTransform = _swTf
 	position = _swTransform.offset
@@ -86,7 +94,7 @@ func calBuffer() -> void:
 						deg_to_rad(mapDataIns.rotation),
 						Vector2(gridPos.x+gridSizeTmp.x/2.0, 
 								gridPos.y+gridSizeTmp.y/2.0))
-					#mutex.lock()
+					mutex.lock()
 					newBuffer[index*12+0] = t.x.x
 					newBuffer[index*12+1] = t.y.x
 					newBuffer[index*12+2] = 0
@@ -99,7 +107,7 @@ func calBuffer() -> void:
 					newBuffer[index*12+9] = float(mapDataIns.buildDefine.atlasTexture.region.position.y)
 					newBuffer[index*12+10] = float(mapDataIns.buildDefine.atlasTexture.region.size.x)
 					newBuffer[index*12+11] = float(mapDataIns.buildDefine.atlasTexture.region.size.y)
-					#mutex.unlock()
+					mutex.unlock()
 					index += 1
 			n = e.x*e.y
 		else:
@@ -107,12 +115,12 @@ func calBuffer() -> void:
 			for mapData in curMapData:
 				if stopThread:
 					break
-				var gridPos = mapData.buildAxisPos-Vector2i(_swTransform.offset)
+				var gridPos = mapData.buildAxisPos#-Vector2i(_swTransform.offset)
 				var t = Transform2D(
 					deg_to_rad(mapData.rotation),
 					Vector2(gridPos.x+gridSizeTmp.x/2.0, 
 							gridPos.y+gridSizeTmp.y/2.0))
-				#mutex.lock()
+				mutex.lock()
 				newBuffer[index*12+0] = t.x.x
 				newBuffer[index*12+1] = t.y.x
 				newBuffer[index*12+2] = 0
@@ -125,7 +133,7 @@ func calBuffer() -> void:
 				newBuffer[index*12+9] = float(mapData.buildDefine.atlasTexture.region.position.y)
 				newBuffer[index*12+10] = float(mapData.buildDefine.atlasTexture.region.size.x)
 				newBuffer[index*12+11] = float(mapData.buildDefine.atlasTexture.region.size.y)
-				#mutex.unlock()
+				mutex.unlock()
 				index+=1
 			n = curMapData.size()
 			mutex.unlock()

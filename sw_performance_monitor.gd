@@ -24,6 +24,8 @@ func _ready() -> void:
 	if log_btn != null and crash_log_viewer != null:
 		log_btn.pressed.connect(_on_log_btn_pressed)
 		crash_log_viewer.visibility_changed.connect(_on_crash_log_viewer_visibility_changed)
+		
+	_on_button_pressed()
 
 func _process(delta: float) -> void:
 	# FPS 与主循环每帧更新
