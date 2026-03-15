@@ -31,7 +31,7 @@ func getNotifyChunkPosArr(builds:Array[SWDefine.SWBuildItemDefine]) -> Array[Vec
 
 func holdIdleBuilds(builds:Array[SWDefine.SWBuildItemDefine],pos:Vector2) -> void:
 	var gridPos = SWCommon.GetGridPos(pos)
-	print("idle",gridPos)
+	#print("idle",gridPos)
 	var newBuilds:Array[SWDefine.SWBuildItemDefine] = []
 	for build in builds:
 		var newBuild = SWDefine.SWBuildItemDefine.new(build.buildAxisPos+gridPos,build.buildDefine,build.rotation)
