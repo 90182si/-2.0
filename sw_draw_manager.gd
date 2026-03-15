@@ -19,7 +19,7 @@ var _viewRect:Rect2
 
 @export var _drawMode:SWDefine.GridDrawMode = SWDefine.GridDrawMode.Tiling
 @export_range(0, 8, 1) var preLoadwidth: int = 1
-@export_range(1, 128, 1) var max_chunks_per_frame: int = 8
+@export_range(1, 128, 1) var max_chunks_per_frame: int = 32
 #地图相关：地图资源大小
 var _blockSize = Vector2(256,256)
 #地图相关：使用建筑物信息指定地图的纹理信息
@@ -30,6 +30,9 @@ var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
 @export var mapDefine:SWBuildDefine = null
 
 var sw_build_manager:SWDefine.SWBuildManager = null
+# 方案 2: 降低查询频率
+var _queryFrameInterval:int = 3
+var _frameCounter:int = 0
 func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
 	sw_build_manager = buildManager
 func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
@@ -72,6 +75,10 @@ func _ready() -> void:
 	setDrawMode(_drawMode)
 
 func _process(_delta: float) -> void:
+	# 方案 2: 降低查询频率，每 3 帧执行一次
+	_frameCounter += 1
+	if _frameCounter % _queryFrameInterval != 0:
+		return
 	process_unload_chunk()
 	shouldAddToTree.clear()
 	process_load_chunk(0)
