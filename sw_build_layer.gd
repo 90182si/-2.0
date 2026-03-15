@@ -7,6 +7,16 @@ func _ready() -> void:
 	sw_build_manager = SWDefine.SWBuildManager.new()
 	sw_draw_manager.setBuildManager(sw_build_manager)
 	sw_draw_manager.setDrawMode(SWDefine.GridDrawMode.ByContent)
+	
+	var build:SWDefine.SWBuildItemDefine = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),load("res://res/按钮.tres") as SWBuildDefine)
+	var build2:SWDefine.SWBuildItemDefine = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),load("res://res/开关.tres") as SWBuildDefine)
+	var build3:SWDefine.SWBuildItemDefine = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),load("res://res/灯泡.tres") as SWBuildDefine)
+	var chunkPos = Vector2(-2048,-2048)
+	for x in range(0,128*16,128):
+		for y in range(0,128*16,128):
+			holdIdleBuilds([build],Vector2(x,y)+chunkPos)
+			holdIdleBuilds([build2],Vector2(x,y))
+			holdIdleBuilds([build3],Vector2(x,y)-chunkPos)
 
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	sw_draw_manager.on_view_rect_changed(viewRect,speedVec)

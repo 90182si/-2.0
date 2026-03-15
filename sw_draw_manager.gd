@@ -46,6 +46,7 @@ func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 
 func initDrawMap() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*2
+	_blockSize = Vector2(128,128)*2
 	if not mapData:
 		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
 		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
@@ -104,8 +105,12 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		count+=1
 		var chunkIns = SWObjectPool.GetSWChunkDataObject()
 		chunkIns.chunk_pos = chunkPos
+		if _drawMode == SWDefine.GridDrawMode.ByContent:
+			swTf.offset = Vector2(0,0)
+		else:
+			swTf.offset = Vector2(chunkPos.x,chunkPos.y)
+			
 		chunkIns.mesh_instance.setMeshSize(_blockSize)
-		swTf.offset = Vector2(chunkPos.x,chunkPos.y)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		chunkIns.mesh_instance.setDrawMode(_drawMode)
 		chunkIns.mesh_instance.drawMap(mapDataArray)
