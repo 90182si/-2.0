@@ -50,7 +50,7 @@ func get_visible_rect() -> Rect2:
 	# 2. 获取相机的缩放（会影响可视范围的大小）
 	var camera_zoom = zoom
 
-	var sca = 0.2
+	var sca = 1#0.2
 	# 3. 计算相机可视范围的半宽和半高（考虑缩放）
 	var half_width = (viewport_size.x / 2.0 / camera_zoom.x)
 	var half_height = (viewport_size.y / 2.0 / camera_zoom.y)

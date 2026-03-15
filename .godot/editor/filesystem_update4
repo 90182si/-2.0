@@ -1,11 +1,1 @@
-res://com/sw_common.gd
-res://sw_draw_manager.gd
 res://sw_build_layer.gd
-res://sw_multi_mesh_instance_2d.gd
-res://com/sw_define.gd
-res://sw_build_layer.tscn
-res://sw_grid_draw.gdshader
-res://sw_logic_scene.tscn
-res://sw_performance_monitor.gd
-res://res/按钮.tres
-res://sw_draw_manager.tscn
