@@ -26,8 +26,11 @@ var _blockSize = Vector2(256,256)
 var mapData:SWDefine.SWBuildItemDefine = null
 #地图相关：最终传入绘制数据
 var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
-#地图相关：地图资源定义
+#地图相关：地图资源定义（高 / 低分辨率）
 @export var mapDefine:SWBuildDefine = null
+@export var mapDefine_low:SWBuildDefine = null
+
+var _lod_high: bool = true
 
 var sw_build_manager:SWDefine.SWBuildManager = null
 # 方案 2: 降低查询频率
@@ -48,12 +51,10 @@ func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 
 
 func initDrawMap() -> void:
-	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*2
-	_blockSize = Vector2(128,128)*2
-	if not mapData:
-		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
-		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
-		mapDataArray.append(mapData)
+	if _lod_high:
+		_apply_high_lod()
+	else:
+		_apply_low_lod()
 	
 func initDrawContent() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
@@ -73,6 +74,39 @@ func _ready() -> void:
 		assert(false, "mapDefine未定义")
 	swTf = SWDefine.SWTransformData.new()
 	setDrawMode(_drawMode)
+
+
+func _apply_high_lod() -> void:
+	# 原来的高分辨率设置：1x1 网格
+	_chunkSize = SWDefine.GRID_SIZE * SWDefine.CHUNK_SIZE * 2
+	_blockSize = Vector2(128,128) * 2
+	mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0), mapDefine)
+	mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
+	mapDataArray = [mapData]
+
+
+func _apply_low_lod() -> void:
+	# 低分辨率：4x4 合并为一块（块尺寸放大 4 倍）
+	var cell := Vector2(128,128)
+	_chunkSize = SWDefine.GRID_SIZE * SWDefine.CHUNK_SIZE * 2 * 4
+	_blockSize = cell * 2 * 4
+	if mapDefine_low == null:
+		# 没有配置低分辨率资源时，退回高 LOD 设置
+		_apply_high_lod()
+		return
+	mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0), mapDefine_low)
+	mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
+	mapDataArray = [mapData]
+
+
+func set_lod_high(is_high: bool) -> void:
+	if _lod_high == is_high:
+		return
+	_lod_high = is_high
+	# 卸载当前所有区块，重新按新的 LOD 配置加载
+	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
+		chunkIns.status = SWDefine.ChunkStatus.UNLOADING
+	initDrawMap()
 
 func _process(_delta: float) -> void:
 	# 方案 2: 降低查询频率，每 3 帧执行一次
@@ -110,7 +144,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 			tasks.erase(chunkPos)
 			continue
 		count+=1
-		var chunkIns = SWObjectPool.GetSWChunkDataObject()
+		var chunkIns = SWObjectPool.GetSWChunkDataObject(_drawMode)
 		chunkIns.chunk_pos = chunkPos
 		if _drawMode == SWDefine.GridDrawMode.ByContent:
 			swTf.offset = Vector2(0,0)
@@ -123,13 +157,19 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		chunkIns.mesh_instance.drawMap(mapDataArray)
 		
 		_chunkInstance[chunkPos] = chunkIns
-		if chunkIns.status == SWDefine.ChunkStatus.EMPTY:
-			shouldAddToTree.append(chunkIns.mesh_instance)
-			chunkIns.status = SWDefine.ChunkStatus.FULLY_LOADED
-		else:
-			chunkIns.mesh_instance.visible = true
-			chunkIns.mesh_instance.set_process(true)
-			chunkIns.status = SWDefine.ChunkStatus.FULLY_LOADED
+		# 对象池复用时 mesh_instance 可能仍在树上：
+		# - 已经在当前 SWDrawManager 下：不要重复 add_child
+		# - 在其他父节点下：先脱离再挂到当前节点
+		var mi: SWMultiMeshInstance2D = chunkIns.mesh_instance
+		var mi_parent: Node = mi.get_parent()
+		if mi_parent != null and mi_parent != self:
+			mi_parent.remove_child(mi)
+			mi_parent = null
+		if mi_parent == null:
+			shouldAddToTree.append(mi)
+		mi.visible = true
+		mi.set_process(true)
+		chunkIns.status = SWDefine.ChunkStatus.FULLY_LOADED
 		tasks.erase(chunkPos)
 
 	if tasks.is_empty() and not _draging:

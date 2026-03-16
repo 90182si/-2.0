@@ -14,9 +14,9 @@ func _ready() -> void:
 	var chunkPos = Vector2(-2048,-2048)
 	for x in range(0,128*16,128):
 		for y in range(0,128*16,128):
-			holdIdleBuilds([build],Vector2(x,y)+chunkPos)
-			holdIdleBuilds([build2],Vector2(x,y))
-			holdIdleBuilds([build3],Vector2(x,y)-chunkPos)
+			holdIdleBuilds([build],[Vector2(x,y)+chunkPos])
+			holdIdleBuilds([build2],[Vector2(x,y)])
+			holdIdleBuilds([build3],[Vector2(x,y)-chunkPos])
 
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	sw_draw_manager.on_view_rect_changed(viewRect,speedVec)
@@ -29,14 +29,20 @@ func getNotifyChunkPosArr(builds:Array[SWDefine.SWBuildItemDefine]) -> Array[Vec
 		chunkPosMap[chunkPos] = true
 	return chunkPosMap.keys()
 
-func holdIdleBuilds(builds:Array[SWDefine.SWBuildItemDefine],pos:Vector2) -> void:
-	var gridPos = SWCommon.GetGridPos(pos)
-	#print("idle",gridPos)
-	var newBuilds:Array[SWDefine.SWBuildItemDefine] = []
-	for build in builds:
-		var newBuild = SWDefine.SWBuildItemDefine.new(build.buildAxisPos+gridPos,build.buildDefine,build.rotation)
-		newBuilds.append(newBuild)
-	sw_build_manager.addBuilds(newBuilds)
-	var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
+func holdIdleBuilds(builds:Array[SWDefine.SWBuildItemDefine],poss:Array[Vector2i]) -> void:
+	var successBuilds:Array[SWDefine.SWBuildItemDefine] = []
+	for pos in poss:
+		var gridPos = SWCommon.GetGridPos(pos)
+		#print("idle",gridPos)
+		for build in builds:
+			var newBuild = SWDefine.SWBuildItemDefine.new(build.buildAxisPos+gridPos,build.buildDefine,build.rotation)
+			var ok := sw_build_manager.addBuild(newBuild)
+			if ok:
+				successBuilds.append(newBuild)
+	
+	if successBuilds.size() == 0:
+		return
+	
+	var notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 	pass

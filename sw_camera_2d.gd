@@ -23,6 +23,7 @@ func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2) -> void:
 	var mousePos2 = get_global_mouse_position()
 	position-=(mousePos2-centerPos)
 	view_rect_changed()
+	_update_lod_by_zoom()
 	pass
 
 func _on_moveCom_move(vec:Vector2) -> void:
@@ -41,6 +42,15 @@ func view_rect_changed(speedVec:Vector2=Vector2.ZERO) -> void:
 	#viewRect.position += viewRect.size*2
 	for layer:SWLayer in _layerObjList:
 		layer.on_view_rect_changed(viewRect,speedVec)
+
+
+func _update_lod_by_zoom() -> void:
+	# 根据当前缩放层级决定是否切换到低分辨率 LOD
+	# 这里用 VIEW_NEXT_LEVEL 作为阈值：超过该层级视为“远景”
+	var is_far: bool = view_scale_level >= SWDefine.VIEW_NEXT_LEVEL
+	for layer:SWLayer in _layerObjList:
+		if layer is SWMapLayer:
+			(layer as SWMapLayer).set_lod_far(is_far)
 
 # 获取 Camera2D 的可视范围（返回 Rect2 类型，包含位置和尺寸）
 func get_visible_rect() -> Rect2:

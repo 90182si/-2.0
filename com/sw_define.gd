@@ -83,6 +83,8 @@ class SWDrawChunkData extends Object:
 		if not mesh_instance:
 			mesh_instance = preload("res://sw_multi_mesh_instance_2d.tscn").instantiate() 
 			mesh_instance.chunkPtr = self
+			mesh_instance._hadDraw = false
+		mesh_instance.reUse()
 			#multi_mesh = mesh_instance.multimesh
 
 #每个区块保存的建筑物信息

@@ -2,3 +2,12 @@ res://sw_performance_monitor.tscn
 res://sw_grid_draw.gdshader
 res://sw_multi_mesh_instance_2d.gd
 res://sw_hud_layer.tscn
+res://sw_logic_scene.tscn
+res://sw_hold_layer.gd
+res://sw_build_layer.gd
+res://sw_performance_monitor.gd
+res://com/sw_define.gd
+res://com/sw_object_pool.gd
+res://sw_draw_manager.gd
+res://sw_camera_2d.gd
+res://sw_map_layer.gd

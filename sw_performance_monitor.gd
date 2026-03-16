@@ -7,6 +7,7 @@ class_name SWPerformanceMonitor extends CanvasLayer
 @onready var draw_label: Label = $StatsContainer/StatsDisplay/DrawLabel
 @onready var log_btn: Button = $StatsContainer/StatsDisplay/LogBtn
 @onready var vsync_check: CheckButton = $StatsContainer/StatsDisplay/VsyncCheck
+@onready var map_switch: CheckButton = $StatsContainer/StatsDisplay/MapSwitch
 @onready var crash_log_viewer: Node = $CrashLogViewer
 @onready var button: Button = $StatsContainer/StatsDisplay/Button
 
@@ -15,12 +16,20 @@ const STATS_UPDATE_INTERVAL: float = 0.2
 
 var _stats_timer: float = 0.0
 var _expandMonitor: bool = true
+var _map_layer: SWMapLayer = null
+var _map_visible_default: bool = true
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_map_layer = get_parent().get_node_or_null("SWLayerManager/SWMapLayer")
 	if vsync_check != null:
 		vsync_check.toggled.connect(_on_vsync_toggled)
 		vsync_check.button_pressed = _is_vsync_enabled()
+	if map_switch != null:
+		map_switch.toggled.connect(_on_map_switch_toggled)
+		if _map_layer != null:
+			map_switch.button_pressed = _map_visible_default
+			_set_layer_visible_recursive(_map_layer, map_switch.button_pressed)
 	if log_btn != null and crash_log_viewer != null:
 		log_btn.pressed.connect(_on_log_btn_pressed)
 		crash_log_viewer.visibility_changed.connect(_on_crash_log_viewer_visibility_changed)
@@ -132,6 +141,21 @@ func _on_vsync_toggled(toggled_on: bool) -> void:
 		DisplayServer.VSYNC_ENABLED if toggled_on else DisplayServer.VSYNC_DISABLED,
 		_get_window_id()
 	)
+
+
+func _on_map_switch_toggled(toggled_on: bool) -> void:
+	if _map_layer != null:
+		_set_layer_visible_recursive(_map_layer, toggled_on)
+
+
+func _set_layer_visible_recursive(node: Node, is_visible: bool) -> void:
+	if node is ColorRect:
+		return
+	if node is CanvasItem:
+		(node as CanvasItem).visible = is_visible
+	for child in node.get_children():
+		if child is Node:
+			_set_layer_visible_recursive(child, is_visible)
 
 
 func expandMonitor(expand: bool) -> void:

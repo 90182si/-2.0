@@ -45,6 +45,11 @@ layout_mode = 2
 mouse_filter = 1
 text = "垂直同步"
 
+[node name="MapSwitch" type="CheckButton" parent="StatsContainer/StatsDisplay"]
+layout_mode = 2
+mouse_filter = 1
+text = "地图显示"
+
 [node name="CrashLogViewer" parent="." unique_id=391639325 instance=ExtResource("2_viewer")]
 visible = false
 mouse_filter = 1
