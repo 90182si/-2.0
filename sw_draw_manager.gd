@@ -30,6 +30,9 @@ var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
 @export var mapDefine:SWBuildDefine = null
 
 var sw_build_manager:SWDefine.SWBuildManager = null
+# 方案 2: 降低查询频率
+var _queryFrameInterval:int = 3
+var _frameCounter:int = 0
 func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
 	sw_build_manager = buildManager
 func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
@@ -46,17 +49,15 @@ func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 
 func initDrawMap() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*2
-	_blockSize = SWDefine.GRID_SIZE*2
+	_blockSize = Vector2(128,128)*2
 	if not mapData:
 		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
 		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
 		mapDataArray.append(mapData)
-		# 保存原始 Tiling 数据用于手持模式结束后恢复
-		_tilingMapDataArray = mapDataArray.duplicate()
 	
 func initDrawContent() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
-	_blockSize = SWDefine.GRID_SIZE
+	_blockSize = Vector2(128,128)
 	pass
 	
 func setDrawMode(drawMode:SWDefine.GridDrawMode) -> void:
@@ -74,16 +75,20 @@ func _ready() -> void:
 	setDrawMode(_drawMode)
 
 func _process(_delta: float) -> void:
+	# 方案 2: 降低查询频率，每 3 帧执行一次
+	_frameCounter += 1
+	if _frameCounter % _queryFrameInterval != 0:
+		return
 	process_unload_chunk()
 	shouldAddToTree.clear()
 	process_load_chunk(0)
 	process_load_chunk(1)
-	process_load_chunk(2)
+	process_load_chunk(2,false)
 	for ins in shouldAddToTree:
 		add_child(ins)
 	pass
 	
-func process_load_chunk(priority:int) -> void:
+func process_load_chunk(priority:int,remove:bool = true) -> void:
 	if not _pending_tasks.has(priority):
 		return
 	var tasks: Dictionary = _pending_tasks[priority]
@@ -94,27 +99,14 @@ func process_load_chunk(priority:int) -> void:
 			_pending_tasks[priority].erase(chunkPos)
 			continue
 		if _drawMode == SWDefine.GridDrawMode.ByContent:
-			# 使用本地缓存避免重复查询
-			var chunkBuilds:Array[SWDefine.SWBuildItemDefine]
-			chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
-			
+			var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
 			if chunkBuilds.size() == 0:
 				tasks.erase(chunkPos)
 				continue
 			mapDataArray = chunkBuilds
-		if count >= max_chunks_per_frame and _drawMode == SWDefine.GridDrawMode.Tiling:
+		if count >= max_chunks_per_frame:
 			break
 		if _chunkInstance.has(chunkPos) and _drawMode != SWDefine.GridDrawMode.ByContent:
-			# 检查已存在 chunk 的状态，如果是未加载状态则重新激活
-			var existingChunk = _chunkInstance[chunkPos]
-			if existingChunk.status == SWDefine.ChunkStatus.UNLOADED or existingChunk.status == SWDefine.ChunkStatus.UNLOADING or existingChunk.status == SWDefine.ChunkStatus.UNVISIBLE:
-				# 重新激活 chunk
-				existingChunk.status = SWDefine.ChunkStatus.FULLY_LOADED
-				existingChunk.mesh_instance.visible = true
-				existingChunk.mesh_instance.set_process(true)
-				# 使用 chunk 自己保存的绘制数据重新绘制
-				if existingChunk.chunkMapDataArray.size() > 0:
-					existingChunk.mesh_instance.drawMap(existingChunk.chunkMapDataArray)
 			tasks.erase(chunkPos)
 			continue
 		count+=1
@@ -124,16 +116,16 @@ func process_load_chunk(priority:int) -> void:
 			swTf.offset = Vector2(0,0)
 		else:
 			swTf.offset = Vector2(chunkPos.x,chunkPos.y)
-		
-		# 保存绘制数据到 chunk，避免全局 mapDataArray 被修改
-		chunkIns.chunkMapDataArray = mapDataArray.duplicate()
 			
 		chunkIns.mesh_instance.setMeshSize(_blockSize)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		chunkIns.mesh_instance.setDrawMode(_drawMode)
-		chunkIns.mesh_instance.drawMap(chunkIns.chunkMapDataArray)
+		chunkIns.mesh_instance.drawMap(mapDataArray)
 		
 		_chunkInstance[chunkPos] = chunkIns
+		# 对象池复用时 mesh_instance 可能仍在树上：
+		# - 已经在当前 SWDrawManager 下：不要重复 add_child
+		# - 在其他父节点下：先脱离再挂到当前节点
 		var mi: SWMultiMeshInstance2D = chunkIns.mesh_instance
 		var mi_parent: Node = mi.get_parent()
 		if mi_parent != null and mi_parent != self:
@@ -217,7 +209,6 @@ func getNeedCountOfMMI(rect:Rect2) -> Vector2i:
 var _drawData:SWDrawData = null
 var _draging:bool = false
 var _center_offset:Vector2
-var _tilingMapDataArray:Array[SWDefine.SWBuildItemDefine] = []  # 保存 Tiling 模式的原始地图数据
 func setHoldBuild(drawData:SWDrawData) -> void:
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
 		chunkIns.status = SWDefine.ChunkStatus.UNLOADING
@@ -230,15 +221,12 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 		if not _pending_tasks.has(2):
 			_pending_tasks[2] = {}
 		_pending_tasks[2][Vector2i(0,0)] = false
-		# 保存原始 Tiling 数据
-		if _tilingMapDataArray.size() == 0 and mapDataArray.size() > 0:
-			_tilingMapDataArray = mapDataArray.duplicate()
 		mapDataArray = drawData.mapDatas
 		for mapData in mapDataArray:
 			if not caled:
 				caled = true
 				centerRect.position = Vector2(mapData.buildAxisPos)
-				centerRect.end = Vector2(mapData.buildAxisPos)+Vector2(_blockSize)
+				centerRect.end = Vector2(mapData.buildAxisPos)+_blockSize
 			else:
 				centerRect.position.x = min(mapData.buildAxisPos.x*_blockSize.x,centerRect.position.x)
 				centerRect.position.y = min(mapData.buildAxisPos.y*_blockSize.y,centerRect.position.y)
@@ -248,9 +236,6 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 	else:
 		_draging = false
 		_pending_tasks.clear()
-		# 恢复 Tiling 模式的地图数据
-		if _tilingMapDataArray.size() > 0:
-			mapDataArray = _tilingMapDataArray
 	pass
 
 func setHoldBuildsPos(mousePos:Vector2) -> void:
@@ -259,7 +244,7 @@ func setHoldBuildsPos(mousePos:Vector2) -> void:
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
 		swTf.offset = mousePos - _center_offset
 		if _drawMode == SWDefine.GridDrawMode.HoldShadow:
-			swTf.offset = SwCommon.GetGridPos(swTf.offset+Vector2(_blockSize)/2)
+			swTf.offset = SwCommon.GetGridPos(swTf.offset+_blockSize/2)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		pass
 	pass
