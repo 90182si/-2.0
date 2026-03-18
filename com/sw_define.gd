@@ -135,8 +135,9 @@ class SWChunkBuildData extends Object:
 #管理所有区块的建筑物信息
 class SWBuildManager extends Object:
 	var chunkMap:Dictionary[Vector2i,SWChunkBuildData] = {}
-	# 方案 3: 缓存 chunkPos→builds 映射
-	var cacheValid:bool = false
+	# 缓存 chunkPos→builds 映射，避免重复查询
+	var buildsCache:Dictionary[Vector2i,Array[SWBuildItemDefine]] = {}
+	var cacheValid:bool = true
 	
 	func getChunkOrCreate(axisPos:Vector2i,create:bool = false) -> SWChunkBuildData:
 		var chunkPos1 = (Vector2(axisPos)/Vector2(CHUNK_SIZE*GRID_SIZE)).floor()
@@ -154,6 +155,7 @@ class SWBuildManager extends Object:
 		var curChunk = getChunkOrCreate(build.buildAxisPos,true)
 		if not curChunk:
 			return false
+		cacheValid = false  # 使缓存失效
 		return curChunk.addBuild(build)
 		
 	func delBuild(build:SWBuildItemDefine) -> bool:
@@ -162,9 +164,11 @@ class SWBuildManager extends Object:
 		var curChunk = getChunkOrCreate(build.buildAxisPos)
 		if not curChunk:
 			return false
+		cacheValid = false  # 使缓存失效
 		return curChunk.delBuild(build)
 	
 	func addBuilds(builds:Array[SWBuildItemDefine]) -> bool:
+		cacheValid = false  # 批量操作前先使缓存失效
 		var success = true
 		for build in builds:
 			var ok = addBuild(build)
@@ -174,6 +178,7 @@ class SWBuildManager extends Object:
 		return success
 		
 	func delBuilds(builds:Array[SWBuildItemDefine]) -> bool:
+		cacheValid = false  # 批量操作前先使缓存失效
 		var success = true
 		for build in builds:
 			var assertStr = "在{},{}删除{}失败".format([build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName])
@@ -216,11 +221,19 @@ class SWBuildManager extends Object:
 		return builds
 
 	func getBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
-		# 方案 3: 缓存优化
-		var curChunk = getChunkOrCreate(chunkPos)
-		if not curChunk:
-			return []
-		var builds = curChunk.getAllBuilds()
+		## 缓存优化：先查缓存，缓存失效时重建
+		if cacheValid and buildsCache.has(chunkPos):
+			return buildsCache[chunkPos]
+		
+		var chunkPos1 = (Vector2(chunkPos)/Vector2(CHUNK_SIZE*GRID_SIZE)).floor()
+		var chunkPos2 = Vector2i(chunkPos1*CHUNK_SIZE*Vector2(GRID_SIZE))
+		var builds:Array[SWBuildItemDefine] = []
+		if chunkMap.has(chunkPos2):
+			builds = chunkMap[chunkPos2].notNullBuilds
+		
+		# 更新缓存
+		buildsCache[chunkPos] = builds
+		cacheValid = true
 		return builds
 
 	func getAllBuilds() -> Array[SWBuildItemDefine]:

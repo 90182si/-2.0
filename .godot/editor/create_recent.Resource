@@ -1,2 +1,3 @@
+CompressedTexture2D
 AtlasTexture
 Resource

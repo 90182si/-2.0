@@ -1,45 +1,45 @@
 [gd_scene format=3 uid="uid://08awj5donysx"]
 
 [ext_resource type="Script" uid="uid://cn8f067d4ut35" path="res://sw_hud_layer.gd" id="1_vnhh4"]
-[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="2_1ohtd"]
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/SWtexture2D.tres" id="2_kmd2l"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_kmd2l"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(768, 0, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_bonik"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(256, 128, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_ie8fv"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(512, 0, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_w0m7m"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(384, 128, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_80dyw"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(128, 256, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_hmxvy"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(512, 256, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_ygg11"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(640, 0, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_smq7v"]
-atlas = ExtResource("2_1ohtd")
+atlas = ExtResource("2_kmd2l")
 region = Rect2(896, 0, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 

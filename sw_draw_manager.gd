@@ -30,9 +30,10 @@ var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
 @export var mapDefine:SWBuildDefine = null
 
 var sw_build_manager:SWDefine.SWBuildManager = null
-# 方案 2: 降低查询频率
+# 方案 2: 降低查询频率 - 每 3 帧查询一次建筑物数据
 var _queryFrameInterval:int = 3
 var _frameCounter:int = 0
+var _lastBuildsCache:Dictionary[Vector2i,Array[SWDefine.SWBuildItemDefine]] = {}
 func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
 	sw_build_manager = buildManager
 func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
@@ -75,20 +76,25 @@ func _ready() -> void:
 	setDrawMode(_drawMode)
 
 func _process(_delta: float) -> void:
-	# 方案 2: 降低查询频率，每 3 帧执行一次
 	_frameCounter += 1
-	if _frameCounter % _queryFrameInterval != 0:
-		return
+	var shouldQuery = (_frameCounter % _queryFrameInterval == 0)
+	
 	process_unload_chunk()
 	shouldAddToTree.clear()
-	process_load_chunk(0)
-	process_load_chunk(1)
-	process_load_chunk(2,false)
+	
+	# 只在特定帧查询建筑物数据，减少 getBuildsByChunkPos 调用
+	if shouldQuery:
+		_lastBuildsCache.clear()
+	
+	process_load_chunk(0, shouldQuery)
+	process_load_chunk(1, shouldQuery)
+	process_load_chunk(2, false, shouldQuery)
+	
 	for ins in shouldAddToTree:
 		add_child(ins)
 	pass
 	
-func process_load_chunk(priority:int,remove:bool = true) -> void:
+func process_load_chunk(priority:int, remove:bool = true, shouldQuery:bool = true) -> void:
 	if not _pending_tasks.has(priority):
 		return
 	var tasks: Dictionary = _pending_tasks[priority]
@@ -99,13 +105,23 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 			_pending_tasks[priority].erase(chunkPos)
 			continue
 		if _drawMode == SWDefine.GridDrawMode.ByContent:
-			var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
+			# 使用本地缓存避免重复查询
+			var chunkBuilds:Array[SWDefine.SWBuildItemDefine]
+			if _lastBuildsCache.has(chunkPos):
+				chunkBuilds = _lastBuildsCache[chunkPos]
+			elif shouldQuery:
+				chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
+				_lastBuildsCache[chunkPos] = chunkBuilds
+			else:
+				# 非查询帧，跳过需要建筑物数据的 chunk
+				continue
+			
 			if chunkBuilds.size() == 0:
 				tasks.erase(chunkPos)
 				continue
 			mapDataArray = chunkBuilds
-		if count >= max_chunks_per_frame:
-			break
+		#if count >= max_chunks_per_frame:
+			#break
 		if _chunkInstance.has(chunkPos) and _drawMode != SWDefine.GridDrawMode.ByContent:
 			tasks.erase(chunkPos)
 			continue

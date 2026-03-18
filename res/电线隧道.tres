@@ -1,7 +1,7 @@
 [gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://33cmsq5uc3hb"]
 
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_5x2pw"]
-[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集.png" id="1_yt82c"]
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/SWtexture2D.tres" id="1_yt82c"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_knb6r"]
 atlas = ExtResource("1_yt82c")
