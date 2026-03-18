@@ -3,3 +3,4 @@ res://sw_grid_draw.gdshader
 res://sw_multi_mesh_instance_2d.tscn
 res://sw_draw_manager.gd
 res://com/sw_define.gd
+res://sw_logic_scene.tscn

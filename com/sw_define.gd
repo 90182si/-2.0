@@ -136,7 +136,7 @@ class SWChunkBuildData extends Object:
 class SWBuildManager extends Object:
 	var chunkMap:Dictionary[Vector2i,SWChunkBuildData] = {}
 	# 缓存 chunkPos→builds 映射，避免重复查询
-	var buildsCache:Dictionary[Vector2i,Array[SWBuildItemDefine]] = {}
+	var buildsCache:Dictionary[Vector2i,Array] = {}
 	var cacheValid:bool = true
 	
 	func getChunkOrCreate(axisPos:Vector2i,create:bool = false) -> SWChunkBuildData:

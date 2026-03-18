@@ -30,10 +30,6 @@ var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
 @export var mapDefine:SWBuildDefine = null
 
 var sw_build_manager:SWDefine.SWBuildManager = null
-# 方案 2: 降低查询频率 - 每 3 帧查询一次建筑物数据
-var _queryFrameInterval:int = 3
-var _frameCounter:int = 0
-var _lastBuildsCache:Dictionary[Vector2i,Array[SWDefine.SWBuildItemDefine]] = {}
 func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
 	sw_build_manager = buildManager
 func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
@@ -50,7 +46,7 @@ func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 
 func initDrawMap() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*2
-	_blockSize = Vector2(128,128)*2
+	_blockSize = SWDefine.GRID_SIZE*2
 	if not mapData:
 		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
 		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
@@ -58,7 +54,7 @@ func initDrawMap() -> void:
 	
 func initDrawContent() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
-	_blockSize = Vector2(128,128)
+	_blockSize = SWDefine.GRID_SIZE
 	pass
 	
 func setDrawMode(drawMode:SWDefine.GridDrawMode) -> void:
@@ -76,25 +72,16 @@ func _ready() -> void:
 	setDrawMode(_drawMode)
 
 func _process(_delta: float) -> void:
-	_frameCounter += 1
-	var shouldQuery = (_frameCounter % _queryFrameInterval == 0)
-	
 	process_unload_chunk()
 	shouldAddToTree.clear()
-	
-	# 只在特定帧查询建筑物数据，减少 getBuildsByChunkPos 调用
-	if shouldQuery:
-		_lastBuildsCache.clear()
-	
-	process_load_chunk(0, true, shouldQuery)
-	process_load_chunk(1, true, shouldQuery)
-	process_load_chunk(2, false, shouldQuery)
-	
+	process_load_chunk(0)
+	process_load_chunk(1)
+	process_load_chunk(2)
 	for ins in shouldAddToTree:
 		add_child(ins)
 	pass
 	
-func process_load_chunk(priority:int, remove:bool = true, shouldQuery:bool = true) -> void:
+func process_load_chunk(priority:int) -> void:
 	if not _pending_tasks.has(priority):
 		return
 	var tasks: Dictionary = _pending_tasks[priority]
@@ -107,22 +94,22 @@ func process_load_chunk(priority:int, remove:bool = true, shouldQuery:bool = tru
 		if _drawMode == SWDefine.GridDrawMode.ByContent:
 			# 使用本地缓存避免重复查询
 			var chunkBuilds:Array[SWDefine.SWBuildItemDefine]
-			if _lastBuildsCache.has(chunkPos):
-				chunkBuilds = _lastBuildsCache[chunkPos]
-			elif shouldQuery:
-				chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
-				_lastBuildsCache[chunkPos] = chunkBuilds
-			else:
-				# 非查询帧，跳过需要建筑物数据的 chunk
-				continue
+			chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
 			
 			if chunkBuilds.size() == 0:
 				tasks.erase(chunkPos)
 				continue
 			mapDataArray = chunkBuilds
-		#if count >= max_chunks_per_frame:
-			#break
+		if count >= max_chunks_per_frame and _drawMode == SWDefine.GridDrawMode.Tiling:
+			break
 		if _chunkInstance.has(chunkPos) and _drawMode != SWDefine.GridDrawMode.ByContent:
+			# 检查已存在 chunk 的状态，如果是未加载状态则重新激活
+			var existingChunk = _chunkInstance[chunkPos]
+			if existingChunk.status == SWDefine.ChunkStatus.UNLOADED or existingChunk.status == SWDefine.ChunkStatus.UNVISIBLE:
+				# 重新激活 chunk
+				existingChunk.status = SWDefine.ChunkStatus.FULLY_LOADED
+				existingChunk.mesh_instance.visible = true
+				existingChunk.mesh_instance.set_process(true)
 			tasks.erase(chunkPos)
 			continue
 		count+=1
@@ -139,9 +126,6 @@ func process_load_chunk(priority:int, remove:bool = true, shouldQuery:bool = tru
 		chunkIns.mesh_instance.drawMap(mapDataArray)
 		
 		_chunkInstance[chunkPos] = chunkIns
-		# 对象池复用时 mesh_instance 可能仍在树上：
-		# - 已经在当前 SWDrawManager 下：不要重复 add_child
-		# - 在其他父节点下：先脱离再挂到当前节点
 		var mi: SWMultiMeshInstance2D = chunkIns.mesh_instance
 		var mi_parent: Node = mi.get_parent()
 		if mi_parent != null and mi_parent != self:
@@ -242,7 +226,7 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 			if not caled:
 				caled = true
 				centerRect.position = Vector2(mapData.buildAxisPos)
-				centerRect.end = Vector2(mapData.buildAxisPos)+_blockSize
+				centerRect.end = Vector2(mapData.buildAxisPos)+Vector2(_blockSize)
 			else:
 				centerRect.position.x = min(mapData.buildAxisPos.x*_blockSize.x,centerRect.position.x)
 				centerRect.position.y = min(mapData.buildAxisPos.y*_blockSize.y,centerRect.position.y)
@@ -260,7 +244,7 @@ func setHoldBuildsPos(mousePos:Vector2) -> void:
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
 		swTf.offset = mousePos - _center_offset
 		if _drawMode == SWDefine.GridDrawMode.HoldShadow:
-			swTf.offset = SwCommon.GetGridPos(swTf.offset+_blockSize/2)
+			swTf.offset = SwCommon.GetGridPos(swTf.offset+Vector2(_blockSize)/2)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		pass
 	pass
