@@ -8,8 +8,8 @@ var _chunkSize:Vector2i = SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
 var _chunkInstance:Dictionary[Vector2i,SWDefine.SWDrawChunkData] = {}
 #需要绘制区块的任务列表
 var _pending_tasks:Dictionary[int,Dictionary] = {}
-#记录当前视口大小
-var _curViewRect:Rect2 = Rect2(0,0,0,0)
+#记录当前视口大小（初始化为无限大，避免首次更新前删除所有任务）
+var _curViewRect:Rect2 = Rect2(-1e9, -1e9, 2e9, 2e9)
 #需要添加到场景的对象
 var shouldAddToTree:Array = []
 #单纯用来控制每个区块的偏移的缩放
@@ -86,8 +86,8 @@ func _process(_delta: float) -> void:
 	if shouldQuery:
 		_lastBuildsCache.clear()
 	
-	process_load_chunk(0, shouldQuery)
-	process_load_chunk(1, shouldQuery)
+	process_load_chunk(0, true, shouldQuery)
+	process_load_chunk(1, true, shouldQuery)
 	process_load_chunk(2, false, shouldQuery)
 	
 	for ins in shouldAddToTree:
