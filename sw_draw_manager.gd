@@ -26,11 +26,8 @@ var _blockSize = Vector2(256,256)
 var mapData:SWDefine.SWBuildItemDefine = null
 #地图相关：最终传入绘制数据
 var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
-#地图相关：地图资源定义（高 / 低分辨率）
+#地图相关：地图资源定义
 @export var mapDefine:SWBuildDefine = null
-@export var mapDefine_low:SWBuildDefine = null
-
-var _lod_high: bool = true
 
 var sw_build_manager:SWDefine.SWBuildManager = null
 # 方案 2: 降低查询频率
@@ -51,10 +48,12 @@ func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 
 
 func initDrawMap() -> void:
-	if _lod_high:
-		_apply_high_lod()
-	else:
-		_apply_low_lod()
+	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*2
+	_blockSize = Vector2(128,128)*2
+	if not mapData:
+		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
+		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
+		mapDataArray.append(mapData)
 	
 func initDrawContent() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
@@ -74,39 +73,6 @@ func _ready() -> void:
 		assert(false, "mapDefine未定义")
 	swTf = SWDefine.SWTransformData.new()
 	setDrawMode(_drawMode)
-
-
-func _apply_high_lod() -> void:
-	# 原来的高分辨率设置：1x1 网格
-	_chunkSize = SWDefine.GRID_SIZE * SWDefine.CHUNK_SIZE * 2
-	_blockSize = Vector2(128,128) * 2
-	mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0), mapDefine)
-	mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
-	mapDataArray = [mapData]
-
-
-func _apply_low_lod() -> void:
-	# 低分辨率：4x4 合并为一块（块尺寸放大 4 倍）
-	var cell := Vector2(128,128)
-	_chunkSize = SWDefine.GRID_SIZE * SWDefine.CHUNK_SIZE * 2 * 4
-	_blockSize = cell * 2 * 4
-	if mapDefine_low == null:
-		# 没有配置低分辨率资源时，退回高 LOD 设置
-		_apply_high_lod()
-		return
-	mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0), mapDefine_low)
-	mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
-	mapDataArray = [mapData]
-
-
-func set_lod_high(is_high: bool) -> void:
-	if _lod_high == is_high:
-		return
-	_lod_high = is_high
-	# 卸载当前所有区块，重新按新的 LOD 配置加载
-	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
-		chunkIns.status = SWDefine.ChunkStatus.UNLOADING
-	initDrawMap()
 
 func _process(_delta: float) -> void:
 	# 方案 2: 降低查询频率，每 3 帧执行一次
