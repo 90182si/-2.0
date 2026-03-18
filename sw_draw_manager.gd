@@ -51,6 +51,8 @@ func initDrawMap() -> void:
 		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
 		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
 		mapDataArray.append(mapData)
+		# 保存原始 Tiling 数据用于手持模式结束后恢复
+		_tilingMapDataArray = mapDataArray.duplicate()
 	
 func initDrawContent() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
@@ -105,11 +107,14 @@ func process_load_chunk(priority:int) -> void:
 		if _chunkInstance.has(chunkPos) and _drawMode != SWDefine.GridDrawMode.ByContent:
 			# 检查已存在 chunk 的状态，如果是未加载状态则重新激活
 			var existingChunk = _chunkInstance[chunkPos]
-			if existingChunk.status == SWDefine.ChunkStatus.UNLOADED or existingChunk.status == SWDefine.ChunkStatus.UNVISIBLE:
+			if existingChunk.status == SWDefine.ChunkStatus.UNLOADED or existingChunk.status == SWDefine.ChunkStatus.UNLOADING or existingChunk.status == SWDefine.ChunkStatus.UNVISIBLE:
 				# 重新激活 chunk
 				existingChunk.status = SWDefine.ChunkStatus.FULLY_LOADED
 				existingChunk.mesh_instance.visible = true
 				existingChunk.mesh_instance.set_process(true)
+				# 使用 chunk 自己保存的绘制数据重新绘制
+				if existingChunk.chunkMapDataArray.size() > 0:
+					existingChunk.mesh_instance.drawMap(existingChunk.chunkMapDataArray)
 			tasks.erase(chunkPos)
 			continue
 		count+=1
@@ -119,11 +124,14 @@ func process_load_chunk(priority:int) -> void:
 			swTf.offset = Vector2(0,0)
 		else:
 			swTf.offset = Vector2(chunkPos.x,chunkPos.y)
+		
+		# 保存绘制数据到 chunk，避免全局 mapDataArray 被修改
+		chunkIns.chunkMapDataArray = mapDataArray.duplicate()
 			
 		chunkIns.mesh_instance.setMeshSize(_blockSize)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		chunkIns.mesh_instance.setDrawMode(_drawMode)
-		chunkIns.mesh_instance.drawMap(mapDataArray)
+		chunkIns.mesh_instance.drawMap(chunkIns.chunkMapDataArray)
 		
 		_chunkInstance[chunkPos] = chunkIns
 		var mi: SWMultiMeshInstance2D = chunkIns.mesh_instance
@@ -209,6 +217,7 @@ func getNeedCountOfMMI(rect:Rect2) -> Vector2i:
 var _drawData:SWDrawData = null
 var _draging:bool = false
 var _center_offset:Vector2
+var _tilingMapDataArray:Array[SWDefine.SWBuildItemDefine] = []  # 保存 Tiling 模式的原始地图数据
 func setHoldBuild(drawData:SWDrawData) -> void:
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
 		chunkIns.status = SWDefine.ChunkStatus.UNLOADING
@@ -221,6 +230,9 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 		if not _pending_tasks.has(2):
 			_pending_tasks[2] = {}
 		_pending_tasks[2][Vector2i(0,0)] = false
+		# 保存原始 Tiling 数据
+		if _tilingMapDataArray.size() == 0 and mapDataArray.size() > 0:
+			_tilingMapDataArray = mapDataArray.duplicate()
 		mapDataArray = drawData.mapDatas
 		for mapData in mapDataArray:
 			if not caled:
@@ -236,6 +248,9 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 	else:
 		_draging = false
 		_pending_tasks.clear()
+		# 恢复 Tiling 模式的地图数据
+		if _tilingMapDataArray.size() > 0:
+			mapDataArray = _tilingMapDataArray
 	pass
 
 func setHoldBuildsPos(mousePos:Vector2) -> void:

@@ -74,12 +74,14 @@ class SWDrawChunkData extends Object:
 	var status: SWDefine.ChunkStatus = SWDefine.ChunkStatus.EMPTY
 	var priority: SWDefine.ChunkPriority = SWDefine.ChunkPriority.LOW
 	var mesh_instance: SWMultiMeshInstance2D = null  # 批量渲染节点
+	var chunkMapDataArray: Array[SWBuildItemDefine] = []  # 每个 chunk 保存自己的绘制数据
 	#var multi_mesh: MultiMesh = null  # 批量网格数据
 	func init() -> void:
 		chunk_pos = Vector2.ZERO
 		world_pos = Vector2.ZERO
 		status = SWDefine.ChunkStatus.EMPTY
 		priority = SWDefine.ChunkPriority.LOW
+		chunkMapDataArray.clear()
 		if not mesh_instance:
 			mesh_instance = preload("res://sw_multi_mesh_instance_2d.tscn").instantiate() 
 			mesh_instance.chunkPtr = self
