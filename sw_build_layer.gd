@@ -7,7 +7,7 @@ func _ready() -> void:
 	sw_build_manager = SWDefine.SWBuildManager.new()
 	sw_draw_manager.setBuildManager(sw_build_manager)
 	sw_draw_manager.setDrawMode(SWDefine.GridDrawMode.ByContent)
-	
+	sw_draw_manager.useName = "Content"
 	var build:SWDefine.SWBuildItemDefine = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),load("res://res/按钮.tres") as SWBuildDefine)
 	var build2:SWDefine.SWBuildItemDefine = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),load("res://res/开关.tres") as SWBuildDefine)
 	var build3:SWDefine.SWBuildItemDefine = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),load("res://res/灯泡.tres") as SWBuildDefine)

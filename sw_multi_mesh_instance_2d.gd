@@ -37,7 +37,7 @@ func setDrawMode(mode:SWDefine.GridDrawMode) -> void:
 func resetOffsetAndScale(_swTf:SWDefine.SWTransformData) -> void:
 	_swTransform = _swTf
 	position = _swTransform.offset
-	(multimesh.mesh as QuadMesh).set_size(Vector2(_gridSize.x, -_gridSize.y)*_swTransform.scale)
+	#(multimesh.mesh as QuadMesh).set_size(Vector2(_gridSize.x, -_gridSize.y)*_swTransform.scale)
 
 func setMeshSize(size:Vector2) -> void:
 	_gridSize = size

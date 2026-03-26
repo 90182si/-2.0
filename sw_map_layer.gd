@@ -4,6 +4,7 @@ class_name SWMapLayer extends SWLayer
 
 func _ready() -> void:
 	sw_draw_manager.setDrawMode(SWDefine.GridDrawMode.Tiling)
+	sw_draw_manager.useName = "Tiling"
 	pass
 	
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:

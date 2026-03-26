@@ -15,6 +15,8 @@ var shouldAddToTree:Array = []
 #单纯用来控制每个区块的偏移的缩放
 var swTf:SWDefine.SWTransformData
 
+var useName:String = ""
+
 var _viewRect:Rect2
 
 @export var _drawMode:SWDefine.GridDrawMode = SWDefine.GridDrawMode.Tiling
@@ -31,7 +33,7 @@ var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
 
 var sw_build_manager:SWDefine.SWBuildManager = null
 # 方案 2: 降低查询频率
-var _queryFrameInterval:int = 3
+var _queryFrameInterval:int = 1  # 改为每帧更新，消除绘制锯齿感
 var _frameCounter:int = 0
 func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
 	sw_build_manager = buildManager
@@ -94,6 +96,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 	var tasks: Dictionary = _pending_tasks[priority]
 	var count = 0
 	var keys := tasks.keys()
+	#print(useName,"keys size:",keys.size())
 	for chunkPos in keys:
 		if not _curViewRect.has_point(chunkPos) and (_drawMode != SWDefine.GridDrawMode.ByHold and _drawMode != SWDefine.GridDrawMode.HoldShadow):
 			_pending_tasks[priority].erase(chunkPos)
@@ -104,9 +107,9 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 				tasks.erase(chunkPos)
 				continue
 			mapDataArray = chunkBuilds
-		if count >= max_chunks_per_frame:
-			break
-		if _chunkInstance.has(chunkPos) and _drawMode != SWDefine.GridDrawMode.ByContent:
+		#if count >= max_chunks_per_frame:
+			#break
+		if _chunkInstance.has(chunkPos):# and _drawMode != SWDefine.GridDrawMode.ByContent:
 			tasks.erase(chunkPos)
 			continue
 		count+=1
@@ -172,31 +175,43 @@ func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 		for y in range(mmiCount.y):
 			var chunkPos = Vector2i(beginChunkPos.x+x*_chunkSize.x,beginChunkPos.y+y*_chunkSize.y)
 			if not _chunkInstance.has(chunkPos):
-				_pending_tasks[0][chunkPos]=false
+				if _drawMode == SWDefine.GridDrawMode.ByContent:
+					var chunkBuilds = sw_build_manager.getBuildCountByChunkPos(chunkPos)
+					if chunkBuilds > 0:
+						_pending_tasks[0][chunkPos]=false
+				else:
+					_pending_tasks[0][chunkPos]=false
 	
-	# 预加载范围按“区块圈数”扩展，而不是按“视口像素尺寸倍数”扩展
-	var preloadBeginChunkPos: Vector2 = beginChunkPos - mmiCount*_chunkSize*preLoadwidth#Vector2(preLoadwidth * _chunkSize.x, preLoadwidth * _chunkSize.y)
-	var preloadMmiCount: Vector2i = mmiCount*(1+2*preLoadwidth)# + Vector2i(2 * preLoadwidth, 2 * preLoadwidth)
-	
-	var speedVecTmp = speedVec#.normalized()
-	#speedVecTmp/=speedVecTmp
-	if speedVecTmp.x != 0:
-		speedVecTmp.x/=abs(speedVecTmp.x)
-	if speedVecTmp.y != 0:
-		speedVecTmp.y/=abs(speedVecTmp.y)
-	preloadMmiCount+=Vector2i(speedVecTmp)*mmiCount
-	for x in range(preloadMmiCount.x):
-		for y in range(preloadMmiCount.y):
-			#var chunkPos = Vector2i(preloadBeginChunkPos.x+(x+speedVecTmp.x)*_chunkSize.x,preloadBeginChunkPos.y+(y+speedVecTmp.y)*_chunkSize.y)
-			var chunkPos = Vector2i(preloadBeginChunkPos.x+(x)*_chunkSize.x,preloadBeginChunkPos.y+(y)*_chunkSize.y)
-			if not _chunkInstance.has(chunkPos) and not _pending_tasks[0].has(chunkPos):
-				_pending_tasks[1][chunkPos]=false
-				#print("Preload: ", chunkPos)
-	var delShowInsRect = Rect2(showInsRect.position-showInsRect.size,showInsRect.size*3)
-	_curViewRect = delShowInsRect
-	for chunkPos in _chunkInstance.keys():
-		if not delShowInsRect.has_point(chunkPos):
-			_chunkInstance[chunkPos].status = SWDefine.ChunkStatus.UNLOADING
+	if _drawMode == SWDefine.GridDrawMode.Tiling:
+		# 预加载范围按“区块圈数”扩展，而不是按“视口像素尺寸倍数”扩展
+		var preloadBeginChunkPos: Vector2 = beginChunkPos - mmiCount*_chunkSize*preLoadwidth#Vector2(preLoadwidth * _chunkSize.x, preLoadwidth * _chunkSize.y)
+		var preloadMmiCount: Vector2i = mmiCount*(1+2*preLoadwidth)# + Vector2i(2 * preLoadwidth, 2 * preLoadwidth)
+		
+		var speedVecTmp = speedVec#.normalized()
+		#speedVecTmp/=speedVecTmp
+		if speedVecTmp.x != 0:
+			speedVecTmp.x/=abs(speedVecTmp.x)
+		if speedVecTmp.y != 0:
+			speedVecTmp.y/=abs(speedVecTmp.y)
+		preloadMmiCount+=Vector2i(speedVecTmp)*mmiCount
+		for x in range(preloadMmiCount.x):
+			for y in range(preloadMmiCount.y):
+				#var chunkPos = Vector2i(preloadBeginChunkPos.x+(x+speedVecTmp.x)*_chunkSize.x,preloadBeginChunkPos.y+(y+speedVecTmp.y)*_chunkSize.y)
+				var chunkPos = Vector2i(preloadBeginChunkPos.x+(x)*_chunkSize.x,preloadBeginChunkPos.y+(y)*_chunkSize.y)
+				if not _chunkInstance.has(chunkPos) and not _pending_tasks[0].has(chunkPos):
+					_pending_tasks[1][chunkPos]=false
+					#print("Preload: ", chunkPos)
+		var delShowInsRect = Rect2(showInsRect.position-showInsRect.size,showInsRect.size*3)
+		_curViewRect = delShowInsRect
+		for chunkPos in _chunkInstance.keys():
+			if not delShowInsRect.has_point(chunkPos):
+				_chunkInstance[chunkPos].status = SWDefine.ChunkStatus.UNLOADING
+	else:
+		var delShowInsRect = Rect2(showInsRect.position,showInsRect.size)
+		_curViewRect = delShowInsRect
+		for chunkPos in _chunkInstance.keys():
+			if not delShowInsRect.has_point(chunkPos):
+				_chunkInstance[chunkPos].status = SWDefine.ChunkStatus.UNLOADING
 	pass
 
 func getNeedCountOfMMI(rect:Rect2) -> Vector2i:

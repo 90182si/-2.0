@@ -77,6 +77,8 @@ func _idle_builds_between(from_world_pos: Vector2, to_world_pos: Vector2) -> voi
 func _ready() -> void:
 	sw_draw_manager.setDrawMode(SWDefine.GridDrawMode.ByHold)
 	sw_draw_manager_2.setDrawMode(SWDefine.GridDrawMode.HoldShadow)
+	sw_draw_manager.useName = "Hold"
+	sw_draw_manager_2.useName = "Shadow"
 	
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	sw_draw_manager.on_view_rect_changed(viewRect,speedVec)

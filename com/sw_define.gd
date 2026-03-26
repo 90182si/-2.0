@@ -215,13 +215,21 @@ class SWBuildManager extends Object:
 			pass
 		return builds
 
+	func getBuildCountByChunkPos(chunkPos:Vector2i) -> int:
+		if chunkMap.has(chunkPos):
+			return 1
+		return 0
+
 	func getBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
 		# 方案 3: 缓存优化
-		var curChunk = getChunkOrCreate(chunkPos)
-		if not curChunk:
-			return []
-		var builds = curChunk.getAllBuilds()
-		return builds
+		#var curChunk = getChunkOrCreate(chunkPos)
+		#if not curChunk:
+			#return []
+		#var builds = curChunk.getAllBuilds()
+		#return builds
+		if chunkMap.has(chunkPos):
+			return chunkMap[chunkPos].builds
+		return []
 
 	func getAllBuilds() -> Array[SWBuildItemDefine]:
 		var builds = []
