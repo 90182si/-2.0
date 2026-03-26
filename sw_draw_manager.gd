@@ -10,6 +10,10 @@ var _chunkInstance:Dictionary[Vector2i,SWDefine.SWDrawChunkData] = {}
 var _pending_tasks:Dictionary[int,Dictionary] = {}
 #记录当前视口大小（初始化为无限大，避免首次更新前删除所有任务）
 var _curViewRect:Rect2 = Rect2(-1e9, -1e9, 2e9, 2e9)
+#缓存有建筑的 chunk 位置（ByContent 模式专用，避免频繁查询）
+var _chunkHasBuildCache:Dictionary[Vector2i,bool] = {}
+#缓存是否过期
+var _cacheDirty:bool = false
 #需要添加到场景的对象
 var shouldAddToTree:Array = []
 #单纯用来控制每个区块的偏移的缩放
@@ -37,6 +41,12 @@ var _queryFrameInterval:int = 1  # 改为每帧更新，消除绘制锯齿感
 var _frameCounter:int = 0
 func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
 	sw_build_manager = buildManager
+	# 监听建筑变化，标记缓存过期
+	if sw_build_manager.build_changed.is_connected(_on_build_changed) == false:
+		sw_build_manager.build_changed.connect(_on_build_changed)
+
+func _on_build_changed() -> void:
+	_cacheDirty = true
 func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
@@ -157,6 +167,24 @@ func process_unload_chunk() -> void:
 	for pos in forDelPosArr:
 		_chunkInstance.erase(pos)
 
+func _updateChunkCache(viewRect:Rect2) -> void:
+	if _drawMode != SWDefine.GridDrawMode.ByContent:
+		return
+	# 只在缓存过期时更新
+	if not _cacheDirty:
+		return
+	_cacheDirty = false
+	_chunkHasBuildCache.clear()
+	var mmiCount = getNeedCountOfMMI(viewRect)
+	var bPos = (viewRect.position/Vector2(_chunkSize))
+	var beginChunkPos:Vector2i = floor(bPos)*Vector2(_chunkSize)
+	# 只查询视口内的 chunk，批量获取
+	for x in range(mmiCount.x):
+		for y in range(mmiCount.y):
+			var chunkPos = Vector2i(beginChunkPos.x+x*_chunkSize.x,beginChunkPos.y+y*_chunkSize.y)
+			if sw_build_manager.getBuildCountByChunkPos(chunkPos) > 0:
+				_chunkHasBuildCache[chunkPos] = true
+
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	color_rect.position = viewRect.position
 	color_rect.size = viewRect.size
@@ -171,13 +199,15 @@ func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 		_pending_tasks[0] = {}
 	if not _pending_tasks.has(1):
 		_pending_tasks[1] = {}
+	# 更新缓存（只在 ByContent 模式且缓存过期时查询）
+	_updateChunkCache(viewRect)
 	for x in range(mmiCount.x):
 		for y in range(mmiCount.y):
 			var chunkPos = Vector2i(beginChunkPos.x+x*_chunkSize.x,beginChunkPos.y+y*_chunkSize.y)
 			if not _chunkInstance.has(chunkPos):
 				if _drawMode == SWDefine.GridDrawMode.ByContent:
-					var chunkBuilds = sw_build_manager.getBuildCountByChunkPos(chunkPos)
-					if chunkBuilds > 0:
+					# 使用缓存，避免重复查询
+					if _chunkHasBuildCache.has(chunkPos):
 						_pending_tasks[0][chunkPos]=false
 				else:
 					_pending_tasks[0][chunkPos]=false

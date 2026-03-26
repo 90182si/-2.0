@@ -137,6 +137,8 @@ class SWBuildManager extends Object:
 	var chunkMap:Dictionary[Vector2i,SWChunkBuildData] = {}
 	# 方案 3: 缓存 chunkPos→builds 映射
 	var cacheValid:bool = false
+	# 建筑变化信号
+	signal build_changed()
 	
 	func getChunkOrCreate(axisPos:Vector2i,create:bool = false) -> SWChunkBuildData:
 		var chunkPos1 = (Vector2(axisPos)/Vector2(CHUNK_SIZE*GRID_SIZE)).floor()
@@ -154,7 +156,10 @@ class SWBuildManager extends Object:
 		var curChunk = getChunkOrCreate(build.buildAxisPos,true)
 		if not curChunk:
 			return false
-		return curChunk.addBuild(build)
+		var result = curChunk.addBuild(build)
+		if result:
+			build_changed.emit()
+		return result
 		
 	func delBuild(build:SWBuildItemDefine) -> bool:
 		if not build:
@@ -162,7 +167,10 @@ class SWBuildManager extends Object:
 		var curChunk = getChunkOrCreate(build.buildAxisPos)
 		if not curChunk:
 			return false
-		return curChunk.delBuild(build)
+		var result = curChunk.delBuild(build)
+		if result:
+			build_changed.emit()
+		return result
 	
 	func addBuilds(builds:Array[SWBuildItemDefine]) -> bool:
 		var success = true
