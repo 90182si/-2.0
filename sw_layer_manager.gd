@@ -19,6 +19,21 @@ func _ready() -> void:
 			buildLayer = layer
 	if buildLayer and holdLayer:
 		holdLayer.holdIdleBuilds.connect(buildLayer.holdIdleBuilds)
+		holdLayer.holdRemoveBuilds.connect(buildLayer.holdRemoveBuilds)
+		
+	var build:SWBuildDefine = load("res://res/按钮.tres") as SWBuildDefine
+	var build2:SWBuildDefine = load("res://res/开关.tres") as SWBuildDefine
+	var build3:SWBuildDefine = load("res://res/灯泡.tres") as SWBuildDefine
+	var drawData:SWDrawData = SWDrawData.new()
+	drawData.addOneDrawBuildDefine(Vector2i(0,0),build)
+	drawData.addOneDrawBuildDefine(Vector2i(0,128),build2)
+	drawData.addOneDrawBuildDefine(Vector2i(0,256),build3)
+	drawData.addOneDrawBuildDefine(Vector2i(128,128),build3)
+	drawData.addOneDrawBuildDefine(Vector2i(-128,128),build3)
+	
+	holdLayer.on_sel_tool_draw_data(drawData)
 			
 func hudLayerSelectedTool(buildDefine:SWBuildDefine) -> void:
-	holdLayer.on_sel_tool(buildDefine)
+	var drawData:SWDrawData = SWDrawData.new()
+	drawData.addOneDrawBuildDefine(Vector2i(0,0),buildDefine)
+	holdLayer.on_sel_tool_draw_data(drawData)

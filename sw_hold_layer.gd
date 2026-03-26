@@ -14,12 +14,13 @@ var _hold_smoothed_world_vel := Vector2.ZERO
 var _hold_pos_inited := false
 var _cur_hold_builds:Array[SWDefine.SWBuildItemDefine] = []
 
-signal holdIdleBuilds(builds,pos)
+signal holdIdleBuilds(builds,posArr)
+signal holdRemoveBuilds(posArr)
 
 func _idle_builds_between(from_world_pos: Vector2, to_world_pos: Vector2) -> void:
-	if not left_mouse_pressed:
-		return
-	if _cur_hold_builds.size() != 1:
+	#if not left_mouse_pressed:
+		#return
+	if _cur_hold_builds.size() != 1 and left_mouse_pressed:
 		return
 	
 	var grid_size_v := Vector2(SWDefine.GRID_SIZE)
@@ -71,7 +72,10 @@ func _idle_builds_between(from_world_pos: Vector2, to_world_pos: Vector2) -> voi
 	if poss.size() == 0:
 		return
 
-	holdIdleBuilds.emit(_cur_hold_builds,poss)
+	if left_mouse_pressed:
+		holdIdleBuilds.emit(_cur_hold_builds,poss)
+	elif right_mouse_pressed:
+		holdRemoveBuilds.emit(poss)
 	last_world_pos = to_world_pos
 
 func _ready() -> void:
@@ -85,23 +89,26 @@ func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	sw_draw_manager_2.on_view_rect_changed(viewRect,speedVec)
 	pass
 
-func on_sel_tool(buildDefine:SWBuildDefine) -> void:
-	var drawData:SWDrawData = SWDrawData.new()
-	drawData.addOneDrawBuildDefine(Vector2i(0,0),buildDefine)
-	#drawData.addOneDrawBuildDefine(Vector2i(2,0),buildDefine)
-	#drawData.addOneDrawBuildDefine(Vector2i(1,0),buildDefine)
-	#drawData.addOneDrawBuildDefine(Vector2i(1,1),buildDefine)
-	sw_draw_manager.setHoldBuild(drawData)
+func on_sel_tool_draw_data(drawData:SWDrawData) -> void:
 	var drawData2:SWDrawData = SWDrawData.new()
-	drawData2.addOneDrawBuildDefine(Vector2i(0,0),_hold_shadow_define)
-	#drawData2.addOneDrawBuildDefine(Vector2i(2,0),_hold_shadow_define)
-	#drawData2.addOneDrawBuildDefine(Vector2i(1,0),_hold_shadow_define)
-	#drawData2.addOneDrawBuildDefine(Vector2i(1,1),_hold_shadow_define)
+	sw_draw_manager.setHoldBuild(drawData)
+	for mapData in drawData.mapDatas:
+		drawData2.addOneDrawBuildDefine(mapData.buildAxisPos,_hold_shadow_define)
 	sw_draw_manager_2.setHoldBuild(drawData2)
 	_hold_pos_inited = false
-	
 	_cur_hold_builds = drawData.mapDatas
-	pass
+
+#func on_sel_tool(buildDefine:SWBuildDefine) -> void:
+	#var drawData:SWDrawData = SWDrawData.new()
+	#drawData.addOneDrawBuildDefine(Vector2i(0,0),buildDefine)
+	#sw_draw_manager.setHoldBuild(drawData)
+	#var drawData2:SWDrawData = SWDrawData.new()
+	#drawData2.addOneDrawBuildDefine(Vector2i(0,0),_hold_shadow_define)
+	#sw_draw_manager_2.setHoldBuild(drawData2)
+	#_hold_pos_inited = false
+	#
+	#_cur_hold_builds = drawData.mapDatas
+	#pass
 	
 func getCurWorldPosByMouse() -> Vector2:
 	var viewport := get_viewport()
@@ -150,26 +157,49 @@ func _process(delta: float) -> void:
 
 var last_world_pos:Vector2
 var left_mouse_pressed = false
+var right_mouse_pressed = false
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.is_pressed():
 			if event.button_index == MOUSE_BUTTON_RIGHT:
-				sw_draw_manager.setHoldBuild(null) 
-				sw_draw_manager_2.setHoldBuild(null) 
-				_hold_pos_inited = false
-				_cur_hold_builds.clear()
+				if _cur_hold_builds.size() > 0:
+					sw_draw_manager.setHoldBuild(null) 
+					sw_draw_manager_2.setHoldBuild(null) 
+					_hold_pos_inited = false
+					_cur_hold_builds.clear()
+				else:
+					last_world_pos = getCurGridWorldPosByMouse()
+					var poss:Array[Vector2i] = []
+					poss.append(last_world_pos)
+					holdRemoveBuilds.emit(poss)
+					right_mouse_pressed = true
 			elif event.button_index == MOUSE_BUTTON_LEFT:
 				if _cur_hold_builds.size() > 0:
 					last_world_pos = getCurGridWorldPosByMouse()
 					var poss:Array[Vector2i] = []
-					poss.append(last_world_pos)
+					var centerPos = sw_draw_manager_2.getHoldCenter()-Vector2(64,64)
+					poss.append(last_world_pos-centerPos)
 					holdIdleBuilds.emit(_cur_hold_builds,poss)
 					left_mouse_pressed = true
 					#print("idle")
 		elif event.is_released():
 			if event.button_index == MOUSE_BUTTON_LEFT:
 				left_mouse_pressed = false
+			elif event.button_index == MOUSE_BUTTON_RIGHT:
+				right_mouse_pressed = false
 	elif event is InputEventMouseMotion:
 		if left_mouse_pressed:
 			var world_pos = getCurGridWorldPosByMouse()
 			_idle_builds_between(last_world_pos, world_pos)
+		elif right_mouse_pressed:
+			var world_pos = getCurGridWorldPosByMouse()
+			_idle_builds_between(last_world_pos, world_pos)
+	elif event is InputEventKey:
+		if Input.is_action_pressed("Rotation"):
+			var drawData = sw_draw_manager.getHoldBuild()
+			var centerPos = sw_draw_manager_2.getHoldCenter()-Vector2(64,64)
+			for data:SWDefine.SWBuildItemDefine in drawData.mapDatas:
+				data.buildAxisPos = SWCommon.RotationPos(data.buildAxisPos,90,centerPos).snapped(Vector2(128,128))
+				data.rotation-=90
+				data.rotation%=360
+			sw_draw_manager.updataAllChunks()

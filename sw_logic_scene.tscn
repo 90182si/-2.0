@@ -23,6 +23,7 @@ script = ExtResource("1_5e6f2")
 script = ExtResource("3_w4f4c")
 
 [node name="SWDrawManager" parent="SWLayerManager/SWMapLayer" unique_id=805409719 instance=ExtResource("4_nuqc4")]
+useName = "Tiling"
 
 [node name="SWHudCanvasLayer" type="CanvasLayer" parent="SWLayerManager" unique_id=1157091531]
 
@@ -33,10 +34,15 @@ script = ExtResource("3_w4f4c")
 [node name="SWHoldLayer" type="Node" parent="SWLayerManager" unique_id=2058632708 groups=["SWLayer"]]
 script = ExtResource("6_u2kex")
 _hold_shadow_define = ExtResource("7_tshjl")
+hold_spring_frequency_hz = null
+hold_damping_ratio = null
+hold_max_substep = null
 
 [node name="SWDrawManager2" parent="SWLayerManager/SWHoldLayer" unique_id=875026827 instance=ExtResource("4_nuqc4")]
+useName = "Shadow"
 
 [node name="SWDrawManager" parent="SWLayerManager/SWHoldLayer" unique_id=1226479401 instance=ExtResource("4_nuqc4")]
+useName = "Hold"
 _drawMode = 2
 
 [node name="SWZoomCom" type="Control" parent="." unique_id=270444491]

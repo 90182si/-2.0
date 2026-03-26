@@ -46,3 +46,10 @@ func holdIdleBuilds(builds:Array[SWDefine.SWBuildItemDefine],poss:Array[Vector2i
 	var notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 	pass
+
+func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
+	var builds := sw_build_manager.getBuilds(poss)
+	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
+	sw_build_manager.delBuilds(builds)
+	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	pass

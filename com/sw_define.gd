@@ -111,6 +111,13 @@ class SWChunkBuildData extends Object:
 		notNullBuilds.append(build)
 		return true
 		
+	func getBuild(axisPos:Vector2i) -> SWBuildItemDefine:
+		var curChunkRect := Rect2i(chunk_pos,CHUNK_SIZE*GRID_SIZE)
+		if not curChunkRect.has_point(axisPos):
+			return null
+		var inChunkPos:Vector2i = (axisPos-curChunkRect.position)/GRID_SIZE
+		return builds[inChunkPos.x*CHUNK_SIZE+inChunkPos.y]
+		
 	func delBuild(build:SWBuildItemDefine) -> bool:
 		var curChunkRect := Rect2i(chunk_pos,CHUNK_SIZE*GRID_SIZE)
 		if not curChunkRect.has_point(build.buildAxisPos):
@@ -198,13 +205,9 @@ class SWBuildManager extends Object:
 		return curChunk.getBuild(axisPos)
 		
 	func getBuilds(axisPosArr:Array[Vector2i]) -> Array[SWBuildItemDefine]:
-		var builds = []
+		var builds:Array[SWBuildItemDefine] = []
 		for axisPos in axisPosArr:
-			var chunkPos = (axisPos/CHUNK_SIZE)*CHUNK_SIZE
-			if not chunkMap.has(chunkPos):
-				continue
-			var curChunk = chunkMap[chunkPos]
-			var build = curChunk.getBuild(axisPos)
+			var build = getBuild(axisPos)
 			if build:
 				builds.append(build)
 		return builds
@@ -230,14 +233,11 @@ class SWBuildManager extends Object:
 
 	func getBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
 		# 方案 3: 缓存优化
-		#var curChunk = getChunkOrCreate(chunkPos)
-		#if not curChunk:
-			#return []
-		#var builds = curChunk.getAllBuilds()
-		#return builds
-		if chunkMap.has(chunkPos):
-			return chunkMap[chunkPos].builds
-		return []
+		var curChunk = getChunkOrCreate(chunkPos)
+		if not curChunk:
+			return []
+		var builds = curChunk.getAllBuilds()
+		return builds
 
 	func getAllBuilds() -> Array[SWBuildItemDefine]:
 		var builds = []

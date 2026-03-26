@@ -28,3 +28,9 @@ static func GetChunkPos(worldPos:Vector2i) -> Vector2i:
 	var pos = pos1.floor()
 	var chunkPos:Vector2i = Vector2i(pos)*SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
 	return chunkPos
+
+#以rotCenter为旋转中心，对srcPos旋转deg度
+static func RotationPos(srcPos:Vector2,deg:float,rotCenter:Vector2) -> Vector2:
+	if deg == 0.0:
+		return srcPos
+	return (srcPos - rotCenter).rotated(deg_to_rad(deg)) + rotCenter

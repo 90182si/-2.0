@@ -19,7 +19,7 @@ var shouldAddToTree:Array = []
 #单纯用来控制每个区块的偏移的缩放
 var swTf:SWDefine.SWTransformData
 
-var useName:String = ""
+@export var useName:String = ""
 
 var _viewRect:Rect2
 
@@ -47,6 +47,13 @@ func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
 
 func _on_build_changed() -> void:
 	_cacheDirty = true
+func updataAllChunks() -> void:
+	if not _pending_tasks.has(0):
+		_pending_tasks[0] = {}
+	for chunkPos in _chunkInstance.keys():
+		if _chunkInstance.has(chunkPos):
+			_chunkInstance[chunkPos].status = SWDefine.ChunkStatus.UNLOADING
+		_pending_tasks[0][chunkPos] = false
 func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
@@ -117,9 +124,9 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 				tasks.erase(chunkPos)
 				continue
 			mapDataArray = chunkBuilds
-		#if count >= max_chunks_per_frame:
-			#break
-		if _chunkInstance.has(chunkPos):# and _drawMode != SWDefine.GridDrawMode.ByContent:
+		if count >= max_chunks_per_frame and _drawMode == SWDefine.GridDrawMode.Tiling:
+			break
+		if _chunkInstance.has(chunkPos):
 			tasks.erase(chunkPos)
 			continue
 		count+=1
@@ -153,6 +160,8 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 
 	if tasks.is_empty() and not _draging:
 		_pending_tasks.erase(priority)
+		
+
 func process_unload_chunk() -> void:
 	var forDelPosArr = []
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
@@ -170,10 +179,10 @@ func process_unload_chunk() -> void:
 func _updateChunkCache(viewRect:Rect2) -> void:
 	if _drawMode != SWDefine.GridDrawMode.ByContent:
 		return
-	# 只在缓存过期时更新
-	if not _cacheDirty:
-		return
-	_cacheDirty = false
+	## 只在缓存过期时更新
+	#if not _cacheDirty:
+		#return
+	#_cacheDirty = false
 	_chunkHasBuildCache.clear()
 	var mmiCount = getNeedCountOfMMI(viewRect)
 	var bPos = (viewRect.position/Vector2(_chunkSize))
@@ -254,6 +263,11 @@ func getNeedCountOfMMI(rect:Rect2) -> Vector2i:
 var _drawData:SWDrawData = null
 var _draging:bool = false
 var _center_offset:Vector2
+func getHoldBuild() -> SWDrawData:
+	return _drawData
+func getHoldCenter() -> Vector2:
+	return _center_offset
+	
 func setHoldBuild(drawData:SWDrawData) -> void:
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
 		chunkIns.status = SWDefine.ChunkStatus.UNLOADING
@@ -265,18 +279,23 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 		
 		if not _pending_tasks.has(2):
 			_pending_tasks[2] = {}
-		_pending_tasks[2][Vector2i(0,0)] = false
 		mapDataArray = drawData.mapDatas
+		var maxPos:Vector2
+		var minPos:Vector2
 		for mapData in mapDataArray:
+			var chunkPos = SWCommon.GetChunkPos(mapData.buildAxisPos)
+			_pending_tasks[2][chunkPos] = false
 			if not caled:
 				caled = true
-				centerRect.position = Vector2(mapData.buildAxisPos)
-				centerRect.end = Vector2(mapData.buildAxisPos)+_blockSize
+				minPos = Vector2(mapData.buildAxisPos)
+				maxPos = Vector2(mapData.buildAxisPos)+_blockSize
 			else:
-				centerRect.position.x = min(mapData.buildAxisPos.x*_blockSize.x,centerRect.position.x)
-				centerRect.position.y = min(mapData.buildAxisPos.y*_blockSize.y,centerRect.position.y)
-				centerRect.end.x = max(mapData.buildAxisPos.x*_blockSize.x+_blockSize.x,centerRect.end.x)
-				centerRect.end.y = max(mapData.buildAxisPos.y*_blockSize.y+_blockSize.y,centerRect.end.y)
+				minPos.x = min(mapData.buildAxisPos.x,minPos.x)
+				minPos.y = min(mapData.buildAxisPos.y,minPos.y)
+				maxPos.x = max(mapData.buildAxisPos.x+_blockSize.x,maxPos.x)
+				maxPos.y = max(mapData.buildAxisPos.y+_blockSize.y,maxPos.y)
+		centerRect.position = minPos
+		centerRect.end = maxPos
 		_center_offset = centerRect.get_center()
 	else:
 		_draging = false
