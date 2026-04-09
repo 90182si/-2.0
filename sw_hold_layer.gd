@@ -66,7 +66,7 @@ func _idle_builds_between(from_world_pos: Vector2, to_world_pos: Vector2) -> voi
 			err += dx
 			y += sy
 
-		var grid_world_pos:Vector2 = Vector2(Vector2i(x, y) * SWDefine.GRID_SIZE)
+		var grid_world_pos:Vector2i = Vector2i(Vector2i(x, y) * SWDefine.GRID_SIZE)
 		poss.append(grid_world_pos)
 
 	if poss.size() == 0:
@@ -155,7 +155,7 @@ func _process(delta: float) -> void:
 		var grid_world_pos := getCurGridWorldPosByMouse()
 		_idle_builds_between(last_world_pos, grid_world_pos)
 
-var last_world_pos:Vector2
+var last_world_pos:Vector2i
 var left_mouse_pressed = false
 var right_mouse_pressed = false
 func _unhandled_input(event: InputEvent) -> void:
@@ -178,7 +178,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					last_world_pos = getCurGridWorldPosByMouse()
 					var poss:Array[Vector2i] = []
 					var centerPos = sw_draw_manager_2.getHoldCenter()-Vector2(64,64)
-					poss.append(last_world_pos-centerPos)
+					poss.append(last_world_pos-Vector2i(centerPos))
 					holdIdleBuilds.emit(_cur_hold_builds,poss)
 					left_mouse_pressed = true
 					#print("idle")

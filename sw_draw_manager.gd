@@ -174,7 +174,7 @@ func process_unload_chunk() -> void:
 		forDelPosArr.append(chunkIns.chunk_pos)
 		SWObjectPool.DelSWChunkDataObject(chunkIns)
 	for pos in forDelPosArr:
-		_chunkInstance.erase(pos)
+		_chunkInstance.erase(Vector2i(pos))
 
 func _updateChunkCache(viewRect:Rect2) -> void:
 	if _drawMode != SWDefine.GridDrawMode.ByContent:
