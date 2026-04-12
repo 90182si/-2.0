@@ -2,6 +2,16 @@ class_name SWHoldLayer extends SWLayer
 
 @onready var sw_draw_manager: SWDrawManager = $SWDrawManager
 @onready var sw_draw_manager_2: SWDrawManager = $SWDrawManager2
+@onready var select_rect: ColorRect = $SelectRect
+
+# 优化相关变量
+@onready var _select_throttle_timer: Timer = Timer.new()
+var _last_select_emit_time: int = 0
+var _select_emit_interval: int = 100  # 毫秒
+var _pending_select_rect: Rect2 = Rect2(0,0,0,0)
+var _last_mouse_pos_for_select: Vector2 = Vector2.ZERO
+var _select_distance_threshold: float = 15.0  # 像素
+var _last_emit_select_rect: Rect2 = Rect2(0,0,0,0)
 
 @export var _hold_shadow_define:SWBuildDefine
 
@@ -16,6 +26,7 @@ var _cur_hold_builds:Array[SWDefine.SWBuildItemDefine] = []
 
 signal holdIdleBuilds(builds,posArr)
 signal holdRemoveBuilds(posArr)
+signal selectBuildsByRect(rect)
 
 func _idle_builds_between(from_world_pos: Vector2, to_world_pos: Vector2) -> void:
 	#if not left_mouse_pressed:
@@ -83,6 +94,10 @@ func _ready() -> void:
 	sw_draw_manager_2.setDrawMode(SWDefine.GridDrawMode.HoldShadow)
 	sw_draw_manager.useName = "Hold"
 	sw_draw_manager_2.useName = "Shadow"
+	select_rect.set_visible(false)
+	
+	# 初始化优化定时器
+	_setup_select_optimization()
 	
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	sw_draw_manager.on_view_rect_changed(viewRect,speedVec)
@@ -158,6 +173,8 @@ func _process(delta: float) -> void:
 var last_world_pos:Vector2i
 var left_mouse_pressed = false
 var right_mouse_pressed = false
+var ctrl_pressed = false
+var selectRectPos:Vector2
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.is_pressed():
@@ -174,26 +191,40 @@ func _unhandled_input(event: InputEvent) -> void:
 					holdRemoveBuilds.emit(poss)
 					right_mouse_pressed = true
 			elif event.button_index == MOUSE_BUTTON_LEFT:
+				left_mouse_pressed = true
 				if _cur_hold_builds.size() > 0:
 					last_world_pos = getCurGridWorldPosByMouse()
 					var poss:Array[Vector2i] = []
 					var centerPos = sw_draw_manager_2.getHoldCenter()-Vector2(64,64)
 					poss.append(last_world_pos-Vector2i(centerPos))
 					holdIdleBuilds.emit(_cur_hold_builds,poss)
-					left_mouse_pressed = true
 					#print("idle")
+				else:
+					var world_pos = getCurGridWorldPosByMouse()
+					select_rect.position = world_pos
+					selectRectPos = world_pos
 		elif event.is_released():
 			if event.button_index == MOUSE_BUTTON_LEFT:
 				left_mouse_pressed = false
 			elif event.button_index == MOUSE_BUTTON_RIGHT:
 				right_mouse_pressed = false
 	elif event is InputEventMouseMotion:
-		if left_mouse_pressed:
+		if not ctrl_pressed:
 			var world_pos = getCurGridWorldPosByMouse()
-			_idle_builds_between(last_world_pos, world_pos)
-		elif right_mouse_pressed:
-			var world_pos = getCurGridWorldPosByMouse()
-			_idle_builds_between(last_world_pos, world_pos)
+			if left_mouse_pressed:
+				_idle_builds_between(last_world_pos, world_pos)
+			elif right_mouse_pressed:
+				_idle_builds_between(last_world_pos, world_pos)
+		else:
+			if left_mouse_pressed:
+				var world_pos_mouse := getCurWorldPosByMouse()
+				select_rect.size = abs(world_pos_mouse-selectRectPos)
+				var pos1 = selectRectPos
+				var pos2 = selectRectPos+world_pos_mouse-selectRectPos
+				select_rect.position.x = min(pos1.x,pos2.x)
+				select_rect.position.y = min(pos1.y,pos2.y)
+				# 使用优化后的选择发射
+				_handle_optimized_select_builds(world_pos_mouse, select_rect.get_rect())
 	elif event is InputEventKey:
 		if Input.is_action_pressed("Rotation"):
 			var drawData = sw_draw_manager.getHoldBuild()
@@ -203,3 +234,77 @@ func _unhandled_input(event: InputEvent) -> void:
 				data.rotation-=90
 				data.rotation%=360
 			sw_draw_manager.updataAllChunks()
+		else:
+			if Input.is_key_pressed(KEY_CTRL) and _cur_hold_builds.size() == 0:
+				ctrl_pressed = true
+				select_rect.set_visible(true)
+			else:
+				select_rect.size = Vector2(0,0)
+				select_rect.set_visible(false)
+				ctrl_pressed = false
+				# 重置优化状态
+				_last_mouse_pos_for_select = Vector2.ZERO
+				_last_emit_select_rect = Rect2(0,0,0,0)
+				_pending_select_rect = Rect2(0,0,0,0)
+
+# 优化相关函数
+func _setup_select_optimization() -> void:
+	"""设置选择优化定时器"""
+	_select_throttle_timer.wait_time = _select_emit_interval / 1000.0
+	_select_throttle_timer.one_shot = true
+	_select_throttle_timer.timeout.connect(_on_select_throttle_timeout)
+	add_child(_select_throttle_timer)
+
+func _on_select_throttle_timeout() -> void:
+	"""选择节流定时器回调"""
+	if _pending_select_rect != Rect2(0,0,0,0):
+		_emit_select_builds_signal(_pending_select_rect)
+		_pending_select_rect = Rect2(0,0,0,0)
+		_last_select_emit_time = Time.get_ticks_msec()
+
+func _handle_optimized_select_builds(mouse_pos: Vector2, current_rect: Rect2) -> void:
+	"""处理优化的选择构建信号"""
+	# 检查距离阈值
+	if _last_mouse_pos_for_select != Vector2.ZERO:
+		var distance = _last_mouse_pos_for_select.distance_to(mouse_pos)
+		if distance < _select_distance_threshold:
+			return  # 距离太近，忽略
+	
+	# 检查时间节流
+	var current_time = Time.get_ticks_msec()
+	if current_time - _last_select_emit_time >= _select_emit_interval:
+		_emit_select_builds_signal(current_rect)
+		_last_mouse_pos_for_select = mouse_pos
+		_last_select_emit_time = current_time
+	else:
+		# 保存到待处理队列
+		_pending_select_rect = current_rect
+		if not _select_throttle_timer.is_stopped():
+			_select_throttle_timer.stop()
+		_select_throttle_timer.start()
+		_last_mouse_pos_for_select = mouse_pos
+
+func _emit_select_builds_signal(rect: Rect2) -> void:
+	"""发射选择构建信号，避免重复发射相同内容"""
+	if _last_emit_select_rect == null or _last_emit_select_rect != rect:
+		selectBuildsByRect.emit(rect)
+		_last_emit_select_rect = rect
+
+# 优化参数调整函数
+func set_select_emit_interval(interval_ms: int) -> void:
+	"""动态调整选择发射间隔"""
+	_select_emit_interval = interval_ms
+	_select_throttle_timer.wait_time = interval_ms / 1000.0
+
+func set_select_distance_threshold(threshold: float) -> void:
+	"""动态调整选择距离阈值"""
+	_select_distance_threshold = threshold
+
+func get_select_optimization_stats() -> Dictionary:
+	"""获取选择优化统计信息"""
+	return {
+		"emit_interval": _select_emit_interval,
+		"distance_threshold": _select_distance_threshold,
+		"last_emit_time_ago": Time.get_ticks_msec() - _last_select_emit_time,
+		"has_pending_emit": _pending_select_rect != null
+	}

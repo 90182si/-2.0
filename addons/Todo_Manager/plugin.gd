@@ -295,9 +295,12 @@ func count_todos() -> void:
 		var count : int = 0
 		for i in _dockUI.todo_items.size():
 			count += _dockUI.todo_items[i].todos.size()
-		_dockUI.get_parent().title = "Todo (%01d)" % [count]
+		# Remove and re-add to update title
+		remove_control_from_bottom_panel(_dockUI)
+		add_control_to_bottom_panel(_dockUI, "Todo (%01d)" % [count])
 	else:
-		_dockUI.get_parent().title = "Todo"
+		remove_control_from_bottom_panel(_dockUI)
+		add_control_to_bottom_panel(_dockUI, "Todo")
 
 
 func _on_active_script_changed(script) -> void:
