@@ -7,7 +7,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec4 color = custom_data;
+	vec4 color = COLOR;
 	float beginX = custom_data.x;
 	float beginY = custom_data.y;
 	float width = custom_data.z;
@@ -34,5 +34,8 @@ void fragment() {
 	my_uv.y = mix(beginPreY, endPreY, my_uv.y);
 
 	vec4 srcColor = texture(srcImg, my_uv);
+	srcColor.rgb = srcColor.rgb*color.rgb;
+	srcColor.a = srcColor.a*color.a;
 	COLOR = srcColor;
+	//COLOR = vec4(1,1,1,1);
 }

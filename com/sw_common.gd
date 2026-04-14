@@ -1,5 +1,10 @@
 class_name SWCommon extends Node
 
+static var id = 0
+static func GenNextBuildId() -> int:
+	id += 1
+	return id
+	
 static func GetAngleBySWDir(dir:SWDefine.SW_Dir) -> int:
 	match dir:
 		SWDefine.SW_Dir.UP:

@@ -46,6 +46,12 @@ enum ChunkStatus {
 	UNLOADED
 }
 
+#建筑物状态
+enum BuildState{
+	IDLE,
+	SELECTED
+}
+
 #视口偏移与缩放
 class SWTransformData extends Object:
 	var offset:Vector2 = Vector2(0,0)
@@ -59,13 +65,17 @@ class SWTransformData extends Object:
 
 #建筑物定义
 class SWBuildItemDefine extends Object:
+	var innerData:SWBuildInnerData = null
+	var id:int
 	var buildAxisPos:Vector2i
 	var buildDefine:SWBuildDefine
 	var rotation:int = 0
 	func _init(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) -> void:
+		innerData = SWBuildInnerData.new()
 		buildAxisPos = axisPos
 		buildDefine = buildDef
 		rotation = rot
+		id = SWCommon.GenNextBuildId()
 
 # 区块数据结构（存储核心信息，不直接存储渲染节点）
 class SWDrawChunkData extends Object:
@@ -86,6 +96,34 @@ class SWDrawChunkData extends Object:
 			mesh_instance._hadDraw = false
 		mesh_instance.reUse()
 			#multi_mesh = mesh_instance.multimesh
+
+class SWBuildStateStrategy extends Object:
+	var innerData:SWBuildInnerData = null
+	func _init() -> void:
+		pass
+	func stateChanged(innerData:SWBuildInnerData,state:SWDefine.BuildState) -> void:
+		innerData.mask_color = Color(1,1,1,1)
+		
+class SWBuildStateSelected extends SWBuildStateStrategy:
+	func stateChanged(innerData:SWBuildInnerData,state:SWDefine.BuildState) -> void:
+		if state == SWDefine.BuildState.IDLE:
+			innerData.mask_color = Color(1,1,1,1)
+		elif state == SWDefine.BuildState.SELECTED:
+			innerData.mask_color = Color(0.157, 0.557, 0.906, 0.788)
+
+#建筑物内部数据
+class SWBuildInnerData extends Resource:
+	var mask_color:Color = Color(1.0, 1.0, 1.0, 1.0)
+	var buildStateStrategy:SWBuildStateStrategy = null
+	var state:SWDefine.BuildState = SWDefine.BuildState.IDLE:
+		set(s):
+			state = s
+			if buildStateStrategy:
+				buildStateStrategy.stateChanged(self,s)
+	
+	func _init() -> void:
+		buildStateStrategy = SWBuildStateSelected.new()
+	pass
 
 #每个区块保存的建筑物信息
 class SWChunkBuildData extends Object:
@@ -141,11 +179,18 @@ class SWChunkBuildData extends Object:
 
 #管理所有区块的建筑物信息
 class SWBuildManager extends Object:
+	#var buildStoreManager:Dictionary[int,SWBuildInnerData] = {}
 	var chunkMap:Dictionary[Vector2i,SWChunkBuildData] = {}
 	# 方案 3: 缓存 chunkPos→builds 映射
 	var cacheValid:bool = false
 	# 建筑变化信号
 	signal build_changed()
+	
+	########
+	func setBuildState(build:SWBuildItemDefine,state:SWDefine.BuildState) -> void:
+		build.innerData.state = state
+		pass
+	########
 	
 	func getChunkOrCreate(axisPos:Vector2i,create:bool = false) -> SWChunkBuildData:
 		var chunkPos1 = (Vector2(axisPos)/Vector2(CHUNK_SIZE*GRID_SIZE)).floor()
@@ -212,8 +257,9 @@ class SWBuildManager extends Object:
 				builds.append(build)
 		return builds
 
-	func getBuildsByRect(region:Rect2i) -> Array[SWBuildItemDefine]:
-		var builds = []
+	# 原始方法 - 保留用于对比
+	func getBuildsByRect_old(region:Rect2i) -> Array[SWBuildItemDefine]:
+		var builds:Array[SWBuildItemDefine] = []
 		for x in range(region.position.x,region.end.x,1):
 			for y in range(region.position.y,region.end.y,1):
 				var pos = Vector2i(x,y)
@@ -224,6 +270,32 @@ class SWBuildManager extends Object:
 				if build:
 					builds.append(build)
 			pass
+		return builds
+
+	# 优化后的方法 - 基于Chunk的查询
+	func getBuildsByRect(region:Rect2i) -> Array[SWBuildItemDefine]:
+		var builds:Array[SWBuildItemDefine] = []
+		
+		# 1. 计算矩形区域覆盖的所有 chunk
+		var chunk_grid_size = CHUNK_SIZE * GRID_SIZE
+		var start_chunk_pos = (Vector2(region.position) / Vector2(chunk_grid_size)).floor()
+		var end_chunk_pos = (Vector2(region.end) / Vector2(chunk_grid_size)).ceil()
+		
+		# 2. 遍历相关 chunk，而不是每个网格点
+		for chunk_x in range(start_chunk_pos.x, end_chunk_pos.x):
+			for chunk_y in range(start_chunk_pos.y, end_chunk_pos.y):
+				var chunk_world_pos = Vector2i(chunk_x, chunk_y) * chunk_grid_size
+				var chunk = getChunkOrCreate(chunk_world_pos)
+				
+				if not chunk:
+					continue
+				
+				# 3. 只检查 chunk 内的建筑
+				var chunk_builds = chunk.getAllBuilds()
+				for build in chunk_builds:
+					if region.has_point(build.buildAxisPos):
+						builds.append(build)
+		
 		return builds
 
 	func getBuildCountByChunkPos(chunkPos:Vector2i) -> int:
@@ -244,3 +316,34 @@ class SWBuildManager extends Object:
 		for chunk in chunkMap.values():
 			builds.append(chunk.getAllBuilds())
 		return builds
+
+	# 性能测试方法 - 对比原始方法和优化方法
+	func test_getBuildsByRect_performance(region:Rect2i = Rect2i(Vector2i(0, 0), Vector2i(1024, 1024))) -> void:
+		print("=== 性能测试开始 ===")
+		print("测试区域: ", region, " 大小: ", region.size)
+		
+		# 测试原方法
+		var start_time = Time.get_ticks_msec()
+		var old_results = getBuildsByRect_old(region)
+		var old_time = Time.get_ticks_msec() - start_time
+		
+		# 测试新方法
+		start_time = Time.get_ticks_msec()
+		var new_results = getBuildsByRect(region)
+		var new_time = Time.get_ticks_msec() - start_time
+		
+		# 验证结果一致性
+		var results_match = old_results.size() == new_results.size()
+		if results_match and old_results.size() > 0:
+			# 简单验证：检查前几个结果是否相同
+			for i in range(min(5, old_results.size())):
+				if old_results[i] != new_results[i]:
+					results_match = false
+					break
+		
+		print("原始方法耗时: ", old_time, "ms, 结果数: ", old_results.size())
+		print("优化方法耗时: ", new_time, "ms, 结果数: ", new_results.size())
+		print("性能提升: ", float(old_time) / float(new_time), "倍")
+		print("结果一致性: ", "✓ 通过" if results_match else "✗ 失败")
+		print("=== 性能测试结束 ===")
+		print()
