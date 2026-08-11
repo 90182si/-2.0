@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://bcrtwm1jv1lli"]
+[gd_scene load_steps=13 format=3 uid="uid://bcrtwm1jv1lli"]
 
 [ext_resource type="Script" uid="uid://cy6va8i6pjkxk" path="res://sw_layer_manager.gd" id="1_5e6f2"]
 [ext_resource type="Script" uid="uid://c7xrdlloy337v" path="res://sw_logic_scene.gd" id="1_mwese"]
@@ -34,9 +34,6 @@ useName = "Tiling"
 [node name="SWHoldLayer" type="Node" parent="SWLayerManager" unique_id=2058632708 groups=["SWLayer"]]
 script = ExtResource("6_u2kex")
 _hold_shadow_define = ExtResource("7_tshjl")
-hold_spring_frequency_hz = null
-hold_damping_ratio = null
-hold_max_substep = null
 
 [node name="SWDrawManager2" parent="SWLayerManager/SWHoldLayer" unique_id=875026827 instance=ExtResource("4_nuqc4")]
 useName = "Shadow"
@@ -44,6 +41,14 @@ useName = "Shadow"
 [node name="SWDrawManager" parent="SWLayerManager/SWHoldLayer" unique_id=1226479401 instance=ExtResource("4_nuqc4")]
 useName = "Hold"
 _drawMode = 2
+
+[node name="SelectRect" type="ColorRect" parent="SWLayerManager/SWHoldLayer" unique_id=2048588456]
+offset_left = 336.0
+offset_top = 86.0
+offset_right = 336.0
+offset_bottom = 86.0
+mouse_filter = 1
+color = Color(0.5568628, 1, 1, 0.29803923)
 
 [node name="SWZoomCom" type="Control" parent="." unique_id=270444491]
 layout_mode = 3

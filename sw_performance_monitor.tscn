@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://d0rsseeae8ejg"]
+[gd_scene load_steps=3 format=3 uid="uid://d0rsseeae8ejg"]
 
 [ext_resource type="Script" uid="uid://ctvefsrpmujfu" path="res://sw_performance_monitor.gd" id="1_xmabp"]
 [ext_resource type="PackedScene" uid="uid://bqx8crashlog" path="res://sw_crash_log_viewer.tscn" id="2_viewer"]
@@ -45,10 +45,15 @@ layout_mode = 2
 mouse_filter = 1
 text = "垂直同步"
 
-[node name="MapSwitch" type="CheckButton" parent="StatsContainer/StatsDisplay"]
+[node name="MapSwitch" type="CheckButton" parent="StatsContainer/StatsDisplay" unique_id=1982189117]
 layout_mode = 2
 mouse_filter = 1
 text = "地图显示"
+
+[node name="AsyncLoadCheck" type="CheckButton" parent="StatsContainer/StatsDisplay" unique_id=391639326]
+layout_mode = 2
+mouse_filter = 1
+text = "异步加载"
 
 [node name="CrashLogViewer" parent="." unique_id=391639325 instance=ExtResource("2_viewer")]
 visible = false

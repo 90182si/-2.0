@@ -172,7 +172,7 @@ func calBuffer() -> void:
 					index += 1
 			showCount = e.x*e.y
 		else:
-			for mapData in curMapData:
+			for mapData:SWDefine.SWBuildItemDefine in curMapData:
 				var gridPos = mapData.buildAxisPos
 				var t = Transform2D(
 					deg_to_rad(mapData.rotation),

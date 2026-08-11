@@ -200,7 +200,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					holdIdleBuilds.emit(_cur_hold_builds,poss)
 					#print("idle")
 				else:
-					var world_pos = getCurGridWorldPosByMouse()
+					var world_pos = getCurWorldPosByMouse()
 					select_rect.position = world_pos
 					selectRectPos = world_pos
 		elif event.is_released():

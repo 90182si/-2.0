@@ -20,6 +20,9 @@ func _ready() -> void:
 	if buildLayer and holdLayer:
 		holdLayer.holdIdleBuilds.connect(buildLayer.holdIdleBuilds)
 		holdLayer.holdRemoveBuilds.connect(buildLayer.holdRemoveBuilds)
+		holdLayer.selectBuildsByRect.connect(func(rect):
+			print("选中",rect)
+			buildLayer.setSelectedRect(rect))
 		
 	var build:SWBuildDefine = load("res://res/按钮.tres") as SWBuildDefine
 	var build2:SWBuildDefine = load("res://res/开关.tres") as SWBuildDefine

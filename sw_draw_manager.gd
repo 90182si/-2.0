@@ -26,6 +26,10 @@ var _viewRect:Rect2
 @export var _drawMode:SWDefine.GridDrawMode = SWDefine.GridDrawMode.Tiling
 @export_range(0, 8, 1) var preLoadwidth: int = 1
 @export_range(1, 128, 1) var max_chunks_per_frame: int = 32
+# 异步加载：ByContent 模式分帧加载区块，保证帧率；关闭则一帧加载所有（可能卡顿但立即显示）
+var async_loading: bool = true
+# 异步模式下 ByContent 每帧最多加载的区块数
+@export_range(1, 64, 1) var async_chunks_per_frame: int = 100
 #地图相关：地图资源大小
 var _blockSize = Vector2(256,256)
 #地图相关：使用建筑物信息指定地图的纹理信息
@@ -59,16 +63,39 @@ func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
 		_pending_tasks[0] = {}
 	for chunkPos in chunkPosArr:
 		if _chunkInstance.has(chunkPos):
-			_chunkInstance[chunkPos].status = SWDefine.ChunkStatus.UNLOADING
-		_pending_tasks[0][chunkPos] = false
+			# 已有区块：直接刷新内容，不走"卸载→重加载"流程，避免闪烁
+			_refreshChunkContent(chunkPos)
+		else:
+			# 新区块：加入待加载任务
+			_pending_tasks[0][chunkPos] = false
 	pass
+
+# 直接刷新已有区块的绘制内容（不卸载、不隐藏，旧内容继续显示直到新buffer就绪）
+func _refreshChunkContent(chunkPos:Vector2i) -> void:
+	if not _chunkInstance.has(chunkPos):
+		return
+	var chunkIns:SWDefine.SWDrawChunkData = _chunkInstance[chunkPos]
+	
+	if _drawMode == SWDefine.GridDrawMode.ByContent:
+		var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
+		if chunkBuilds.size() == 0:
+			# 没有建筑了，走正常卸载流程
+			chunkIns.status = SWDefine.ChunkStatus.UNLOADING
+			return
+		# 直接在已有实例上触发重绘，旧buffer继续显示
+		# 线程计算完成后通过 call_deferred 原子替换，不会出现空白帧
+		chunkIns.mesh_instance.drawMap(chunkBuilds)
+	else:
+		# Tiling等其他模式：保持原有卸载→重加载逻辑
+		chunkIns.status = SWDefine.ChunkStatus.UNLOADING
+		_pending_tasks[0][chunkPos] = false
 #TODO _blockSize根据mapDefine来设置
 
 
 
 func initDrawMap() -> void:
-	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*2
-	_blockSize = Vector2(128,128)*2
+	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*8
+	_blockSize = Vector2(128,128)*8
 	if not mapData:
 		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
 		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
@@ -88,10 +115,15 @@ func setDrawMode(drawMode:SWDefine.GridDrawMode) -> void:
 	pass
 	
 func _ready() -> void:
+	add_to_group("DrawManager")
 	if not mapDefine:
 		assert(false, "mapDefine未定义")
 	swTf = SWDefine.SWTransformData.new()
 	setDrawMode(_drawMode)
+
+# 设置异步加载模式
+func set_async_loading(enabled: bool) -> void:
+	async_loading = enabled
 
 func _process(_delta: float) -> void:
 	# 方案 2: 降低查询频率，每 3 帧执行一次
@@ -124,7 +156,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 				tasks.erase(chunkPos)
 				continue
 			mapDataArray = chunkBuilds
-		if count >= max_chunks_per_frame and _drawMode == SWDefine.GridDrawMode.Tiling:
+		if count >= _get_per_frame_limit():
 			break
 		if _chunkInstance.has(chunkPos):
 			tasks.erase(chunkPos)
@@ -160,6 +192,17 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 
 	if tasks.is_empty() and not _draging:
 		_pending_tasks.erase(priority)
+
+# 根据当前模式和异步开关计算每帧加载上限
+func _get_per_frame_limit() -> int:
+	if _drawMode == SWDefine.GridDrawMode.Tiling:
+		return max_chunks_per_frame
+	elif _drawMode == SWDefine.GridDrawMode.ByContent:
+		if async_loading:
+			return async_chunks_per_frame
+		else:
+			return 99999  # 同步模式不限制，一帧加载全部
+	return 99999
 		
 
 func process_unload_chunk() -> void:

@@ -8,6 +8,7 @@ class_name SWPerformanceMonitor extends CanvasLayer
 @onready var log_btn: Button = $StatsContainer/StatsDisplay/LogBtn
 @onready var vsync_check: CheckButton = $StatsContainer/StatsDisplay/VsyncCheck
 @onready var map_switch: CheckButton = $StatsContainer/StatsDisplay/MapSwitch
+@onready var async_load_check: CheckButton = $StatsContainer/StatsDisplay/AsyncLoadCheck
 @onready var crash_log_viewer: Node = $CrashLogViewer
 @onready var button: Button = $StatsContainer/StatsDisplay/Button
 
@@ -30,6 +31,9 @@ func _ready() -> void:
 		if _map_layer != null:
 			map_switch.button_pressed = _map_visible_default
 			_set_layer_visible_recursive(_map_layer, map_switch.button_pressed)
+	if async_load_check != null:
+		async_load_check.toggled.connect(_on_async_load_toggled)
+		async_load_check.button_pressed = true  # 默认开启异步加载
 	if log_btn != null and crash_log_viewer != null:
 		log_btn.pressed.connect(_on_log_btn_pressed)
 		crash_log_viewer.visibility_changed.connect(_on_crash_log_viewer_visibility_changed)
@@ -148,6 +152,14 @@ func _on_map_switch_toggled(toggled_on: bool) -> void:
 		_set_layer_visible_recursive(_map_layer, toggled_on)
 
 
+func _on_async_load_toggled(toggled_on: bool) -> void:
+	# 通知所有 DrawManager 切换异步加载模式
+	var draw_managers = get_tree().get_nodes_in_group("DrawManager")
+	for dm in draw_managers:
+		if dm.has_method("set_async_loading"):
+			dm.set_async_loading(toggled_on)
+
+
 func _set_layer_visible_recursive(node: Node, is_visible: bool) -> void:
 	if node is ColorRect:
 		return
@@ -166,6 +178,10 @@ func expandMonitor(expand: bool) -> void:
 	log_btn.visible = expand
 	if vsync_check != null:
 		vsync_check.visible = expand
+	if map_switch != null:
+		map_switch.visible = expand
+	if async_load_check != null:
+		async_load_check.visible = expand
 	if stats_container != null:
 		stats_container.custom_minimum_size = Vector2.ZERO
 		if expand:
