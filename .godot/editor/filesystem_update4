@@ -1,0 +1,7 @@
+res://sw_logic_scene.tscn
+res://sw_grid_draw.gdshader
+res://res/格子.tres
+res://sw_build_layer.gd
+res://com/sw_cirucit_control.gd
+res://build/sw_build_button.gd
+res://build/sw_build_item_define.gd

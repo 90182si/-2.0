@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://us85u265wmve"]
+[gd_resource type="Resource" script_class="SWBuildDefine" load_steps=5 format=3 uid="uid://us85u265wmve"]
 
-[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/SWtexture2D.tres" id="1_cwgjj"]
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集3.png" id="1_cwgjj"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_ny4gd"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_iqwy4"]
@@ -8,8 +8,15 @@ atlas = ExtResource("1_cwgjj")
 region = Rect2(128, 256, 128, 128)
 filter_clip = true
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_jnmd3"]
+atlas = ExtResource("1_cwgjj")
+region = Rect2(0, 256, 128, 128)
+filter_clip = true
+
 [resource]
 script = ExtResource("1_ny4gd")
-atlasTexture = SubResource("AtlasTexture_iqwy4")
+atlasTextureOn = SubResource("AtlasTexture_jnmd3")
+atlasTextureOff = SubResource("AtlasTexture_iqwy4")
 buildName = "电线A"
+circuit_component_type = 4
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

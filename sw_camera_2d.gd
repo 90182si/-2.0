@@ -64,26 +64,26 @@ func get_visible_rect() -> Rect2:
 	)
 
 	# （可选）如果相机有旋转，需要对矩形进行旋转修正
-	if rotation != 0:
-		# 获取矩形的四个顶点
-		var top_left = visible_rect.position
-		var top_right = visible_rect.position + Vector2(visible_rect.size.x, 0)
-		var bottom_left = visible_rect.position + Vector2(0, visible_rect.size.y)
-		var bottom_right = visible_rect.end
-
-		# 将顶点围绕相机中心旋转
-		var center = global_position
-		top_left = center + (top_left - center).rotated(rotation)
-		top_right = center + (top_right - center).rotated(rotation)
-		bottom_left = center + (bottom_left - center).rotated(rotation)
-		bottom_right = center + (bottom_right - center).rotated(rotation)
-
-		# 重新计算旋转后的包围矩形
-		var min_x = min(top_left.x, top_right.x, bottom_left.x, bottom_right.x)
-		var min_y = min(top_left.y, top_right.y, bottom_left.y, bottom_right.y)
-		var max_x = max(top_left.x, top_right.x, bottom_left.x, bottom_right.x)
-		var max_y = max(top_left.y, top_right.y, bottom_left.y, bottom_right.y)
-
-		visible_rect = Rect2(min_x, min_y, max_x - min_x, max_y - min_y)
+	#if rotation != 0:
+		## 获取矩形的四个顶点
+		#var top_left = visible_rect.position
+		#var top_right = visible_rect.position + Vector2(visible_rect.size.x, 0)
+		#var bottom_left = visible_rect.position + Vector2(0, visible_rect.size.y)
+		#var bottom_right = visible_rect.end
+#
+		## 将顶点围绕相机中心旋转
+		#var center = global_position
+		#top_left = center + (top_left - center).rotated(rotation)
+		#top_right = center + (top_right - center).rotated(rotation)
+		#bottom_left = center + (bottom_left - center).rotated(rotation)
+		#bottom_right = center + (bottom_right - center).rotated(rotation)
+#
+		## 重新计算旋转后的包围矩形
+		#var min_x = min(top_left.x, top_right.x, bottom_left.x, bottom_right.x)
+		#var min_y = min(top_left.y, top_right.y, bottom_left.y, bottom_right.y)
+		#var max_x = max(top_left.x, top_right.x, bottom_left.x, bottom_right.x)
+		#var max_y = max(top_left.y, top_right.y, bottom_left.y, bottom_right.y)
+#
+		#visible_rect = Rect2(min_x, min_y, max_x - min_x, max_y - min_y)
 
 	return visible_rect

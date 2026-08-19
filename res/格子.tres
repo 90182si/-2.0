@@ -1,10 +1,21 @@
-[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://bysn6qa4xtydj"]
+[gd_resource type="Resource" script_class="SWBuildDefine" load_steps=5 format=3 uid="uid://bysn6qa4xtydj"]
 
-[ext_resource type="Texture2D" uid="uid://cmoy4whv1c4e5" path="res://res/atlasTexture/格子texture.tres" id="1_1yvme"]
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集3.png" id="1_1yvme"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_n857i"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_lvvi0"]
+atlas = ExtResource("1_1yvme")
+region = Rect2(640, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hjfjt"]
+atlas = ExtResource("1_1yvme")
+region = Rect2(640, 128, 128, 128)
+filter_clip = true
 
 [resource]
 script = ExtResource("1_n857i")
-atlasTexture = ExtResource("1_1yvme")
+atlasTextureOn = SubResource("AtlasTexture_hjfjt")
+atlasTextureOff = SubResource("AtlasTexture_lvvi0")
 buildName = "格子"
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

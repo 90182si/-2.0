@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" load_steps=3 format=3 uid="uid://csjirldjgwi6y"]
+
+[ext_resource type="Texture2D" uid="uid://cbxfi7ncswaip" path="res://res/atlasTexture/地图texture.tres" id="1_r4pps"]
+
+[sub_resource type="GDScript" id="GDScript_h0xp7"]
+script/source = "class_name SWBuildDefine extends Resource
+
+@export var atlasTextureOn:AtlasTexture
+@export var atlasTextureOff:AtlasTexture
+@export var buildName:String
+@export var circuit_component_type:int = 0
+"
+
+[resource]
+script = SubResource("GDScript_h0xp7")
+atlasTexture = ExtResource("1_r4pps")
+buildName = "地图"
+circuit_component_type = null
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

@@ -83,12 +83,12 @@ func reUse() -> void:
 	#bufferSize=0
 	mapDataIns=null
 	
-var mapDataIns:SWDefine.SWBuildItemDefine = null
+var mapDataIns:SWBuildItemDefine = null
 var bufferSize = 0
 
-var curMapData:Array[SWDefine.SWBuildItemDefine]
+var curMapData:Array[SWBuildItemDefine]
 
-func drawMap(mapData:Array[SWDefine.SWBuildItemDefine], _flashDrawRegion:bool = false) -> void:
+func drawMap(mapData:Array[SWBuildItemDefine], _flashDrawRegion:bool = false) -> void:
 	if _hadDraw:
 		return
 	_gridSizeTmp = _gridSize * _swTransform.scale
@@ -127,13 +127,13 @@ func calBuffer() -> void:
 		if _drawMode == SWDefine.GridDrawMode.Tiling:
 			if curMapData.is_empty():
 				continue
-			var localMapDataIns:SWDefine.SWBuildItemDefine
+			var localMapDataIns:SWBuildItemDefine
 			localMapDataIns = curMapData[0]
 			for i in range(e.x):
 				for j in range(e.y):
 					var gridPos = Vector2i(_gridSizeTmp.x * i, _gridSizeTmp.y * j)
 					var t = Transform2D(
-						deg_to_rad(localMapDataIns.rotation),
+						deg_to_rad(localMapDataIns.rotation*-90),
 						Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
 								gridPos.y + _gridSizeTmp.y / 2.0))
 					
@@ -158,24 +158,32 @@ func calBuffer() -> void:
 						newBuffer[buffer_index + 11] = color.a
 						
 						# UV数据 (4个float) - 必须放在最后，INSTANCE_CUSTOM才能正确读取
-						newBuffer[buffer_index + 12] = float(localMapDataIns.buildDefine.atlasTexture.region.position.x)
-						newBuffer[buffer_index + 13] = float(localMapDataIns.buildDefine.atlasTexture.region.position.y)
-						newBuffer[buffer_index + 14] = float(localMapDataIns.buildDefine.atlasTexture.region.size.x)
-						newBuffer[buffer_index + 15] = float(localMapDataIns.buildDefine.atlasTexture.region.size.y)
+						newBuffer[buffer_index + 12] = float(localMapDataIns.drawRect.position.x)
+						newBuffer[buffer_index + 13] = float(localMapDataIns.drawRect.position.y)
+						newBuffer[buffer_index + 14] = float(localMapDataIns.drawRect.size.x)
+						newBuffer[buffer_index + 15] = float(localMapDataIns.drawRect.size.y)
 					else:
 						# 如果不使用颜色，UV数据仍然需要放在最后4个位置
-						newBuffer[buffer_index + 8] = float(localMapDataIns.buildDefine.atlasTexture.region.position.x)
-						newBuffer[buffer_index + 9] = float(localMapDataIns.buildDefine.atlasTexture.region.position.y)
-						newBuffer[buffer_index + 10] = float(localMapDataIns.buildDefine.atlasTexture.region.size.x)
-						newBuffer[buffer_index + 11] = float(localMapDataIns.buildDefine.atlasTexture.region.size.y)
+						newBuffer[buffer_index + 8] = float(localMapDataIns.drawRect.position.x)
+						newBuffer[buffer_index + 9] = float(localMapDataIns.drawRect.position.y)
+						newBuffer[buffer_index + 10] = float(localMapDataIns.drawRect.size.x)
+						newBuffer[buffer_index + 11] = float(localMapDataIns.drawRect.size.y)
 					
 					index += 1
 			showCount = e.x*e.y
 		else:
-			for mapData:SWDefine.SWBuildItemDefine in curMapData:
+			if curMapData.is_empty():
+				showCount = 0
+				call_deferred("bufferCalFinish", newBuffer, showCount)
+				planIsRunning = false
+				continue
+			var max_instances = n
+			for mapData:SWBuildItemDefine in curMapData:
+				if index >= max_instances:
+					break
 				var gridPos = mapData.buildAxisPos
 				var t = Transform2D(
-					deg_to_rad(mapData.rotation),
+					deg_to_rad(mapData.rotation*-90),
 					Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
 							gridPos.y + _gridSizeTmp.y / 2.0))
 				
@@ -200,29 +208,29 @@ func calBuffer() -> void:
 					newBuffer[buffer_index + 11] = color.a
 					
 					# UV数据 (4个float) - 必须放在最后，INSTANCE_CUSTOM才能正确读取
-					newBuffer[buffer_index + 12] = float(mapData.buildDefine.atlasTexture.region.position.x)
-					newBuffer[buffer_index + 13] = float(mapData.buildDefine.atlasTexture.region.position.y)
-					newBuffer[buffer_index + 14] = float(mapData.buildDefine.atlasTexture.region.size.x)
-					newBuffer[buffer_index + 15] = float(mapData.buildDefine.atlasTexture.region.size.y)
+					newBuffer[buffer_index + 12] = float(mapData.drawRect.position.x)
+					newBuffer[buffer_index + 13] = float(mapData.drawRect.position.y)
+					newBuffer[buffer_index + 14] = float(mapData.drawRect.size.x)
+					newBuffer[buffer_index + 15] = float(mapData.drawRect.size.y)
 				else:
 					# 如果不使用颜色，UV数据仍然需要放在最后4个位置
-					newBuffer[buffer_index + 8] = float(mapData.buildDefine.atlasTexture.region.position.x)
-					newBuffer[buffer_index + 9] = float(mapData.buildDefine.atlasTexture.region.position.y)
-					newBuffer[buffer_index + 10] = float(mapData.buildDefine.atlasTexture.region.size.x)
-					newBuffer[buffer_index + 11] = float(mapData.buildDefine.atlasTexture.region.size.y)
+					newBuffer[buffer_index + 8] = float(mapData.drawRect.position.x)
+					newBuffer[buffer_index + 9] = float(mapData.drawRect.position.y)
+					newBuffer[buffer_index + 10] = float(mapData.drawRect.size.x)
+					newBuffer[buffer_index + 11] = float(mapData.drawRect.size.y)
 				
 				index += 1
-			showCount = curMapData.size()
+			showCount = index
 		# 使用 call_deferred 传递数据，但 n 通过参数传递
 		call_deferred("bufferCalFinish", newBuffer, showCount)
 		planIsRunning = false
 
 # 获取实例颜色的辅助函数
-func _get_instance_color(mapData:SWDefine.SWBuildItemDefine, grid_x:float, grid_y:float) -> Color:
-	# 默认颜色方案 - 可以根据需要修改
-	var default_color = Color.WHITE
-	
-	return mapData.innerData.mask_color
+func _get_instance_color(mapData:SWBuildItemDefine, grid_x:float, grid_y:float) -> Color:
+	var color = mapData.innerData.mask_color
+	if _drawMode == SWDefine.GridDrawMode.ByHold:
+		color.a *= 0.85
+	return color
 	## 根据建筑状态（IDLE/SELECTED）返回颜色
 	#if mapData.innerData and mapData.innerData.has("state"):
 		#match mapData.innerData.state:

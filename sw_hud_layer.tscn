@@ -1,7 +1,7 @@
-[gd_scene format=3 uid="uid://08awj5donysx"]
+[gd_scene load_steps=11 format=3 uid="uid://08awj5donysx"]
 
 [ext_resource type="Script" uid="uid://cn8f067d4ut35" path="res://sw_hud_layer.gd" id="1_vnhh4"]
-[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/SWtexture2D.tres" id="2_kmd2l"]
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/atlasTexture/SWtexture2D.tres" id="2_kmd2l"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_kmd2l"]
 atlas = ExtResource("2_kmd2l")
@@ -52,11 +52,12 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -26.0
-offset_top = -8.0
-offset_right = 26.0
+offset_left = -261.0
+offset_top = -61.0
+offset_right = 261.0
 grow_horizontal = 2
 grow_vertical = 0
+mouse_filter = 0
 
 [node name="MarginContainer" type="MarginContainer" parent="HBoxContainer" unique_id=1442071930]
 layout_mode = 2
@@ -82,7 +83,6 @@ alignment = 1
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_kmd2l")
 ignore_texture_size = true
 stretch_mode = 0
@@ -91,7 +91,6 @@ stretch_mode = 0
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_bonik")
 ignore_texture_size = true
 stretch_mode = 0
@@ -100,7 +99,6 @@ stretch_mode = 0
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_ie8fv")
 ignore_texture_size = true
 stretch_mode = 0
@@ -109,7 +107,6 @@ stretch_mode = 0
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_w0m7m")
 ignore_texture_size = true
 stretch_mode = 0
@@ -118,7 +115,6 @@ stretch_mode = 0
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_80dyw")
 ignore_texture_size = true
 stretch_mode = 0
@@ -127,7 +123,6 @@ stretch_mode = 0
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_hmxvy")
 ignore_texture_size = true
 stretch_mode = 0
@@ -136,7 +131,6 @@ stretch_mode = 0
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_ygg11")
 ignore_texture_size = true
 stretch_mode = 0
@@ -145,7 +139,6 @@ stretch_mode = 0
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 texture_normal = SubResource("AtlasTexture_smq7v")
 ignore_texture_size = true
 stretch_mode = 0
@@ -153,13 +146,11 @@ stretch_mode = 0
 [node name="保存" type="Button" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=1764650912]
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
-mouse_filter = 1
 theme_override_font_sizes/font_size = 20
 text = "保存"
 
 [node name="加载" type="Button" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=236887820]
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
-mouse_filter = 1
 theme_override_font_sizes/font_size = 20
 text = "加载"

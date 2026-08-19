@@ -1,0 +1,76 @@
+[gd_scene load_steps=2 format=3 uid="uid://cheae2ttahaku"]
+
+[ext_resource type="Script" uid="uid://bgxq6fvfoosw7" path="res://ui/sw_load_dialog.gd" id="1_script"]
+
+[node name="SWLoadDialog" type="Window" unique_id=1913368594]
+process_mode = 3
+visible = false
+script = ExtResource("1_script")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=527408853]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer" unique_id=1040549820]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 130
+
+[node name="LeftPanel" type="VBoxContainer" parent="VBoxContainer/HSplitContainer" unique_id=1852233922]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ListLabel" type="Label" parent="VBoxContainer/HSplitContainer/LeftPanel" unique_id=1174918947]
+layout_mode = 2
+text = "存档列表"
+
+[node name="SaveList" type="ItemList" parent="VBoxContainer/HSplitContainer/LeftPanel" unique_id=1826212495]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="RightPanel" type="VBoxContainer" parent="VBoxContainer/HSplitContainer" unique_id=1798171595]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ThumbnailLabel" type="Label" parent="VBoxContainer/HSplitContainer/RightPanel" unique_id=20489136]
+layout_mode = 2
+
+[node name="Thumbnail" type="TextureRect" parent="VBoxContainer/HSplitContainer/RightPanel" unique_id=617962015]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+expand_mode = 1
+stretch_mode = 5
+
+[node name="BtnHBox" type="HBoxContainer" parent="VBoxContainer" unique_id=1980080629]
+layout_mode = 2
+alignment = 2
+
+[node name="Spacer" type="Control" parent="VBoxContainer/BtnHBox" unique_id=1764056471]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DeleteBtn" type="Button" parent="VBoxContainer/BtnHBox" unique_id=841648396]
+custom_minimum_size = Vector2(80, 32)
+layout_mode = 2
+disabled = true
+text = "删除"
+
+[node name="ConfirmBtn" type="Button" parent="VBoxContainer/BtnHBox" unique_id=1587330891]
+custom_minimum_size = Vector2(80, 32)
+layout_mode = 2
+text = "确定"
+
+[node name="CancelBtn" type="Button" parent="VBoxContainer/BtnHBox" unique_id=1351790136]
+custom_minimum_size = Vector2(80, 32)
+layout_mode = 2
+text = "取消"

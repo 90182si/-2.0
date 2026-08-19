@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cfxso13u01abs" path="res://sw_multi_mesh_instance_2d.gd" id="1_k78qt"]
 [ext_resource type="Shader" uid="uid://dp60b6pee8rr7" path="res://sw_grid_draw.gdshader" id="1_ki1jd"]
-[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/SWtexture2D.tres" id="2_ampn7"]
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/atlasTexture/SWtexture2D.tres" id="2_ampn7"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ampn7"]
 shader = ExtResource("1_ki1jd")

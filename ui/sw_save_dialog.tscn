@@ -1,0 +1,58 @@
+[gd_scene load_steps=2 format=3 uid="uid://b4uejhak7veu7"]
+
+[ext_resource type="Script" uid="uid://b17g6pnp4atoq" path="res://ui/sw_save_dialog.gd" id="1_script"]
+
+[node name="SWSaveDialog" type="Window" unique_id=1878612033]
+process_mode = 3
+oversampling_override = 1.0
+visible = false
+script = ExtResource("1_script")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1910267578]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="FormGrid" type="GridContainer" parent="VBoxContainer" unique_id=386761601]
+layout_mode = 2
+columns = 2
+
+[node name="NameLabel" type="Label" parent="VBoxContainer/FormGrid" unique_id=976287402]
+layout_mode = 2
+text = "存档名称:"
+
+[node name="NameEdit" type="LineEdit" parent="VBoxContainer/FormGrid" unique_id=681679066]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "输入存档名称"
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer/FormGrid" unique_id=33200135]
+layout_mode = 2
+
+[node name="Spacer" type="Control" parent="VBoxContainer/FormGrid" unique_id=876673784]
+layout_mode = 2
+
+[node name="BtnHBox" type="HBoxContainer" parent="VBoxContainer" unique_id=268613183]
+layout_mode = 2
+alignment = 2
+
+[node name="Spacer2" type="Control" parent="VBoxContainer/BtnHBox" unique_id=890848325]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ConfirmBtn" type="Button" parent="VBoxContainer/BtnHBox" unique_id=1905940060]
+custom_minimum_size = Vector2(80, 32)
+layout_mode = 2
+text = "确定"
+
+[node name="CancelBtn" type="Button" parent="VBoxContainer/BtnHBox" unique_id=1425202971]
+custom_minimum_size = Vector2(80, 32)
+layout_mode = 2
+text = "取消"

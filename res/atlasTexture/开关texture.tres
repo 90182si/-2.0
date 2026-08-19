@@ -1,8 +1,9 @@
-[gd_resource type="AtlasTexture" format=3 uid="uid://bi4ewmqyfj8oc"]
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://bi4ewmqyfj8oc"]
 
-[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/SWtexture2D.tres" id="1_op6p6"]
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/atlasTexture/SWtexture2D.tres" id="1_op6p6"]
 
 [resource]
+resource_local_to_scene = true
 atlas = ExtResource("1_op6p6")
-region = Rect2(768, 0, 128, 128)
+region = Rect2(256, 128, 128, 128)
 filter_clip = true

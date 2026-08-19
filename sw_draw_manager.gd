@@ -33,17 +33,17 @@ var async_loading: bool = true
 #地图相关：地图资源大小
 var _blockSize = Vector2(256,256)
 #地图相关：使用建筑物信息指定地图的纹理信息
-var mapData:SWDefine.SWBuildItemDefine = null
+var mapData:SWBuildItemDefine = null
 #地图相关：最终传入绘制数据
-var mapDataArray:Array[SWDefine.SWBuildItemDefine] = []
+var mapDataArray:Array[SWBuildItemDefine] = []
 #地图相关：地图资源定义
 @export var mapDefine:SWBuildDefine = null
 
-var sw_build_manager:SWDefine.SWBuildManager = null
+var sw_build_manager:SWBuildManager = null
 # 方案 2: 降低查询频率
 var _queryFrameInterval:int = 1  # 改为每帧更新，消除绘制锯齿感
 var _frameCounter:int = 0
-func setBuildManager(buildManager:SWDefine.SWBuildManager) -> void:
+func setBuildManager(buildManager:SWBuildManager) -> void:
 	sw_build_manager = buildManager
 	# 监听建筑变化，标记缓存过期
 	if sw_build_manager.build_changed.is_connected(_on_build_changed) == false:
@@ -97,8 +97,8 @@ func initDrawMap() -> void:
 	_chunkSize=SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE*8
 	_blockSize = Vector2(128,128)*8
 	if not mapData:
-		mapData = SWDefine.SWBuildItemDefine.new(Vector2i(0,0),mapDefine)
-		mapData.rotation = SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
+		mapData = SWDefine.SWBuildCreator(Vector2i(0,0),mapDefine)
+		mapData.rotation = SWDefine.SW_Dir.UP#SWCommon.GetAngleBySWDir(SWDefine.SW_Dir.UP)
 		mapDataArray.append(mapData)
 	
 func initDrawContent() -> void:
@@ -145,17 +145,29 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 	var tasks: Dictionary = _pending_tasks[priority]
 	var count = 0
 	var keys := tasks.keys()
-	#print(useName,"keys size:",keys.size())
+	var originalMapDataArray = mapDataArray
 	for chunkPos in keys:
 		if not _curViewRect.has_point(chunkPos) and (_drawMode != SWDefine.GridDrawMode.ByHold and _drawMode != SWDefine.GridDrawMode.HoldShadow):
 			_pending_tasks[priority].erase(chunkPos)
 			continue
+		var chunkMapDataArray = originalMapDataArray
 		if _drawMode == SWDefine.GridDrawMode.ByContent:
 			var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
 			if chunkBuilds.size() == 0:
 				tasks.erase(chunkPos)
 				continue
-			mapDataArray = chunkBuilds
+			chunkMapDataArray = chunkBuilds
+		elif _drawMode == SWDefine.GridDrawMode.ByHold or _drawMode == SWDefine.GridDrawMode.HoldShadow:
+			var filteredArray:Array[SWBuildItemDefine] = []
+			for build in originalMapDataArray:
+				var buildChunkPos = SWCommon.GetChunkPos(build.buildAxisPos)
+				if buildChunkPos == chunkPos:
+					filteredArray.append(build)
+			if filteredArray.size() == 0:
+				tasks.erase(chunkPos)
+				continue
+			chunkMapDataArray = filteredArray
+			
 		if count >= _get_per_frame_limit():
 			break
 		if _chunkInstance.has(chunkPos):
@@ -166,18 +178,17 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		chunkIns.chunk_pos = chunkPos
 		if _drawMode == SWDefine.GridDrawMode.ByContent:
 			swTf.offset = Vector2(0,0)
+		elif _drawMode == SWDefine.GridDrawMode.ByHold or _drawMode == SWDefine.GridDrawMode.HoldShadow:
+			swTf.offset = lastMousePos - _center_offset
 		else:
 			swTf.offset = Vector2(chunkPos.x,chunkPos.y)
 			
 		chunkIns.mesh_instance.setMeshSize(_blockSize)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		chunkIns.mesh_instance.setDrawMode(_drawMode)
-		chunkIns.mesh_instance.drawMap(mapDataArray)
+		chunkIns.mesh_instance.drawMap(chunkMapDataArray)
 		
 		_chunkInstance[chunkPos] = chunkIns
-		# 对象池复用时 mesh_instance 可能仍在树上：
-		# - 已经在当前 SWDrawManager 下：不要重复 add_child
-		# - 在其他父节点下：先脱离再挂到当前节点
 		var mi: SWMultiMeshInstance2D = chunkIns.mesh_instance
 		var mi_parent: Node = mi.get_parent()
 		if mi_parent != null and mi_parent != self:
@@ -189,7 +200,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		mi.set_process(true)
 		chunkIns.status = SWDefine.ChunkStatus.FULLY_LOADED
 		tasks.erase(chunkPos)
-
+	mapDataArray = originalMapDataArray
 	if tasks.is_empty() and not _draging:
 		_pending_tasks.erase(priority)
 
@@ -310,6 +321,28 @@ func getHoldBuild() -> SWDrawData:
 	return _drawData
 func getHoldCenter() -> Vector2:
 	return _center_offset
+
+func recalcHoldCenter() -> void:
+	if not _drawData:
+		return
+	var centerRect:Rect2=Rect2(0,0,0,0)
+	var caled = false
+	var mapDataArray = _drawData.mapDatas
+	var minPos:Vector2
+	var maxPos:Vector2
+	for mapData in mapDataArray:
+		if not caled:
+			caled = true
+			minPos = Vector2(mapData.buildAxisPos)
+			maxPos = Vector2(mapData.buildAxisPos)+_blockSize
+		else:
+			minPos.x = min(mapData.buildAxisPos.x,minPos.x)
+			minPos.y = min(mapData.buildAxisPos.y,minPos.y)
+			maxPos.x = max(mapData.buildAxisPos.x+_blockSize.x,maxPos.x)
+			maxPos.y = max(mapData.buildAxisPos.y+_blockSize.y,maxPos.y)
+	centerRect.position = minPos
+	centerRect.end = maxPos
+	_center_offset = centerRect.get_center()
 	
 func setHoldBuild(drawData:SWDrawData) -> void:
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
@@ -344,10 +377,11 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 		_draging = false
 		_pending_tasks.clear()
 	pass
-
+var lastMousePos:Vector2 = Vector2(0,0)
 func setHoldBuildsPos(mousePos:Vector2) -> void:
 	if not _draging:
 		return
+	lastMousePos = mousePos
 	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
 		swTf.offset = mousePos - _center_offset
 		if _drawMode == SWDefine.GridDrawMode.HoldShadow:

@@ -1,10 +1,22 @@
-[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://cdimxr0tjor41"]
+[gd_resource type="Resource" script_class="SWBuildDefine" load_steps=5 format=3 uid="uid://cdimxr0tjor41"]
 
-[ext_resource type="Texture2D" uid="uid://bi4ewmqyfj8oc" path="res://res/atlasTexture/开关texture.tres" id="1_fjpic"]
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集3.png" id="1_fjpic"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_hw82b"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_peapy"]
+atlas = ExtResource("1_fjpic")
+region = Rect2(768, 0, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_nkwd7"]
+atlas = ExtResource("1_fjpic")
+region = Rect2(768, 128, 128, 128)
+filter_clip = true
 
 [resource]
 script = ExtResource("1_hw82b")
-atlasTexture = ExtResource("1_fjpic")
+atlasTextureOn = SubResource("AtlasTexture_nkwd7")
+atlasTextureOff = SubResource("AtlasTexture_peapy")
 buildName = "开关"
+circuit_component_type = 2
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

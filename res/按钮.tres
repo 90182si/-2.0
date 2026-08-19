@@ -1,15 +1,22 @@
-[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://k5gnnkk8y6t5"]
+[gd_resource type="Resource" script_class="SWBuildDefine" load_steps=5 format=3 uid="uid://k5gnnkk8y6t5"]
 
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_crm78"]
-[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/SWtexture2D.tres" id="1_my05a"]
+[ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集3.png" id="1_my05a"]
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_1p3qu"]
+[sub_resource type="AtlasTexture" id="AtlasTexture_my05a"]
 atlas = ExtResource("1_my05a")
 region = Rect2(256, 128, 128, 128)
 filter_clip = true
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_1p3qu"]
+atlas = ExtResource("1_my05a")
+region = Rect2(256, 0, 128, 128)
+filter_clip = true
+
 [resource]
 script = ExtResource("1_crm78")
-atlasTexture = SubResource("AtlasTexture_1p3qu")
+atlasTextureOn = SubResource("AtlasTexture_1p3qu")
+atlasTextureOff = SubResource("AtlasTexture_my05a")
 buildName = "按钮"
+circuit_component_type = 1
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"
