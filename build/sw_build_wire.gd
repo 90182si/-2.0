@@ -1,4 +1,4 @@
-class_name SWBuildLed extends SWBuildItemDefine
+class_name SWBuildWire extends SWBuildItemDefine
 
 func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
 	var retArr = []
@@ -12,15 +12,29 @@ func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
 		if nextBuild:
 			var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
 			var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
-			#下一个端口必须是输出口，输入口为1
-			if (nextBuild.canConBit&v) > 0 and (nextBuild.portDefine&v) > 0:
+			#下一个端口必须是输入口，输入口为1
+			if (nextBuild.canConBit&v) > 0 and (nextBuild.portDefine&v) == 0:
 				setPortCon(dir)
 				linkedID[dir] = nextBuild.id
 				nextBuild.setPortCon(antiDir)
 				nextBuild.linkedID[antiDir] = id
 				#{{"from":id,"dir":dir}:{"to":nextBuild.id}}
-				#linkMap[{"from":nextBuild.id,"dir":antiDir,"name":nextBuild.buildDefine.buildName}]={"to":id,"name":buildDefine.buildName,"signal":'='}
-				#linkBuilds.append(nextBuild)
+				linkMap[{"from":id,"dir":dir,"name":buildDefine.buildName}]={"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}
+				linkBuilds.append(nextBuild)
+				#if nextBuild.portValue&v > 0:
+					#portValue = 1<<(3-dir)
+					#drawRect = buildDefine.atlasTextureOn.region
+				#else:
+					#portValue = 0b0000
+					#drawRect = buildDefine.atlasTextureOff.region
+			elif (nextBuild.canConBit&v) > 0 and (nextBuild.portDefine&v) > 0:
+				#setPortCon(dir)
+				#linkedID[dir] = nextBuild.id
+				#nextBuild.setPortCon(antiDir)
+				#nextBuild.linkedID[antiDir] = id
+				#{{"from":id,"dir":dir}:{"to":nextBuild.id}}
+				#linkMap[{"from":id,"dir":dir,"name":buildDefine.buildName}]={"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}
+				linkBuilds.append(nextBuild)
 				if nextBuild.portValue&v > 0:
 					portValue = 1<<(3-dir)
 					drawRect = buildDefine.atlasTextureOn.region
@@ -39,13 +53,8 @@ func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildIt
 		if nextBuild:
 			var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
 			var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
-			#下一个端口必须是输出口，输入口为1
 			if (nextBuild.canConBit&v) > 0:
-				if (nextBuild.portDefine&0b10000) == 0 and (nextBuild.portDefine&v) > 0:
-					linkedBuilds.append(nextBuild)
-				elif (nextBuild.portDefine&0b10000) > 0:
-					linkedBuilds.append(nextBuild)
-					
+				linkedBuilds.append(nextBuild)
 	return linkedBuilds
 	
 func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
@@ -56,5 +65,5 @@ func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 
 func setPortFlag() -> void:
 	canConBit = 0b1111
-	portDefine = 0b0000
+	portDefine = 0b10000
 	portValue = 0b0000

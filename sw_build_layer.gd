@@ -131,6 +131,7 @@ func holdIdleBuilds(builds:Array[SWBuildItemDefine],poss:Array[Vector2i]) -> voi
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 	if sw_circuit_control:
 		sw_circuit_control.updateBuildCircuit(successBuilds)
+		sw_draw_manager.updataChunks(notifyChunkPosArr)
 
 func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
 	if selectedBuilds.size() != 0:
@@ -269,8 +270,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				var grid_pos:Vector2i = SWCommon.GetGridPos(Vector2i(world_pos))
 				var build = sw_build_manager.getBuild(grid_pos)
 				if build and (build.comp_type == SWDefine.CircuitComponentType.BUTTON or build.comp_type == SWDefine.CircuitComponentType.SWITCH):
-					build.onPressed(true)
-					var notifyChunkPosArr = getNotifyChunkPosArr([build])
+					if build.comp_type == SWDefine.CircuitComponentType.BUTTON:
+						build.onPressed(true)
+					elif build.comp_type == SWDefine.CircuitComponentType.SWITCH:
+						build.onPressed(!build.pressed)
+					var newBuilds = sw_circuit_control.buildSignalChanged(build)
+					newBuilds.append(build)
+					#var notifyChunkPosArr = getNotifyChunkPosArr([build])
+					var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
 					sw_draw_manager.updataChunks(notifyChunkPosArr)
 					if build.comp_type == SWDefine.CircuitComponentType.BUTTON:
 						_pressed_button_pos = grid_pos
@@ -282,8 +289,13 @@ func _unhandled_input(event: InputEvent) -> void:
 					var grid_pos:Vector2i = SWCommon.GetGridPos(Vector2i(_pressed_button_pos))
 					var build = sw_build_manager.getBuild(grid_pos)
 					if build and (build.comp_type == SWDefine.CircuitComponentType.BUTTON or build.comp_type == SWDefine.CircuitComponentType.SWITCH):
-						build.onPressed(false)
-						var notifyChunkPosArr = getNotifyChunkPosArr([build])
+						if build.comp_type == SWDefine.CircuitComponentType.BUTTON:
+							build.onPressed(false)
+						elif build.comp_type == SWDefine.CircuitComponentType.SWITCH:
+							pass
+						var newBuilds = sw_circuit_control.buildSignalChanged(build)
+						newBuilds.append(build)
+						var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
 						sw_draw_manager.updataChunks(notifyChunkPosArr)
 					_pressed_button_pos = Vector2i(-9999, -9999)
 

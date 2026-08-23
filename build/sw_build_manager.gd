@@ -32,6 +32,7 @@ func addBuild(build:SWBuildItemDefine) -> bool:
 		return false
 	var result = curChunk.addBuild(build)
 	if result:
+		buildStoreManager[build.id] = build
 		build_changed.emit()
 	return result
 	

@@ -186,6 +186,9 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) 
 		"按钮":return SWBuildButton.new(axisPos,buildDef,rot)
 		"灯泡":return SWBuildLed.new(axisPos,buildDef,rot)
 		"非门":return SWBuildNot.new(axisPos,buildDef,rot)
+		"电线A":return SWBuildWire.new(axisPos,buildDef,rot)
+		"电线B":return SWBuildWire.new(axisPos,buildDef,rot)
+		"开关":return SWBuildButton.new(axisPos,buildDef,rot)
 		_:return SWBuildNone.new(axisPos,buildDef,rot)
 	return null
 
@@ -262,6 +265,9 @@ class SWCircuitUnitData extends RefCounted:
 class SWCircuitData extends RefCounted:
 	var circuitID:int
 	var buildIdArr:Array[int] = []
+	var signalMaps = {}
+	var signalAntiMaps = {}
+	var signalValues = {}
 	func _init() -> void:
 		circuitID = SWCommon.GenNextBuildId()
 

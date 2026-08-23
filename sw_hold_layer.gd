@@ -237,7 +237,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					holdRemoveBuilds.emit(poss)
 					right_mouse_pressed = true
 			elif event.button_index == MOUSE_BUTTON_LEFT:
-				left_mouse_pressed = false
+				left_mouse_pressed = true
 				if _cur_hold_builds.size() > 0:
 					var world_pos = getCurWorldPosByMouse()
 					var anchorPos = _get_anchor_pos(world_pos)
@@ -249,6 +249,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					holdIdleBuilds.emit(_cur_hold_builds,poss)
 					if _cur_hold_builds.size() > 1:
 						left_mouse_pressed = false
+					get_viewport().set_input_as_handled()
 					#print("idle")
 				else:
 					var world_pos = getCurWorldPosByMouse()
@@ -338,7 +339,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_last_mouse_pos_for_select = Vector2.ZERO
 				_last_emit_select_rect = Rect2(0,0,0,0)
 				_pending_select_rect = Rect2(0,0,0,0)
-
+	
 # 优化相关函数
 func _setup_select_optimization() -> void:
 	"""设置选择优化定时器"""

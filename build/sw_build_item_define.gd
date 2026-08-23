@@ -9,6 +9,9 @@ var buildDefine:SWBuildDefine
 var canConBit:int = 0
 #0b1111代表四边都是输出口
 var portDefine:int = 0
+#0b1111代表四边都输出高电平
+var portValue:int = 0
+
 var rotation:SWDefine.SW_Dir = 0:
 	set(new_value):
 		rotation = new_value
@@ -59,9 +62,32 @@ func bPortCanCon(dir:SWDefine.SW_Dir) -> bool:
 func setPortCon(dir:SWDefine.SW_Dir) -> void:
 	linkedPort|=(1<<dir)
 
+func resetPortCon() -> void:
+	linkedPort = 0
+
 #@abstract
 func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
 	return []
 
-func buildStateChanged() -> void:
+func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 	drawRect = buildDefine.atlasTextureOff.region
+
+func reCalSignals(swBuildManager:SWBuildManager) -> void:
+	var reIds = circuit.signalAntiMaps[id]
+	var v = 0
+	var f = 1
+	for reId in reIds:
+		var vs = circuit.signalMaps[reId][id]["signal"]
+		var k = circuit.signalValues[reId]
+		if vs == '!':
+			k = 1 - circuit.signalValues[reId]
+		if f:
+			f=0
+			v = k
+		else:
+			v &= k
+	if v > 0:
+		buildStateChanged(SWDefine.CircuitSignal.HIGH)
+	else:
+		buildStateChanged(SWDefine.CircuitSignal.LOW)
+	pass
