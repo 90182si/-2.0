@@ -32,7 +32,7 @@ var drawRect:Rect2
 
 var linkedPort:int = 0
 #端口连接的id
-var linkedID:Dictionary[SWDefine.SW_Dir,int] = {}
+#var linkedID:Dictionary[SWDefine.SW_Dir,int] = {}
 
 func _init(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) -> void:
 	innerData = SWDefine.SWBuildInnerData.new()
@@ -56,10 +56,10 @@ func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array
 func onPressed(_pressed:bool) -> void:
 	pass
 
-func bPortCanCon(dir:SWDefine.SW_Dir) -> bool:
-	return (linkedPort&(1<<dir)) == 0
+func bLinkedPort(dir:SWDefine.SW_Dir) -> bool:
+	return (linkedPort&(1<<dir)) > 0
 
-func setPortCon(dir:SWDefine.SW_Dir) -> void:
+func setLinkedPort(dir:SWDefine.SW_Dir) -> void:
 	linkedPort|=(1<<dir)
 
 func resetPortCon() -> void:
@@ -70,17 +70,17 @@ func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildIt
 	return []
 
 func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
-	drawRect = buildDefine.atlasTextureOff.region
+	return
 
 func reCalSignals(swBuildManager:SWBuildManager) -> void:
-	var reIds = circuit.signalAntiMaps[id]
 	var v = 0
 	var f = 1
-	for reId in reIds:
-		var vs = circuit.signalMaps[reId][id]["signal"]
-		var k = circuit.signalValues[reId]
+	var depends = circuit.sourceSignalMap[id]
+	for dependItem in depends:
+		var vs = dependItem["signal"]
+		var k = circuit.inputValues[dependItem["from"]] > 0
 		if vs == '!':
-			k = 1 - circuit.signalValues[reId]
+			k = 1 - k
 		if f:
 			f=0
 			v = k
@@ -91,3 +91,15 @@ func reCalSignals(swBuildManager:SWBuildManager) -> void:
 	else:
 		buildStateChanged(SWDefine.CircuitSignal.LOW)
 	pass
+
+func isPort(value:int) -> bool:
+	return canConBit&value > 0
+
+func portIsOutput(value:int) -> bool:
+	return portDefine&value > 0
+	
+func portIsInput(value:int) -> bool:
+	return portDefine&value == 0
+
+func isWireBuild() -> bool:
+	return portDefine&0b10000 > 0

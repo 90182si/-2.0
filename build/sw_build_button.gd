@@ -1,83 +1,40 @@
 class_name SWBuildButton extends SWBuildItemDefine
 
 func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
-	var nextPos:Vector2i = buildAxisPos + Vector2i(0,-1)*128
-	var dir:SWDefine.SW_Dir = SWDefine.SW_Dir.UP
-	match rotation:
-		0:
-			pass
-		1:
-			nextPos = buildAxisPos + Vector2i(1,0)*128
-			dir = SWDefine.SW_Dir.RIGHT
-			pass
-		2:
-			nextPos = buildAxisPos + Vector2i(0,1)*128
-			dir = SWDefine.SW_Dir.DOWN
-			pass
-		3:
-			nextPos = buildAxisPos + Vector2i(-1,0)*128
-			dir = SWDefine.SW_Dir.LEFT
-			pass
-		_:
-			pass
-	if not bPortCanCon(dir):
+	var dir:SWDefine.SW_Dir = rotation
+	if bLinkedPort(dir):
 		return [[],{}]
-	var retArr = []
-	var linkBuilds = []
-	var linkMap = {}
-	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
-	if nextBuild:
-		var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
-		var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
-		#下一个端口必须是输入口，输入口为0
-		if (nextBuild.canConBit&v) > 0:
-			if ((nextBuild.portDefine&0b10000) == 0 and (nextBuild.portDefine&v) == 0) or (nextBuild.portDefine&0b10000) > 0:
-				setPortCon(dir)
-				linkedID[dir] = nextBuild.id
-				nextBuild.setPortCon(antiDir)
-				nextBuild.linkedID[antiDir] = id
-				linkMap = {{"from":id,"dir":dir,"name":buildDefine.buildName}:{"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}}
-				linkBuilds.append(nextBuild)
-	retArr.append(linkBuilds)
-	retArr.append(linkMap)
-	return retArr
-
-func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
-	var nextPos:Vector2i = buildAxisPos + Vector2i(0,-1)*128
-	var dir:SWDefine.SW_Dir = SWDefine.SW_Dir.UP
-	match rotation:
-		0:
-			pass
-		1:
-			nextPos = buildAxisPos + Vector2i(1,0)*128
-			dir = SWDefine.SW_Dir.RIGHT
-			pass
-		2:
-			nextPos = buildAxisPos + Vector2i(0,1)*128
-			dir = SWDefine.SW_Dir.DOWN
-			pass
-		3:
-			nextPos = buildAxisPos + Vector2i(-1,0)*128
-			dir = SWDefine.SW_Dir.LEFT
-			pass
-		_:
-			pass
-	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
-	if nextBuild:
-		var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
-		var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
-		#下一个端口必须是输入口，输入口为0
-		if (nextBuild.canConBit&v) > 0:
-			if (nextBuild.portDefine&0b10000) == 0 and (nextBuild.portDefine&v) > 0:
-				return [nextBuild]
-			elif (nextBuild.portDefine&0b10000) > 0:
-				return [nextBuild]
-		#if (nextBuild.canConBit&v) > 0 and (nextBuild.portDefine|v) == 0:
-			#return [nextBuild]
-	return []
+	var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,rotation)
+	if nextBuild == null:
+		return [[],{}]
+	var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
+	setLinkedPort(dir)
+	nextBuild.setLinkedPort(antiDir)
+	return [[nextBuild],{{"from":id,"dir":dir,"name":buildDefine.buildName}:{"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}}]
 	
-func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
-	pass
+func getDirBuild(swBuildManager:SWBuildManager,rot:SWDefine.SW_Dir) -> SWBuildItemDefine:
+	var nextPos:Vector2i = buildAxisPos + 128*SWDefine.dir_to_vec(rot)
+	var dir:SWDefine.SW_Dir = rot
+	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
+	if nextBuild == null:
+		return null
+	var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
+	var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
+	if not nextBuild.isPort(v):
+		return null
+	if nextBuild.bLinkedPort(v):
+		return null
+	if nextBuild.isWireBuild():
+		return nextBuild
+	if nextBuild.portIsInput(v):
+		return nextBuild
+	return null
+	
+func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
+	var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,rotation)
+	if nextBuild:
+		return [nextBuild]
+	return []
 
 func setPortFlag() -> void:
 	canConBit = 0b1000
@@ -91,9 +48,9 @@ func onPressed(_pressed:bool) -> void:
 		drawRect = buildDefine.atlasTextureOn.region
 		portValue = 0b1000
 		if circuit:
-			circuit.signalValues[id] = 1
+			circuit.inputValues[id] = portValue
 	else:
 		drawRect = buildDefine.atlasTextureOff.region
 		portValue = 0b0000
 		if circuit:
-			circuit.signalValues[id] = 0
+			circuit.inputValues[id] = portValue

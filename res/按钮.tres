@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SWBuildDefine" load_steps=5 format=3 uid="uid://k5gnnkk8y6t5"]
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://k5gnnkk8y6t5"]
 
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_crm78"]
 [ext_resource type="Texture2D" uid="uid://dl5dii4e0dopv" path="res://图集3.png" id="1_my05a"]

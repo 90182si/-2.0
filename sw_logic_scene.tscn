@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://bcrtwm1jv1lli"]
+[gd_scene format=3 uid="uid://bcrtwm1jv1lli"]
 
 [ext_resource type="Script" uid="uid://cy6va8i6pjkxk" path="res://sw_layer_manager.gd" id="1_5e6f2"]
 [ext_resource type="Script" uid="uid://c7xrdlloy337v" path="res://sw_logic_scene.gd" id="1_mwese"]

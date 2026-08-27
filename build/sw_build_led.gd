@@ -3,49 +3,45 @@ class_name SWBuildLed extends SWBuildItemDefine
 func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
 	var retArr = []
 	var linkBuilds = []
-	var linkMap = {}
 	for dir in range(4):
-		if not bPortCanCon(dir):
+		if bLinkedPort(dir):
 			continue
-		var vec:Vector2i = SWDefine.dir_to_vec(dir)*128
-		var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(buildAxisPos+vec)
-		if nextBuild:
-			var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
-			var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
-			#下一个端口必须是输出口，输入口为1
-			if (nextBuild.canConBit&v) > 0 and (nextBuild.portDefine&v) > 0:
-				setPortCon(dir)
-				linkedID[dir] = nextBuild.id
-				nextBuild.setPortCon(antiDir)
-				nextBuild.linkedID[antiDir] = id
-				#{{"from":id,"dir":dir}:{"to":nextBuild.id}}
-				#linkMap[{"from":nextBuild.id,"dir":antiDir,"name":nextBuild.buildDefine.buildName}]={"to":id,"name":buildDefine.buildName,"signal":'='}
-				#linkBuilds.append(nextBuild)
-				if nextBuild.portValue&v > 0:
-					portValue = 1<<(3-dir)
-					drawRect = buildDefine.atlasTextureOn.region
-				else:
-					portValue = 0b0000
-					drawRect = buildDefine.atlasTextureOff.region
+		var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,dir)
+		if nextBuild == null:
+			continue
+		var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
+		setLinkedPort(dir)
+		nextBuild.setLinkedPort(antiDir)
+		linkBuilds.append(nextBuild)
 	retArr.append(linkBuilds)
-	retArr.append(linkMap)
+	retArr.append({})
 	return retArr
-
+	
+func getDirBuild(swBuildManager:SWBuildManager,rot:SWDefine.SW_Dir) -> SWBuildItemDefine:
+	var nextPos:Vector2i = buildAxisPos + 128*SWDefine.dir_to_vec(rot)
+	var dir:SWDefine.SW_Dir = rot
+	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
+	if nextBuild == null:
+		return null
+	var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
+	var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
+	if not nextBuild.isPort(v):
+		return null
+	if nextBuild.bLinkedPort(v):
+		return null
+	if nextBuild.isWireBuild():
+		return nextBuild
+	if nextBuild.portIsOutput(v):
+		return nextBuild
+	return null
+	
 func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
 	var linkedBuilds:Array[SWBuildItemDefine] = []
 	for dir in range(4):
-		var vec:Vector2i = SWDefine.dir_to_vec(dir)*128
-		var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(buildAxisPos+vec)
-		if nextBuild:
-			var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
-			var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
-			#下一个端口必须是输出口，输入口为1
-			if (nextBuild.canConBit&v) > 0:
-				if (nextBuild.portDefine&0b10000) == 0 and (nextBuild.portDefine&v) > 0:
-					linkedBuilds.append(nextBuild)
-				elif (nextBuild.portDefine&0b10000) > 0:
-					linkedBuilds.append(nextBuild)
-					
+		var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,dir)
+		if nextBuild == null:
+			continue
+		linkedBuilds.append(nextBuild)
 	return linkedBuilds
 	
 func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:

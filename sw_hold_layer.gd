@@ -237,7 +237,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					holdRemoveBuilds.emit(poss)
 					right_mouse_pressed = true
 			elif event.button_index == MOUSE_BUTTON_LEFT:
-				left_mouse_pressed = true
+				#TODO鼠标连续操作
+				left_mouse_pressed = false
 				if _cur_hold_builds.size() > 0:
 					var world_pos = getCurWorldPosByMouse()
 					var anchorPos = _get_anchor_pos(world_pos)

@@ -4,8 +4,8 @@ class_name SWCircuitControl extends Node
 var buildManager:SWBuildManager = null
 var idling:bool = false
 var circuits:Dictionary[int,SWDefine.SWCircuitData] = {}
-var linkedMap = {}
-var linkedMaps = {}
+#var linkedMap = {}
+#var linkedMaps = {}
 #开始放置建筑物
 func beginIdle()->void:
 	idling = true
@@ -22,12 +22,7 @@ func setBuildManager(bManager:SWBuildManager) -> void:
 #1.查找可以与这些建筑物相连的电路
 #2.统计需要更新的电路，找到输入源头，重新计算bfs连接图
 #3.全部计算完毕后，再开始生成卡诺图
-func updateBuildCircuit(builds:Array[SWBuildItemDefine])->bool:
-	if not buildManager:
-		return false
-	if idling == true:
-		return false
-		
+func clearCircuitAndGetInputBuilds(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
 	var forDelDict:Dictionary[SWDefine.SWCircuitData,bool] = {}
 	var input_build_com:Array[SWBuildItemDefine] = []
 	for build:SWBuildItemDefine in builds:
@@ -41,50 +36,165 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->bool:
 			var circuit:SWDefine.SWCircuitData = conBuild.circuit
 			if circuit != null:
 				forDelDict[circuit] = true
-			input_build_com.append(conBuild)
+				input_build_com.append_array(circuit.inputBuilds)
+			else:
+				if conBuild.comp_type == SWDefine.CircuitComponentType.BUTTON or \
+					conBuild.comp_type == SWDefine.CircuitComponentType.SWITCH:
+					input_build_com.append(conBuild)
 	#对受影响的电路进行清空
 	for circuit in forDelDict.keys():
 		clearRelatedCircuitAllBuildingIndices(circuit)
 		circuits.erase(circuit.circuitID)
+	return input_build_com
+	
+func rebuildCircuit(inputBuilds:Array[SWBuildItemDefine]) -> Dictionary:
+	var linkedMap = {}
+	while inputBuilds.size() > 0:
+		var inputBuild:SWBuildItemDefine = inputBuilds.pop_back()
+		var conMap:Array[SWBuildItemDefine] = findConnectBuildsMaps(inputBuild,linkedMap)
+		for build in conMap:
+			inputBuilds.append(build)
+	return linkedMap
+
+func inversionMap(linkedMap:Dictionary) -> Dictionary:
+	var antiMap = {}
+	for item in linkedMap.keys():
+		var val = linkedMap[item]
+		var key = {"to":val["to"],"name":val["name"]}
+		var value = {"from":item["from"],"name":item["name"],"signal":val["signal"]}
+		if not antiMap.has(key):
+			antiMap[key] = []
+		antiMap[key].append(value)
+	return antiMap
+
+func convertSourceSignalMap(antiMap:Dictionary) -> Dictionary:
+	var easyMap = antiMap.duplicate_deep()
+	var sourceMap = {}
+	for key in easyMap.keys():
+		sourceMap[key["to"]] = key
+	for key in easyMap.keys():
+		for val in easyMap[key]:
+			var from = val["from"]
+			var to = key["to"]
+			var from_name = val["name"]
+			var to_name = key["name"]
+			var sig = val["signal"]
+			if from_name != "按钮" && from_name != "开关":
+				if easyMap.has(sourceMap[from]):
+					easyMap[key].erase(val)
+					easyMap[key].append_array(easyMap[sourceMap[from]])
+					break
+	return easyMap
+
+func getNoticeMap(sourceSignalMap:Dictionary) -> Dictionary:
+	var antiEasySigMap = {}
+	
+	for key in sourceSignalMap.keys():
+		for val in sourceSignalMap[key]:
+			if not antiEasySigMap.has(val["from"]):
+				antiEasySigMap[val["from"]]=[]
+			antiEasySigMap[val["from"]].append(key["to"])
+	
+	return antiEasySigMap
+
+func genCircuit(sourceSignalMap:Dictionary,noticeMap:Dictionary) -> void:
+	var setArray:Array[Dictionary] = []
+	var easySourceSignalMap = {}
+	var easySourceSignalMap2 = {}
+	for key in sourceSignalMap.keys():
+		easySourceSignalMap[key["to"]] = []
+		easySourceSignalMap2[key["to"]] = []
+		for val in sourceSignalMap[key]:
+			easySourceSignalMap[key["to"]].append(val["from"])
+			easySourceSignalMap2[key["to"]].append(val)
+	var noticeMap2 = noticeMap.duplicate_deep()
+	for key in noticeMap.keys():
+		var setGroup:Dictionary = {}
+		setGroup[key] = 0
+		var noticeMapValArr:Array = noticeMap[key]
+		while noticeMapValArr.size() > 0:
+			var val = noticeMapValArr.pop_back()
+			if setGroup.has(val):
+				continue
+			setGroup[val] = 0
+			if easySourceSignalMap.has(val):
+				noticeMapValArr.append_array(easySourceSignalMap[val])
+		setArray.append(setGroup)
+	for arr in setArray:
+		var cirArr:Array = arr.keys() as Array
+		var cir:SWDefine.SWCircuitData = SWDefine.SWCircuitData.new()
+		cir.buildIdArr.append_array(cirArr)
+		cir.noticeMap = noticeMap2.duplicate_deep()
+		cir.sourceSignalMap = easySourceSignalMap2.duplicate_deep()
+		for buildID in cirArr:
+			var build = buildManager.getBuildById(buildID)
+			if build:
+				if build.comp_type == SWDefine.CircuitComponentType.BUTTON or \
+					build.comp_type == SWDefine.CircuitComponentType.SWITCH:
+						cir.inputBuilds.append(build)
+						cir.inputValues[buildID] = build.portValue
+				build.circuit = cir
+	pass
+
+func updateBuildCircuit(builds:Array[SWBuildItemDefine])->bool:
+	if not buildManager:
+		return false
+	if idling == true:
+		return false
+		
+	var input_build_com:Array[SWBuildItemDefine] = clearCircuitAndGetInputBuilds(builds)
 		
 	#重建电路
-	while input_build_com.size() > 0:
-		var inputBuild:SWBuildItemDefine = input_build_com.pop_back()
-		var conMap:Array[SWBuildItemDefine] = findConnectBuildsMaps(inputBuild)
-		for build in conMap:
-			input_build_com.append(build)
-			
+	var linkedMap = rebuildCircuit(input_build_com)
+		
+	#逆转linkedMap	
+	var linkedAntiMap = inversionMap(linkedMap)		
+	
+	#替换depend条件为信号源头
+	var sourceSignalMap = convertSourceSignalMap(linkedAntiMap)
+	
+	#简化逆转sourceSignalMap得到noticeMap
+	var noticeMap = getNoticeMap(sourceSignalMap)
+	
+	#最后就是需要sourceSignalMap和noticeMap
+	genCircuit(sourceSignalMap,noticeMap)
+	
 	#根据linkedMap，将每个元件的来源替换为信号源头，如按钮->非门、非门->led，转换为按钮->led
-	linkedMaps = {}
-	resolveLinkedMapToSources()
+	#var linkedMaps = resolveLinkedMapToSources(linkedMap)
 	
 	#改为depends模式
 	#第一个wire创建一个cir，后续置在旁边的wire继承这个cir，组成一个wire组，信号值从cir中取，不从每个wire取
-	for mapKey in linkedMaps.keys():
-		var cir:SWDefine.SWCircuitData = SWDefine.SWCircuitData.new()
-		var values = linkedMaps[mapKey]
-		if not cir.signalMaps.has(mapKey):
-			cir.signalMaps[mapKey] = {}
-		for value in values:
-			cir.signalMaps[mapKey][value["to"]]=value
-		#cir.signalMaps[mapKey].append_array(values)
-		for value in values:
-			if not cir.signalAntiMaps.has(value["to"]):
-				cir.signalAntiMaps[value["to"]] = []
-			cir.signalAntiMaps[value["to"]].append(mapKey)
-		circuits[cir.circuitID] = cir
-		var from_build:SWBuildItemDefine = buildManager.getBuildById(mapKey)
-		if from_build.comp_type == SWDefine.CircuitComponentType.BUTTON or \
-			from_build.comp_type == SWDefine.CircuitComponentType.SWITCH:
-				cir.signalValues[mapKey] = 0
-				pass
-		for value in values:
-			var to_build:SWBuildItemDefine = buildManager.getBuildById(value["to"])
-			if from_build and to_build:
-				from_build.circuit = cir
-				to_build.circuit = cir
-				cir.buildIdArr.append(value["to"])
-			pass
+	
+	
+	#for mapKey in linkedMaps.keys():
+		#var cir:SWDefine.SWCircuitData = SWDefine.SWCircuitData.new()
+		#var values = linkedMaps[mapKey]
+		#if not cir.signalMaps.has(mapKey):
+			#cir.signalMaps[mapKey] = {}
+		#for value in values:
+			#cir.signalMaps[mapKey][value["to"]]=value
+		##cir.signalMaps[mapKey].append_array(values)
+		#for value in values:
+			#if not cir.signalAntiMaps.has(value["to"]):
+				#cir.signalAntiMaps[value["to"]] = []
+			#cir.signalAntiMaps[value["to"]].append(mapKey)
+		#circuits[cir.circuitID] = cir
+		#var from_build:SWBuildItemDefine = buildManager.getBuildById(mapKey)
+		#if from_build.comp_type == SWDefine.CircuitComponentType.BUTTON or \
+			#from_build.comp_type == SWDefine.CircuitComponentType.SWITCH:
+				#cir.signalValues[mapKey] = 0
+				#cir.inputBuilds.append(from_build)
+				#cir.buildIdArr.append(mapKey)
+				#pass
+		#for value in values:
+			#var to_build:SWBuildItemDefine = buildManager.getBuildById(value["to"])
+			#if from_build and to_build:
+				#from_build.circuit = cir
+				#to_build.circuit = cir
+				#cir.buildIdArr.append(value["to"])
+			#pass
+			
+			
 		#var to_build:SWBuildItemDefine = buildManager.getBuildById(value["to"])
 		#if from_build and to_build:
 			#from_build.circuit = cir
@@ -99,11 +209,11 @@ func clearRelatedCircuitAllBuildingIndices(circuit:SWDefine.SWCircuitData) -> vo
 		var build = buildManager.getBuildById(buildID)
 		if build:
 			build.resetPortCon()
-			build.linkedID.clear()
+			#build.linkedID.clear()
 			build.circuit = null
 
 #从该建筑物开始获取整个传播路径
-func findConnectBuildsMaps(srcBuild:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
+func findConnectBuildsMaps(srcBuild:SWBuildItemDefine,linkedMap:Dictionary) -> Array[SWBuildItemDefine]:
 	var builds:Array[SWBuildItemDefine] = []
 	var signalTransMap:Array = srcBuild.getLinkedBuilds(buildManager)
 	linkedMap.merge(signalTransMap[1])
@@ -130,10 +240,10 @@ func _combine_signal(existing_signal:String, new_signal:String) -> String:
 
 #根据linkedMap，将每个元件的来源替换为信号源头
 #如：按钮->非门、非门->led 转换为 按钮->led
-func resolveLinkedMapToSources() -> void:
+func resolveLinkedMapToSources(linkedMap:Dictionary) -> Dictionary:
 	if linkedMap.is_empty():
-		return
-	linkedMaps = {}
+		return {}
+	var linkedMaps = {}
 	#步骤1: 构建反向查找表 - 从目标ID找到对应的linkedMap条目
 	# to_id -> [{"from_key": key, "from_id": id, "signal": signal}, ...]
 	var to_lookup:Dictionary[int,Array] = {}
@@ -206,16 +316,23 @@ func resolveLinkedMapToSources() -> void:
 			finalMap[from_id].append(key)
 	
 	linkedMaps = finalMap
+	return linkedMaps
 
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
-	var buildPosArr:Array[SWBuildItemDefine] = []
+	var notifyPosArr:Array[SWBuildItemDefine] = []
 	if build.circuit:
-		for signalValue in build.circuit.signalMaps[build.id]:
-			#var val = build.circuit.signalMaps[build.id][signalValue]
-			var toBuild = buildManager.getBuildById(signalValue)
-			if toBuild:
-				# TODO:20260822.在circuit里面加一个antiMap
-				#通知这个建筑物重新计算信号，
-				toBuild.reCalSignals(buildManager)
-				buildPosArr.append(toBuild)
-	return buildPosArr
+		var cir = build.circuit
+		for buildID in cir.noticeMap[build.id]:
+			var toBuild = buildManager.getBuildById(buildID)
+			if not toBuild:
+				continue
+			toBuild.reCalSignals(buildManager)
+		#for signalValue in build.circuit.signalMaps[build.id]:
+			##var val = build.circuit.signalMaps[build.id][signalValue]
+			#var toBuild = buildManager.getBuildById(signalValue)
+			#if toBuild:
+				## TODO:20260822.在circuit里面加一个antiMap
+				##通知这个建筑物重新计算信号，
+				#toBuild.reCalSignals(buildManager)
+				#notifyPosArr.append(toBuild)
+	return notifyPosArr
