@@ -34,16 +34,18 @@ func _ready() -> void:
 		holdLayer.drag_started.connect(buildLayer._on_drag_started)
 		holdLayer.drag_ended.connect(buildLayer._on_drag_ended)
 		
-	#var build:SWBuildDefine = load("res://res/按钮.tres") as SWBuildDefine
-	#var build2:SWBuildDefine = load("res://res/开关.tres") as SWBuildDefine
-	#var build3:SWBuildDefine = load("res://res/灯泡.tres") as SWBuildDefine
-	#var drawData:SWDrawData = SWDrawData.new()
-	#drawData.addOneDrawBuildDefine(Vector2i(0,0),build)
-	#drawData.addOneDrawBuildDefine(Vector2i(0,128),build2)
-	#drawData.addOneDrawBuildDefine(Vector2i(0,256),build3)
-	#drawData.addOneDrawBuildDefine(Vector2i(128,128),build3)
-	#
-	#holdLayer.on_sel_tool_draw_data(drawData)
+	var build:SWBuildDefine = load("res://res/非门.tres") as SWBuildDefine
+	var build2:SWBuildDefine = load("res://res/开关.tres") as SWBuildDefine
+	var build3:SWBuildDefine = load("res://res/电线A.tres") as SWBuildDefine
+	var drawData:SWDrawData = SWDrawData.new()
+	drawData.addOneDrawBuildDefine(Vector2i(0,0),build2)
+	drawData.addOneDrawBuildDefine(Vector2i(128,0),build2)
+	drawData.addOneDrawBuildDefine(Vector2i(0,-128),build)
+	drawData.addOneDrawBuildDefine(Vector2i(128,-128),build)
+	drawData.addOneDrawBuildDefine(Vector2i(0,-256),build3)
+	drawData.addOneDrawBuildDefine(Vector2i(128,-256),build3)
+	
+	holdLayer.on_sel_tool_draw_data(drawData)
 			
 func hudLayerSelectedTool(buildDefine:SWBuildDefine) -> void:
 	var drawData:SWDrawData = SWDrawData.new()

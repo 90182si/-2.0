@@ -21,6 +21,7 @@ SwDefine="uid://ceq3j2fx1hgap"
 SwObjectPool="*uid://onkk3u0cap7s"
 SwCrashLogger="*res://sw_crash_logger.gd"
 SwCommon="*uid://d3s671y2ttvwt"
+_mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
 
 [debug]
 
@@ -38,7 +39,7 @@ movie_writer/movie_file="J:/godot/无限地图/aaa.avi"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/Todo_Manager/plugin.cfg")
+enabled=PackedStringArray("res://addons/Todo_Manager/plugin.cfg", "res://addons/godot_ai/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/script-ide/plugin.cfg")
 
 [global_group]
 

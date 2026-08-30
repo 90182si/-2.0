@@ -72,13 +72,13 @@ func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildIt
 func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 	return
 
-func reCalSignals(swBuildManager:SWBuildManager) -> void:
-	var v = 0
+func reCalSignals(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
+	var v:int = 0
 	var f = 1
 	var depends = circuit.sourceSignalMap[id]
 	for dependItem in depends:
 		var vs = dependItem["signal"]
-		var k = circuit.inputValues[dependItem["from"]] > 0
+		var k:int = 1 if circuit.inputValues[dependItem["from"]] > 0 else 0
 		if vs == '!':
 			k = 1 - k
 		if f:
@@ -90,7 +90,7 @@ func reCalSignals(swBuildManager:SWBuildManager) -> void:
 		buildStateChanged(SWDefine.CircuitSignal.HIGH)
 	else:
 		buildStateChanged(SWDefine.CircuitSignal.LOW)
-	pass
+	return [self]
 
 func isPort(value:int) -> bool:
 	return canConBit&value > 0
@@ -103,3 +103,6 @@ func portIsInput(value:int) -> bool:
 
 func isWireBuild() -> bool:
 	return portDefine&0b10000 > 0
+
+func bIsToBeRemoved() -> bool:
+	return innerData.state == SWDefine.BuildState.TO_BE_REMOVED

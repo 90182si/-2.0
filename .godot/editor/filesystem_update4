@@ -1,12 +1,6 @@
 res://sw_logic_scene.tscn
 res://sw_grid_draw.gdshader
+res://addons/gut/gui/editor_globals.gd
+res://addons/gut/gui/EditorRadioButton.tres
 res://res/格子.tres
-res://com/sw_cirucit_control.gd
-res://com/sw_define.gd
-res://build/sw_build_led.gd
-res://build/sw_build_wire.gd
-res://res/电线A.tres
 res://sw_hold_layer.gd
-res://build/sw_build_item_define.gd
-res://build/sw_build_button.gd
-res://res/灯泡.tres

@@ -4,7 +4,7 @@ func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
 	var retArr = []
 	var linkBuilds = []
 	for dir in range(4):
-		if bLinkedPort(dir):
+		if bLinkedPort(dir) or bIsToBeRemoved():
 			continue
 		var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,dir)
 		if nextBuild == null:

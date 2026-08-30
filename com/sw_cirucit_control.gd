@@ -82,7 +82,11 @@ func convertSourceSignalMap(antiMap:Dictionary) -> Dictionary:
 			if from_name != "按钮" && from_name != "开关":
 				if easyMap.has(sourceMap[from]):
 					easyMap[key].erase(val)
-					easyMap[key].append_array(easyMap[sourceMap[from]])
+					var new_array = easyMap[sourceMap[from]].duplicate_deep()
+					if sig == "!":
+						for item in new_array:
+							item["signal"] = "!" if item["signal"] == "=" else "="
+					easyMap[key].append_array(new_array)
 					break
 	return easyMap
 
@@ -98,6 +102,30 @@ func getNoticeMap(sourceSignalMap:Dictionary) -> Dictionary:
 	return antiEasySigMap
 
 func genCircuit(sourceSignalMap:Dictionary,noticeMap:Dictionary) -> void:
+	#TODO 20260828 替换wireid为wiregroupid
+	#var forDelMap = {}
+	#var forAddMap = {}
+	#for item in sourceSignalMap.keys():
+		#var build = buildManager.getBuildById(item["to"])
+		#if build and build.comp_type == SWDefine.CircuitComponentType.WIRE:
+			#var wireBuild = build as SWBuildWire
+			#forDelMap[item] = 0
+			#var val = sourceSignalMap[item].duplicate_deep()
+			#item["to"] = wireBuild.wireGroup.wireGroupID
+			#forAddMap[item] = val
+	#for item in forDelMap:
+		#sourceSignalMap.erase(item)
+	#for key in noticeMap.keys():
+		#var newVal = []
+		#for val in noticeMap[key]:
+			#var build = buildManager.getBuildById(val)
+			#if build and build.comp_type == SWDefine.CircuitComponentType.WIRE:
+				#var wireBuild = build as SWBuildWire
+				#newVal.append(wireBuild.wireGroup.wireGroupID)
+			#else:
+				#newVal.append(val)
+		#noticeMap[key] = newVal
+	#sourceSignalMap.merge(forAddMap)
 	var setArray:Array[Dictionary] = []
 	var easySourceSignalMap = {}
 	var easySourceSignalMap2 = {}
@@ -326,13 +354,6 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 			var toBuild = buildManager.getBuildById(buildID)
 			if not toBuild:
 				continue
-			toBuild.reCalSignals(buildManager)
-		#for signalValue in build.circuit.signalMaps[build.id]:
-			##var val = build.circuit.signalMaps[build.id][signalValue]
-			#var toBuild = buildManager.getBuildById(signalValue)
-			#if toBuild:
-				## TODO:20260822.在circuit里面加一个antiMap
-				##通知这个建筑物重新计算信号，
-				#toBuild.reCalSignals(buildManager)
-				#notifyPosArr.append(toBuild)
+			#toBuild.reCalSignals(buildManager)
+			notifyPosArr.append_array(toBuild.reCalSignals(buildManager))
 	return notifyPosArr

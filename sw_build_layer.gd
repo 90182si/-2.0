@@ -144,14 +144,16 @@ func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
 		selectedBuilds.clear()
 		return
 	var builds := sw_build_manager.getBuilds(poss)
+	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
+	if sw_circuit_control:
+		sw_build_manager.setBuildsState(builds,SWDefine.BuildState.TO_BE_REMOVED)
+		sw_circuit_control.updateBuildCircuit(builds)
+		#sw_draw_manager.updataChunks(notifyChunkPosArr)
 	for build in builds:
 		if selectedBuilds.has(build):
 			selectedBuilds.erase(build)
-	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
 	sw_build_manager.delBuilds(builds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
-	#if sw_circuit_analyzer and not sw_circuit_analyzer.is_in_batch():
-		#sw_circuit_analyzer.analyze()
 
 var selectedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 

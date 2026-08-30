@@ -12,6 +12,11 @@ signal build_changed()
 func setBuildState(build:SWBuildItemDefine,state:SWDefine.BuildState) -> void:
 	build.innerData.state = state
 	pass
+
+func setBuildsState(builds:Array[SWBuildItemDefine],state:SWDefine.BuildState) -> void:
+	for build in builds:
+		build.innerData.state = state
+	pass
 ########
 
 func getChunkOrCreate(axisPos:Vector2i,create:bool = false) -> SWChunkBuildData:

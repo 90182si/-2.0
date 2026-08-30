@@ -64,6 +64,7 @@ enum CircuitComponentType{
 	BUTTON,       #按钮：按下时输出HIGH
 	SWITCH,       #开关：切换状态
 	LED,          #灯泡：接收信号发光
+	WIRE,         #普通电线
 	WIRE_STRAIGHT,#直线电线
 	WIRE_BENT,    #弯头电线
 	WIRE_BRIDGE,  #十字不相交电线
@@ -74,7 +75,8 @@ enum CircuitComponentType{
 #建筑物状态
 enum BuildState{
 	IDLE,
-	SELECTED
+	SELECTED,
+	TO_BE_REMOVED
 }
 
 #视口偏移与缩放
@@ -185,10 +187,10 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) 
 	match buildDef.buildName:
 		"按钮":return SWBuildButton.new(axisPos,buildDef,rot)
 		"灯泡":return SWBuildLed.new(axisPos,buildDef,rot)
-		#"非门":return SWBuildNot.new(axisPos,buildDef,rot)
+		"非门":return SWBuildNot.new(axisPos,buildDef,rot)
 		"电线A":return SWBuildWire.new(axisPos,buildDef,rot)
 		"电线B":return SWBuildWire.new(axisPos,buildDef,rot)
-		#"开关":return SWBuildButton.new(axisPos,buildDef,rot)
+		"开关":return SWBuildButton.new(axisPos,buildDef,rot)
 		_:return SWBuildNone.new(axisPos,buildDef,rot)
 	return null
 

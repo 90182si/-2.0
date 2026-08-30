@@ -1,5 +1,6 @@
 class_name SWBuildWire extends SWBuildItemDefine
 
+
 var wireGroup:SWDefine.SWWireGroup = null
 
 func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
@@ -7,17 +8,26 @@ func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
 	var linkBuilds = []
 	var linkMap = {}
 	for dir in range(4):
-		if bLinkedPort(dir):
+		if bLinkedPort(dir) or bIsToBeRemoved():
 			continue
 		var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,dir)
 		if nextBuild == null:
 			continue
-		var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
-		setLinkedPort(dir)
-		nextBuild.setLinkedPort(antiDir)
-		linkBuilds.append(nextBuild)
-		if nextBuild.portIsInput(antiDir):
-			linkMap[{"from":id,"dir":dir,"name":buildDefine.buildName}]={"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}
+		if nextBuild.comp_type != SWDefine.CircuitComponentType.WIRE:
+			var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
+			linkBuilds.append(nextBuild)
+			if nextBuild.portIsInput(1<<(3-antiDir)):
+				setLinkedPort(dir)
+				nextBuild.setLinkedPort(antiDir)
+				linkMap[{"from":id,"dir":dir,"name":buildDefine.buildName}]={"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}
+		else:
+			var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
+			setLinkedPort(dir)
+			nextBuild.setLinkedPort(antiDir)
+			linkBuilds.append(nextBuild)
+			#if nextBuild.portIsInput(antiDir):
+			#	linkMap[{"from":id,"dir":dir,"name":buildDefine.buildName}]={"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}
+			
 	retArr.append(linkBuilds)
 	retArr.append(linkMap)
 	return retArr
@@ -37,6 +47,9 @@ func getDirBuild(swBuildManager:SWBuildManager,rot:SWDefine.SW_Dir) -> SWBuildIt
 	if nextBuild.isWireBuild():
 		var wireBuild:SWBuildWire = nextBuild as SWBuildWire
 		if wireBuild.wireGroup == null:
+			if wireGroup == null:
+				wireGroup = SWDefine.SWWireGroup.new()
+				wireGroup.addWireBuild(self)
 			wireBuild.wireGroup = wireGroup
 			wireGroup.addWireBuild(wireBuild)
 		return nextBuild
@@ -66,3 +79,27 @@ func setPortFlag() -> void:
 	canConBit = 0b1111
 	portDefine = 0b10000
 	portValue = 0b0000
+
+func reCalSignals(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
+	var v:int = 0
+	var f = 1
+	var dependWires = wireGroup.wireBuilds
+	for dependWire in dependWires:
+		var depends = dependWire.circuit.sourceSignalMap[dependWire.id]
+		for dependItem in depends:
+			var vs = dependItem["signal"]
+			var k:int = 1 if dependWire.circuit.inputValues[dependItem["from"]] > 0 else 0
+			if vs == '!':
+				k = 1 - k
+			if f:
+				f=0
+				v = k
+			else:
+				v &= k
+	if v > 0:
+		for dependWire in dependWires:
+			dependWire.buildStateChanged(SWDefine.CircuitSignal.HIGH)
+	else:
+		for dependWire in dependWires:
+			dependWire.buildStateChanged(SWDefine.CircuitSignal.LOW)
+	return dependWires

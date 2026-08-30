@@ -2,7 +2,7 @@ class_name SWBuildButton extends SWBuildItemDefine
 
 func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
 	var dir:SWDefine.SW_Dir = rotation
-	if bLinkedPort(dir):
+	if bLinkedPort(dir) or bIsToBeRemoved():
 		return [[],{}]
 	var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,rotation)
 	if nextBuild == null:
@@ -10,7 +10,10 @@ func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
 	var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
 	setLinkedPort(dir)
 	nextBuild.setLinkedPort(antiDir)
-	return [[nextBuild],{{"from":id,"dir":dir,"name":buildDefine.buildName}:{"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}}]
+	if nextBuild.comp_type != SWDefine.CircuitComponentType.WIRE:
+		return [[nextBuild],{{"from":id,"dir":dir,"name":buildDefine.buildName}:{"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}}]
+	else:
+		return [[nextBuild],{{"from":id,"dir":dir,"name":buildDefine.buildName}:{"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}}]
 	
 func getDirBuild(swBuildManager:SWBuildManager,rot:SWDefine.SW_Dir) -> SWBuildItemDefine:
 	var nextPos:Vector2i = buildAxisPos + 128*SWDefine.dir_to_vec(rot)
