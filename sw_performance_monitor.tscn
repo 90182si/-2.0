@@ -1,7 +1,23 @@
-[gd_scene load_steps=3 format=3 uid="uid://d0rsseeae8ejg"]
+[gd_scene format=3 uid="uid://d0rsseeae8ejg"]
 
 [ext_resource type="Script" uid="uid://ctvefsrpmujfu" path="res://sw_performance_monitor.gd" id="1_xmabp"]
 [ext_resource type="PackedScene" uid="uid://bqx8crashlog" path="res://sw_crash_log_viewer.tscn" id="2_viewer"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tooltip"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 5.0
+bg_color = Color(0.12, 0.12, 0.15, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.75, 1, 0.6)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
 
 [node name="SWPerformanceMonitor" type="CanvasLayer" unique_id=1125474679]
 script = ExtResource("1_xmabp")
@@ -54,6 +70,18 @@ text = "地图显示"
 layout_mode = 2
 mouse_filter = 1
 text = "异步加载"
+
+[node name="HoverInfoCheck" type="CheckButton" parent="StatsContainer/StatsDisplay" unique_id=688363046]
+layout_mode = 2
+mouse_filter = 1
+text = "建筑信息"
+
+[node name="BuildInfoLabel" type="Label" parent="." unique_id=263887776]
+visible = false
+offset_right = 40.0
+offset_bottom = 23.0
+theme_override_colors/font_color = Color(0.9, 0.95, 1, 1)
+theme_override_styles/normal = SubResource("StyleBoxFlat_tooltip")
 
 [node name="CrashLogViewer" parent="." unique_id=391639325 instance=ExtResource("2_viewer")]
 visible = false

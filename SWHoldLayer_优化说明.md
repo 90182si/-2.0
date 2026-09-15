@@ -79,41 +79,41 @@ var _last_emit_select_rect: Rect2 = null
 ```gdscript
 # 调整发射间隔（毫秒）
 func set_select_emit_interval(interval_ms: int) -> void:
-    _select_emit_interval = interval_ms
-    _select_throttle_timer.wait_time = interval_ms / 1000.0
+	_select_emit_interval = interval_ms
+	_select_throttle_timer.wait_time = interval_ms / 1000.0
 
 # 调整距离阈值（像素）
 func set_select_distance_threshold(threshold: float) -> void:
-    _select_distance_threshold = threshold
+	_select_distance_threshold = threshold
 ```
 
 #### 性能监控
 ```gdscript
 # 获取优化统计信息
 func get_select_optimization_stats() -> Dictionary:
-    return {
-        "emit_interval": _select_emit_interval,
-        "distance_threshold": _select_distance_threshold,
-        "last_emit_time_ago": Time.get_ticks_msec() - _last_select_emit_time,
-        "has_pending_emit": _pending_select_rect != null
-    }
+	return {
+		"emit_interval": _select_emit_interval,
+		"distance_threshold": _select_distance_threshold,
+		"last_emit_time_ago": Time.get_ticks_msec() - _last_select_emit_time,
+		"has_pending_emit": _pending_select_rect != null
+	}
 ```
 
 ### 使用示例
 ```gdscript
 # 调试优化效果
 func _process(delta):
-    if Input.is_key_pressed(KEY_F1):
-        var stats = get_select_optimization_stats()
-        print("SWHoldLayer 优化统计: ", stats)
-    
-    # 动态调整参数
-    if Input.is_key_pressed(KEY_F2):
-        set_select_emit_interval(150)  # 高性能模式
-    elif Input.is_key_pressed(KEY_F3):
-        set_select_emit_interval(50)   # 高响应模式
-    elif Input.is_key_pressed(KEY_F4):
-        set_select_emit_interval(100)  # 默认模式
+	if Input.is_key_pressed(KEY_F1):
+		var stats = get_select_optimization_stats()
+		print("SWHoldLayer 优化统计: ", stats)
+	
+	# 动态调整参数
+	if Input.is_key_pressed(KEY_F2):
+		set_select_emit_interval(150)  # 高性能模式
+	elif Input.is_key_pressed(KEY_F3):
+		set_select_emit_interval(50)   # 高响应模式
+	elif Input.is_key_pressed(KEY_F4):
+		set_select_emit_interval(100)  # 默认模式
 ```
 
 ## 📝 调试和监控
@@ -153,26 +153,26 @@ var _last_emit_select_rect: Rect2 = null
 ### 关键函数
 ```gdscript
 func _handle_optimized_select_builds(mouse_pos: Vector2, current_rect: Rect2) -> void:
-    """处理优化的选择构建信号"""
-    # 检查距离阈值
-    if _last_mouse_pos_for_select != Vector2.ZERO:
-        var distance = _last_mouse_pos_for_select.distance_to(mouse_pos)
-        if distance < _select_distance_threshold:
-            return  # 距离太近，忽略
-    
-    # 检查时间节流
-    var current_time = Time.get_ticks_msec()
-    if current_time - _last_select_emit_time >= _select_emit_interval:
-        _emit_select_builds_signal(current_rect)
-        _last_mouse_pos_for_select = mouse_pos
-        _last_select_emit_time = current_time
-    else:
-        # 保存到待处理队列
-        _pending_select_rect = current_rect
-        if not _select_throttle_timer.is_stopped():
-            _select_throttle_timer.stop()
-        _select_throttle_timer.start()
-        _last_mouse_pos_for_select = mouse_pos
+	"""处理优化的选择构建信号"""
+	# 检查距离阈值
+	if _last_mouse_pos_for_select != Vector2.ZERO:
+		var distance = _last_mouse_pos_for_select.distance_to(mouse_pos)
+		if distance < _select_distance_threshold:
+			return  # 距离太近，忽略
+	
+	# 检查时间节流
+	var current_time = Time.get_ticks_msec()
+	if current_time - _last_select_emit_time >= _select_emit_interval:
+		_emit_select_builds_signal(current_rect)
+		_last_mouse_pos_for_select = mouse_pos
+		_last_select_emit_time = current_time
+	else:
+		# 保存到待处理队列
+		_pending_select_rect = current_rect
+		if not _select_throttle_timer.is_stopped():
+			_select_throttle_timer.stop()
+		_select_throttle_timer.start()
+		_last_mouse_pos_for_select = mouse_pos
 ```
 
 ## 🎯 总结

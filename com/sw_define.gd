@@ -49,7 +49,8 @@ enum ChunkStatus {
 enum CircuitPinType{
 	NONE,
 	INPUT,
-	OUTPUT
+	OUTPUT,
+	WIRE
 }
 #电路信号枚举
 enum CircuitSignal{
@@ -78,6 +79,47 @@ enum BuildState{
 	SELECTED,
 	TO_BE_REMOVED
 }
+
+#组件
+enum BuildCompoentType{
+	CIRCUIT
+}
+
+#{
+	#optFunc:and,
+	#args:[
+		#{optFunc:not,
+			#args:[
+				#{
+					#"build":switch3,
+					#"dir":up
+				#},
+			#]
+		#}
+		#{
+			#"build":switch1,
+			#"dir":up
+		#},
+		#{
+			#"build":switch2,
+			#"dir":up
+		#},
+	#]
+#}
+class SWBuildPinStruct extends RefCounted:
+	var build:SWBuildItemDefine
+	var dir:SWDefine.SW_Dir
+	
+	func _init(b:SWBuildItemDefine,d:SWDefine.SW_Dir) -> void:
+		build = b
+		dir = d
+		pass
+	
+class SWCircuitStruct extends RefCounted:
+	var optFunc:Callable
+	var optFuncName:String
+	var args:Array = []
+	var values:Array = []
 
 #视口偏移与缩放
 class SWTransformData extends RefCounted:
@@ -266,11 +308,12 @@ class SWCircuitUnitData extends RefCounted:
 
 class SWCircuitData extends RefCounted:
 	var circuitID:int
-	var buildIdArr:Array[int] = []
+	#var buildIdArr:Array[int] = []
+	var buildArr:Array[SWBuildItemDefine] = []
 	var noticeMap = {}
-	var sourceSignalMap = {}
-	var inputValues:Dictionary = {}
-	var inputBuilds:Array[SWBuildItemDefine] = []
+	#var sourceSignalMap = {}
+	#var inputValues:Dictionary = {}
+	#var inputBuilds:Dictionary[SWBuildItemDefine,int] = {}
 	#var signalMaps = {}
 	#var signalAntiMaps = {}
 	#var signalValues = {}
@@ -278,15 +321,21 @@ class SWCircuitData extends RefCounted:
 		circuitID = SWCommon.GenNextBuildId()
 
 class SWWireGroup extends RefCounted:
+	var net:SWNet = null
 	var wireGroupID:int
-	var wireBuilds:Array[SWBuildItemDefine] = []
+	var wireHeaderID:int
+	var wireBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 	#格式[{"id":1,"signal":'!'},{"id":2,"signal":'!'}]
-	var signalDepends:Array = []
+	#var signalDepends:Dictionary[SWBuildItemDefine,bool] = {}
 	func _init() -> void:
 		wireGroupID = SWCommon.GenNextBuildId()
+		net = SWNet.new()
 
+	#自动给wireBuild设置wireGroup
 	func addWireBuild(build:SWBuildItemDefine) -> void:
-		wireBuilds.append(build)
+		wireBuilds[build]=true
+		var wireBuild := build as SWBuildWire
+		wireBuild.wireGroup = self
 
 # 区块数据结构（存储核心信息，不直接存储渲染节点）
 class SWDrawChunkData extends RefCounted:

@@ -34,6 +34,10 @@ signal drag_ended()
 var _drag_count: int = 0
 var _last_anchor_pos: Vector2i = Vector2i.ZERO
 
+#手持物品是否为空（用于悬停信息显示等判断）
+func isHoldEmpty() -> bool:
+	return _cur_hold_builds.is_empty()
+
 func _get_anchor_pos(worldPos: Vector2) -> Vector2i:
 	var centerOffset = sw_draw_manager_shadow.getHoldCenter()
 	return SWCommon.GetGridPos(Vector2i(worldPos - centerOffset + Vector2(SWDefine.GRID_SIZE / 2)))
@@ -313,7 +317,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				data.buildAxisPos = SWCommon.RotationPos(data.buildAxisPos+Vector2i(64,64),90,centerPos)-Vector2(64,64)
 				data.buildAxisPos = data.buildAxisPos.snapped(Vector2i(128,128))
 				chunkPosMap[SWCommon.GetChunkPos(data.buildAxisPos)]=true
-				data.rotation+=1
+				data.rotOnce()
 			var shadowData = sw_draw_manager_shadow.getHoldBuild()
 			if shadowData:
 				for i in min(drawData.mapDatas.size(), shadowData.mapDatas.size()):

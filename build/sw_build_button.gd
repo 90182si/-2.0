@@ -1,59 +1,48 @@
 class_name SWBuildButton extends SWBuildItemDefine
 
-func getLinkedBuilds(swBuildManager:SWBuildManager) -> Array:
-	var dir:SWDefine.SW_Dir = rotation
-	if bLinkedPort(dir) or bIsToBeRemoved():
-		return [[],{}]
-	var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,rotation)
-	if nextBuild == null:
-		return [[],{}]
-	var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
-	setLinkedPort(dir)
-	nextBuild.setLinkedPort(antiDir)
-	if nextBuild.comp_type != SWDefine.CircuitComponentType.WIRE:
-		return [[nextBuild],{{"from":id,"dir":dir,"name":buildDefine.buildName}:{"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}}]
-	else:
-		return [[nextBuild],{{"from":id,"dir":dir,"name":buildDefine.buildName}:{"to":nextBuild.id,"name":nextBuild.buildDefine.buildName,"signal":'='}}]
-	
-func getDirBuild(swBuildManager:SWBuildManager,rot:SWDefine.SW_Dir) -> SWBuildItemDefine:
-	var nextPos:Vector2i = buildAxisPos + 128*SWDefine.dir_to_vec(rot)
-	var dir:SWDefine.SW_Dir = rot
-	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
-	if nextBuild == null:
-		return null
-	var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(dir)
-	var v:int = 1<<((3-antiDir+nextBuild.rotation)%4)
-	if not nextBuild.isPort(v):
-		return null
-	if nextBuild.bLinkedPort(v):
-		return null
-	if nextBuild.isWireBuild():
-		return nextBuild
-	if nextBuild.portIsInput(v):
-		return nextBuild
-	return null
-	
-func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
-	var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,rotation)
-	if nextBuild:
-		return [nextBuild]
-	return []
-
 func setPortFlag() -> void:
-	canConBit = 0b1000
-	portDefine = 0b1000
-	portValue = 0b0000
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	circuitCompoent.setPinDefine(SWDefine.SW_Dir.UP,SWDefine.CircuitPinType.OUTPUT)
 
 var pressed:bool = false
 func onPressed(_pressed:bool) -> void:
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	pressed = _pressed
 	if pressed == true:
 		drawRect = buildDefine.atlasTextureOn.region
-		portValue = 0b1000
-		if circuit:
-			circuit.inputValues[id] = portValue
+		circuitCompoent.setPinValue(SWDefine.SW_Dir.UP,SWDefine.CircuitSignal.HIGH)
 	else:
 		drawRect = buildDefine.atlasTextureOff.region
-		portValue = 0b0000
-		if circuit:
-			circuit.inputValues[id] = portValue
+		circuitCompoent.setPinValue(SWDefine.SW_Dir.UP,SWDefine.CircuitSignal.LOW)
+
+func getExpr(pinDir:SWDefine.SW_Dir) -> SWDefine.SWCircuitStruct:
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	#如果是按钮的出口方向
+	#函数就是直接等于
+	#参数是自己和出口端口
+	if pinDir == rotation:
+		if not circuitCompoent.pinExprMap.has(pinDir):
+			circuitCompoent.pinExprMap[pinDir] = SWDefine.SWCircuitStruct.new()
+			circuitCompoent.pinExprMap[pinDir].optFunc = SWCommon.EqualValues
+			circuitCompoent.pinExprMap[pinDir].optFuncName = "SWCommon.EqualValues"
+			circuitCompoent.pinExprMap[pinDir].args = [SWDefine.SWBuildPinStruct.new(self,pinDir)]
+			#return circuitCompoent.pinExprMap[pinDir]
+		return circuitCompoent.pinExprMap[pinDir]
+	return null
+
+func getBuildExpr() -> void:
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	if not circuitCompoent.pinExprMap.has(rotation):
+		circuitCompoent.pinExprMap[rotation] = SWDefine.SWCircuitStruct.new()
+	circuitCompoent.pinExprMap[rotation].optFunc = SWCommon.EqualValues
+	circuitCompoent.pinExprMap[rotation].optFuncName = "SWCommon.EqualValues"
+	circuitCompoent.pinExprMap[rotation].args = [SWDefine.SWBuildPinStruct.new(self,rotation)]
+
+
+func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+	if dir == SWDefine.SW_Dir.UP:
+		if pressed == true:
+			return SWDefine.CircuitSignal.HIGH
+		elif pressed == false:
+			return SWDefine.CircuitSignal.LOW
+	return SWDefine.CircuitSignal.NONE

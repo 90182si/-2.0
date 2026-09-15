@@ -248,7 +248,7 @@ func _updateChunkCache(viewRect:Rect2) -> void:
 			if sw_build_manager.getBuildCountByChunkPos(chunkPos) > 0:
 				_chunkHasBuildCache[chunkPos] = true
 
-func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
+func on_view_rect_changed(viewRect:Rect2 = color_rect.get_rect(),speedVec:Vector2 = Vector2.ZERO) -> void:
 	color_rect.position = viewRect.position
 	color_rect.size = viewRect.size
 	var mmiCount = getNeedCountOfMMI(viewRect)

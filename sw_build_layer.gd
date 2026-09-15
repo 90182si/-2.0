@@ -95,10 +95,11 @@ func load_save_data(data: Dictionary) -> void:
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.end_batch()
 	# 加载卡诺图数据（用于后续独立电路单元提取）
-	var kmap_data = data.get("karnaugh_map", {})
 	#if sw_circuit_analyzer and kmap_data is Dictionary and not kmap_data.is_empty():
 		#sw_circuit_analyzer.load_karnaugh_map_data(kmap_data)
+	sw_circuit_control.updateBuildCircuit(sw_build_manager.getAllBuilds())
 	sw_draw_manager.updataAllChunks()
+	sw_draw_manager.on_view_rect_changed()
 
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	sw_draw_manager.on_view_rect_changed(viewRect,speedVec)
@@ -292,6 +293,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					var build = sw_build_manager.getBuild(grid_pos)
 					if build and (build.comp_type == SWDefine.CircuitComponentType.BUTTON or build.comp_type == SWDefine.CircuitComponentType.SWITCH):
 						if build.comp_type == SWDefine.CircuitComponentType.BUTTON:
+							#90182si 按钮被点击
 							build.onPressed(false)
 						elif build.comp_type == SWDefine.CircuitComponentType.SWITCH:
 							pass

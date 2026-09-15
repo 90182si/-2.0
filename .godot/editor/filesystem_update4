@@ -1,6 +1,14 @@
+res://SWHoldLayer_integration_example.gd
+res://build/sw_build_button.gd
+res://build/sw_build_led.gd
+res://build/sw_build_not.gd
 res://sw_logic_scene.tscn
 res://sw_grid_draw.gdshader
 res://addons/gut/gui/editor_globals.gd
 res://addons/gut/gui/EditorRadioButton.tres
 res://res/格子.tres
-res://sw_hold_layer.gd
+res://res/灯泡.tres
+res://res/非门.tres
+res://com/sw_cirucit_control.gd
+res://build/sw_build_item_define.gd
+res://com/sw_build_compoent_circuit.gd
