@@ -34,15 +34,18 @@ func getBuildExpr() -> void:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	if not circuitCompoent.pinExprMap.has(rotation):
 		circuitCompoent.pinExprMap[rotation] = SWDefine.SWCircuitStruct.new()
-	circuitCompoent.pinExprMap[rotation].optFunc = SWCommon.EqualValues
-	circuitCompoent.pinExprMap[rotation].optFuncName = "SWCommon.EqualValues"
-	circuitCompoent.pinExprMap[rotation].args = [SWDefine.SWBuildPinStruct.new(self,rotation)]
+		circuitCompoent.pinExprMap[rotation].optFunc = SWCommon.EqualValues
+		circuitCompoent.pinExprMap[rotation].optFuncName = "SWCommon.EqualValues"
+		circuitCompoent.pinExprMap[rotation].args = [SWDefine.SWBuildPinStruct.new(self,rotation)]
 
 
-func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
-	if dir == SWDefine.SW_Dir.UP:
+func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+	if dir == rotation:
 		if pressed == true:
 			return SWDefine.CircuitSignal.HIGH
 		elif pressed == false:
 			return SWDefine.CircuitSignal.LOW
 	return SWDefine.CircuitSignal.NONE
+
+func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
+	pass

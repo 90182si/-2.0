@@ -1,6 +1,7 @@
 class_name SWBuildWire extends SWBuildItemDefine
 
-var wireGroup:SWDefine.SWWireGroup = null
+#var wireGroup:SWDefine.SWWireGroup = null
+var net:SWNet = null
 
 func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
@@ -10,33 +11,30 @@ func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 		drawRect = buildDefine.atlasTextureOn.region
 
 func setPortFlag() -> void:
-	#canConBit = 0b1111
-	#portDefine = 0b10000
-	#portValue = 0b0000
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	circuitCompoent.setPinDefine(SWDefine.SW_Dir.UP,SWDefine.CircuitPinType.OUTPUT)
-	circuitCompoent.setPinDefine(SWDefine.SW_Dir.DOWN,SWDefine.CircuitPinType.INPUT)
+	circuitCompoent.setPinDefine(SWDefine.SW_Dir.UP,SWDefine.CircuitPinType.WIRE)
+	circuitCompoent.setPinDefine(SWDefine.SW_Dir.RIGHT,SWDefine.CircuitPinType.WIRE)
+	circuitCompoent.setPinDefine(SWDefine.SW_Dir.DOWN,SWDefine.CircuitPinType.WIRE)
+	circuitCompoent.setPinDefine(SWDefine.SW_Dir.LEFT,SWDefine.CircuitPinType.WIRE)
 	pass
 
 func reCalSignals(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
-	return []
+	return [self]
 
-func resetPortCon() -> void:
-	super.resetPortCon()
+func resetPortState() -> void:
+	super.resetPortState()
 	drawRect = buildDefine.atlasTextureOff.region
-	wireGroup = null
+	net = null
 
 func getExpr(pinDir:SWDefine.SW_Dir) -> SWDefine.SWCircuitStruct:
-	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	#由于电线会是driver，所以这个函数不会被调用
-	if not circuitCompoent.pinExprMap.has(pinDir):
-		circuitCompoent.pinExprMap[pinDir] = SWDefine.SWCircuitStruct.new()
-	assert("你是不是搞错了！！！")
-	return circuitCompoent.pinExprMap[pinDir]
+	return null
 
 func getBuildExpr() -> void:
-	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	assert("你是不是搞错了！！！")
+	pass
 
-func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
 	return SWDefine.CircuitSignal.NONE
+	
+func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
+	buildStateChanged(value)
+	pass

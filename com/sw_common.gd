@@ -75,7 +75,18 @@ static func AndValues(args: Array) -> int:
 			continue
 		v &= arg.optFunc.call(arg.args)
 	return v
-
+	
+static func NotAndValues(args: Array) -> int:
+	var v:int = 0
+	var b:bool = false
+	for arg in args:
+		if b == false:
+			b = true
+			v = arg.optFunc.call(arg.args)
+			continue
+		v &= arg.optFunc.call(arg.args)
+	return 1-v
+	
 static func NotValues(args: Array) -> int:
 	var arg = null
 	if args.size() > 0:
@@ -93,7 +104,7 @@ static func EqualValues(args: Array) -> int:
 	if args.size() > 0:
 		arg = args[0]
 	if arg is SWDefine.SWBuildPinStruct:
-		if arg.build.getValue(null,arg.dir) == SWDefine.CircuitSignal.HIGH:
+		if arg.build.getValue(arg.dir) == SWDefine.CircuitSignal.HIGH:
 			return 1
 		return 0
 	elif arg is SWDefine.SWCircuitStruct:

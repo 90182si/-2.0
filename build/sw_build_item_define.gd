@@ -78,9 +78,10 @@ func getNet(swBuildManager:SWBuildManager) -> Array:
 		if not isPort(pinIndex):
 			continue
 		#如果这个方向的端口不可用 或者 是这个建筑物即将被删除 或者 这个端口是输入口
-		# if isLinkedPort(pinIndex):
-		# 	continue
-		if bIsToBeRemoved() or portIsInput(pinIndex):
+		if isLinkedPort(pinIndex):
+			continue
+		#这里的portIsInput(pinIndex)会导致wire所有端口跳过，wire连接的下一个输入口没法被获取到
+		if bIsToBeRemoved() or (not SWCommon.IsWireBuild(self) and portIsInput(pinIndex)):
 			continue
 		#获取开关\按钮方向的建筑物
 		var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,pinIndex)
@@ -88,16 +89,22 @@ func getNet(swBuildManager:SWBuildManager) -> Array:
 			continue
 		var antiDir:SWDefine.SW_Dir = SWDefine.getAntiDir(pinIndex)
 		#标记两个建筑物相应端口占用
-		setLinkedPort(pinIndex)
-		nextBuild.setLinkedPort(antiDir)
+		
 		if not SWCommon.IsWireBuild(self) and SWCommon.IsWireBuild(nextBuild):
+			setLinkedPort(pinIndex)
+			nextBuild.setLinkedPort(antiDir)
 			var wireBuild := nextBuild as SWBuildWire
-			wireBuild.wireGroup.net.addDriver({"build":self,"pinDir":pinIndex})
-			wireBuild.wireGroup.net.addLoader({"build":wireBuild,"pinDir":antiDir})
-		elif SWCommon.IsWireBuild(self) and not SWCommon.IsWireBuild(nextBuild):
+			wireBuild.net.addDriver({"build":self,"pinDir":pinIndex})
+			#wireBuild.wireGroup.net.addLoader({"build":wireBuild,"pinDir":antiDir})
+		elif SWCommon.IsWireBuild(self) and not SWCommon.IsWireBuild(nextBuild) and nextBuild.portIsInput(antiDir):
+			setLinkedPort(pinIndex)
+			nextBuild.setLinkedPort(antiDir)
 			var wireBuild := self as SWBuildWire
-			wireBuild.wireGroup.net.addLoader({"build":nextBuild,"pinDir":antiDir})
+			wireBuild.net.addLoader({"build":nextBuild,"pinDir":antiDir})
+			#wireBuild.wireGroup.net.addLoader({"build":self,"pinDir":antiDir})
 		elif not SWCommon.IsWireBuild(self) and not SWCommon.IsWireBuild(nextBuild):
+			setLinkedPort(pinIndex)
+			nextBuild.setLinkedPort(antiDir)
 			var net:SWNet = SWNet.new()
 			net.setNet([{"build":self,"pinDir":pinIndex}],[{"build":nextBuild,"pinDir":antiDir}])
 	return []
@@ -107,9 +114,10 @@ func onPressed(_pressed:bool) -> void:
 
 
 
-func resetPortCon() -> void:
+func resetPortState() -> void:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	circuitCompoent.resetPortCon()
+	circuitCompoent.resetPortState()
+	
 	
 func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
 	var linkedBuilds:Array[SWBuildItemDefine] = []
@@ -141,11 +149,14 @@ func calDepends(depends:Array) -> int:
 	return v
 	
 @abstract
-func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal
+func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal
+
+@abstract
+func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void
 
 func reCalSignals(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	var v = getValue(swBuildManager,SWDefine.SW_Dir.UP)
+	var v = getValue(SWDefine.SW_Dir.UP)
 	if v > 0:
 		buildStateChanged(SWDefine.CircuitSignal.HIGH)
 	else:

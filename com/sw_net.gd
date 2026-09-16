@@ -1,12 +1,21 @@
 class_name SWNet extends RefCounted
 
 #输入
+var wireGroup:SWDefine.SWWireGroup = null
 #{SWBuildItemDefine,SWDefine.SW_Dir}
 var _drivers:Array = []
 #输出
 #{SWBuildItemDefine,SWDefine.SW_Dir}
 var _loads:Array = []
 
+#func setWireGroup
+func _init() -> void:
+	wireGroup = SWDefine.SWWireGroup.new()
+
+func addWireBuild(build:SWBuildWire) -> void:
+	wireGroup.addWireBuild(build)
+	build.net = self
+	
 func getDrivers() -> Array:
 	return _drivers
 
@@ -15,12 +24,11 @@ func getLoads() -> Array:
 
 func addDriver(driver:Dictionary) -> void:
 	_drivers.append(driver)
+	setBuildNet([driver])
 	
 func addLoader(load:Dictionary) -> void:
 	_loads.append(load)
-
-func _init() -> void:
-	pass
+	setBuildNet([load])
 	
 func setBuildNet(driversAndLoads:Array) -> void:
 	for driver:Dictionary in driversAndLoads:

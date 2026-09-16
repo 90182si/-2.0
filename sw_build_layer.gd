@@ -131,7 +131,8 @@ func holdIdleBuilds(builds:Array[SWBuildItemDefine],poss:Array[Vector2i]) -> voi
 	var notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 	if sw_circuit_control:
-		sw_circuit_control.updateBuildCircuit(successBuilds)
+		successBuilds.append_array(sw_circuit_control.updateBuildCircuit(successBuilds))
+		notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
 		sw_draw_manager.updataChunks(notifyChunkPosArr)
 
 func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
@@ -145,15 +146,16 @@ func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
 		selectedBuilds.clear()
 		return
 	var builds := sw_build_manager.getBuilds(poss)
-	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
+	var notifyBuilds = builds.duplicate()
 	if sw_circuit_control:
 		sw_build_manager.setBuildsState(builds,SWDefine.BuildState.TO_BE_REMOVED)
-		sw_circuit_control.updateBuildCircuit(builds)
+		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(builds))
 		#sw_draw_manager.updataChunks(notifyChunkPosArr)
 	for build in builds:
 		if selectedBuilds.has(build):
 			selectedBuilds.erase(build)
 	sw_build_manager.delBuilds(builds)
+	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 
 var selectedBuilds:Dictionary[SWBuildItemDefine,bool] = {}

@@ -42,7 +42,7 @@ func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
 	for build:SWBuildItemDefine in builds:
 		if build.circuit == null:
 			continue
-		build.resetPortCon()
+		build.resetPortState()
 		forDelCircuit[build.circuit] = true
 		build.circuit = null
 	for circuit:SWDefine.SWCircuitData in forDelCircuit.keys():
@@ -79,14 +79,16 @@ func connectWireGroup(builds:Array[SWBuildItemDefine]) -> void:
 		var wireBuild = wireBuildQueue.keys().back()
 		var wireGroupBuilds = getWireGroupBuilds(wireBuild)
 		var wireGroup:SWDefine.SWWireGroup = SWDefine.SWWireGroup.new()
+		var wireNet:SWNet = SWNet.new()
 		#从wireBuildQueue中删除wireGroup
 		for wBuild:SWBuildItemDefine in wireGroupBuilds:
 			wireBuildQueue.erase(wBuild)
-			wireGroup.addWireBuild(wBuild)
+			wireNet.addWireBuild(wBuild)
 func createNets(builds:Array[SWBuildItemDefine]) -> void:
 	for build:SWBuildItemDefine in builds:
 		build.getNet(buildManager)
 func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
+	#这里wire不用计算
 	for build:SWBuildItemDefine in builds:
 		build.getBuildExpr()
 func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
@@ -127,14 +129,17 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 					if not cir.noticeMap.has(depBuild):
 						cir.noticeMap[depBuild] = []
 					cir.noticeMap[depBuild].append(build)
+	for build:SWBuildItemDefine in builds:
+		if not build.bIsToBeRemoved():
+			build.reCalSignals(buildManager)
 		
-func updateBuildCircuit(builds:Array[SWBuildItemDefine])->bool:
+func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefine]:
 	if not buildManager:
-		return false
+		return []
 	if idling == true:
-		return false
+		return []
 	if builds.is_empty():
-		return false
+		return []
 	#查找受影的所有响建筑物
 	var affectBuilds = find1(builds)
 	#将这些受影响的建筑物关联的电路清空
@@ -150,7 +155,7 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->bool:
 	
 	createCircuit(affectBuilds)
 	
-	return false
+	return affectBuilds
 	
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 	var notifyPosArr:Array[SWBuildItemDefine] = []

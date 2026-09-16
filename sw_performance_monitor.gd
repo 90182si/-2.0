@@ -226,7 +226,7 @@ func _format_build_info(build: SWBuildItemDefine) -> String:
 	lines.append("电路: %s" % _circuit_to_text(build.circuit))
 	if build.comp_type == SWDefine.CircuitComponentType.WIRE:
 		var wireBuild:SWBuildWire = build as SWBuildWire
-		lines.append("WireGroup: %s" % _wire_group_to_text(wireBuild.wireGroup))
+		lines.append("WireGroup: %s" % _wire_group_to_text(wireBuild.net.wireGroup))
 	if build.circuit_on:
 		lines.append("电路: 通电")
 	return "\n".join(lines)

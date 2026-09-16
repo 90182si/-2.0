@@ -10,16 +10,15 @@ func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 	pass
 
 func setPortFlag() -> void:
-	#canConBit = 0b0000
-	#portDefine = 0b0000
 	pass
-
-
+	
 func getExpr(pinDir:SWDefine.SW_Dir) -> SWDefine.SWCircuitStruct:
 	return null
 
 func getBuildExpr() -> void:
 	pass
 	
-func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
 	return SWDefine.CircuitSignal.NONE
+func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
+	pass

@@ -32,7 +32,7 @@ func iterate_bracket_text(swBuildManager:SWBuildManager,input: String) -> void:
 		print("找到：", content)
 		var build = swBuildManager.getBuildById(contentID)
 		if build:
-			var value = build.getValue(swBuildManager,contentDir)
+			var value = build.getValue(contentDir)
 			if value == SWDefine.CircuitSignal.LOW or value == SWDefine.CircuitSignal.NONE:
 				input.replace(content,"0")
 			elif value == SWDefine.CircuitSignal.HIGH:
@@ -41,14 +41,17 @@ func iterate_bracket_text(swBuildManager:SWBuildManager,input: String) -> void:
 		#start_pos = rmatch.get_end()
 	print(input)
 		
-func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+	var sig:SWDefine.CircuitSignal = SWDefine.CircuitSignal.NONE
 	if not pinExprMap.has(dir):
-		return SWDefine.CircuitSignal.NONE
+		return sig
 	var cirStr:SWDefine.SWCircuitStruct = pinExprMap[dir]
 	var v = cirStr.optFunc.call(cirStr.args)
 	if v == 1:
-		return SWDefine.CircuitSignal.HIGH
-	return SWDefine.CircuitSignal.LOW
+		sig = SWDefine.CircuitSignal.HIGH
+	else:
+		sig = SWDefine.CircuitSignal.LOW
+	return sig
 
 func ff(cirStruct:SWDefine.SWCircuitStruct,visited:Array = []) -> Array:
 	var result:Array = []
@@ -114,7 +117,7 @@ func setLinkedPort(rotation:SWDefine.SW_Dir,dir:SWDefine.SW_Dir) -> void:
 	var newValue = (dir-rotation)%4
 	linkedPort|=(1<<newValue)
 	
-func resetPortCon() -> void:
+func resetPortState() -> void:
 	linkedPort = 0
 	pinNetMap = {}
 	pinExprMap = {}

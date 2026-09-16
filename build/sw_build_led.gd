@@ -16,8 +16,8 @@ func setPortFlag() -> void:
 	circuitCompoent.setPinDefine(SWDefine.SW_Dir.DOWN,SWDefine.CircuitPinType.INPUT)
 	circuitCompoent.setPinDefine(SWDefine.SW_Dir.LEFT,SWDefine.CircuitPinType.INPUT)
 
-func resetPortCon() -> void:
-	super.resetPortCon()
+func resetPortState() -> void:
+	super.resetPortState()
 	drawRect = buildDefine.atlasTextureOff.region
 
 func getExpr(pinDir:SWDefine.SW_Dir) -> SWDefine.SWCircuitStruct:
@@ -61,18 +61,44 @@ func getBuildExpr() -> void:
 			else:
 				pass
 
-func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	return circuitCompoent.getValue(swBuildManager,dir)
+	return circuitCompoent.getValue(dir)
 
 func reCalSignals(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	var v1 = getValue(swBuildManager,SWDefine.SW_Dir.UP) == SWDefine.CircuitSignal.HIGH
-	var v2 = getValue(swBuildManager,SWDefine.SW_Dir.RIGHT) == SWDefine.CircuitSignal.HIGH
-	var v3 = getValue(swBuildManager,SWDefine.SW_Dir.DOWN) == SWDefine.CircuitSignal.HIGH
-	var v4 = getValue(swBuildManager,SWDefine.SW_Dir.LEFT) == SWDefine.CircuitSignal.HIGH
+	var loads = {}
+	var dir := SWDefine.SW_Dir.UP
+	var v1 = getValue(dir) == SWDefine.CircuitSignal.HIGH
+	if circuitCompoent.pinNetMap.has(dir):
+		loads = circuitCompoent.pinNetMap[dir].wireGroup.wireBuilds
+		for load in loads:
+			load.setValue(dir,SWDefine.CircuitSignal.HIGH if v1 else SWDefine.CircuitSignal.LOW)
+	
+	dir = SWDefine.SW_Dir.RIGHT
+	var v2 = getValue(dir) == SWDefine.CircuitSignal.HIGH
+	if circuitCompoent.pinNetMap.has(dir):
+		loads = circuitCompoent.pinNetMap[dir].wireGroup.wireBuilds
+		for load in loads:
+			load.setValue(dir,SWDefine.CircuitSignal.HIGH if v2 else SWDefine.CircuitSignal.LOW)
+	
+	dir = SWDefine.SW_Dir.DOWN
+	var v3 = getValue(dir) == SWDefine.CircuitSignal.HIGH
+	if circuitCompoent.pinNetMap.has(dir):
+		loads = circuitCompoent.pinNetMap[dir].wireGroup.wireBuilds
+		for load in loads:
+			load.setValue(dir,SWDefine.CircuitSignal.HIGH if v3 else SWDefine.CircuitSignal.LOW)
+	
+	dir = SWDefine.SW_Dir.LEFT
+	var v4 = getValue(dir) == SWDefine.CircuitSignal.HIGH
+	if circuitCompoent.pinNetMap.has(dir):
+		loads = circuitCompoent.pinNetMap[dir].wireGroup.wireBuilds
+		for load in loads:
+			load.setValue(dir,SWDefine.CircuitSignal.HIGH if v4 else SWDefine.CircuitSignal.LOW)
 	if v1 or v2 or v3 or v4:
 		buildStateChanged(SWDefine.CircuitSignal.HIGH)
 	else:
 		buildStateChanged(SWDefine.CircuitSignal.LOW)
 	return [self]
+func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
+	pass

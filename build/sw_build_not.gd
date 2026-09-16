@@ -8,58 +8,68 @@ func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 		drawRect = buildDefine.atlasTextureOn.region
 
 func setPortFlag() -> void:
-	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	circuitCompoent.setPinDefine(SWDefine.SW_Dir.UP,SWDefine.CircuitPinType.OUTPUT)
-	#circuitCompoent.setPinDefine(SWDefine.SW_Dir.RIGHT,SWDefine.CircuitPinType.WIRE)
-	circuitCompoent.setPinDefine(SWDefine.SW_Dir.DOWN,SWDefine.CircuitPinType.INPUT)
-	#circuitCompoent.setPinDefine(SWDefine.SW_Dir.LEFT,SWDefine.CircuitPinType.WIRE)
+	var circuit_compoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	circuit_compoent.setPinDefine(SWDefine.SW_Dir.UP,SWDefine.CircuitPinType.OUTPUT)
+	#circuit_compoent.setPinDefine(SWDefine.SW_Dir.RIGHT,SWDefine.CircuitPinType.WIRE)
+	circuit_compoent.setPinDefine(SWDefine.SW_Dir.DOWN,SWDefine.CircuitPinType.INPUT)
+	#circuit_compoent.setPinDefine(SWDefine.SW_Dir.LEFT,SWDefine.CircuitPinType.WIRE)
 	pass
 
-func resetPortCon() -> void:
-	super.resetPortCon()
+func resetPortState() -> void:
+	super.resetPortState()
 	drawRect = buildDefine.atlasTextureOff.region
 
 func getExpr(pinDir:SWDefine.SW_Dir) -> SWDefine.SWCircuitStruct:
-	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuit_compoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	#如果这个端口是输入口，并且电路组件里的pinNet存在这个方向的net
 	var antiDir = SWDefine.getAntiDir(pinDir)
-	if portIsOutput(pinDir) and circuitCompoent.pinNetMap.has(antiDir):
-		#var net:SWNet = circuitCompoent.pinNetMap[antiDir]
-		#if not net:
-			#return circuitCompoent.pinExprMap[antiDir]
-		##获取net的驱动端口们
-		#var drivers = net.getDrivers()
-		##该部件的函数是需要线与and
-		#circuitCompoent.pinExprMap[antiDir].optFunc = SwCommon.AndValues
-		##把每个条件加到args里面
-		#for driver:Dictionary in drivers:
-			#var build = driver["build"]
-			#var pDir = driver["pinDir"]
-			#circuitCompoent.pinExprMap[antiDir].args.append(build.getExpr(pDir))
-		return circuitCompoent.pinExprMap[antiDir]
+	if portIsOutput(pinDir) and circuit_compoent.pinNetMap.has(antiDir) and circuit_compoent.pinExprMap.has(antiDir):
+		return circuit_compoent.pinExprMap[antiDir]
 	return null
 
 func getBuildExpr() -> void:
-	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuit_compoent : SWBuildCompoentCircuit = getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	for dir in range(3,-1,-1):
-		if portIsInput(dir) and circuitCompoent.pinNetMap.has(dir):
-			var net:SWNet = circuitCompoent.pinNetMap[dir]
+		if portIsInput(dir) and circuit_compoent.pinNetMap.has(dir):
+			var net:SWNet = circuit_compoent.pinNetMap[dir]
 			if not net:
 				continue 
 			#获取net的驱动端口们
 			var drivers = net.getDrivers()
 			#该部件的函数是需要线与and
-			if not circuitCompoent.pinExprMap.has(dir):
-				circuitCompoent.pinExprMap[dir] = SWDefine.SWCircuitStruct.new()
-				circuitCompoent.pinExprMap[dir].optFunc = SwCommon.NotValues
-				circuitCompoent.pinExprMap[dir].optFuncName = "SwCommon.NotValues"
+			if not circuit_compoent.pinExprMap.has(dir):
+				circuit_compoent.pinExprMap[dir] = SWDefine.SWCircuitStruct.new()
+				circuit_compoent.pinExprMap[dir].optFunc = SwCommon.NotAndValues
+				circuit_compoent.pinExprMap[dir].optFuncName = "SwCommon.NotAndValues"
 				#把每个条件加到args里面
 				for driver:Dictionary in drivers:
 					var build = driver["build"]
 					var pDir = driver["pinDir"]
-					circuitCompoent.pinExprMap[dir].args.append(build.getExpr(pDir))
+					circuit_compoent.pinExprMap[dir].args.append(build.getExpr(pDir))
 			else:
 				pass
 	
-func getValue(swBuildManager:SWBuildManager,dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
-	return SWDefine.CircuitSignal.NONE
+func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	return circuitCompoent.getValue(dir)
+
+func reCalSignals(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	#var v1 = getValue(SWDefine.SW_Dir.UP) == SWDefine.CircuitSignal.HIGH
+	#var v2 = getValue(SWDefine.SW_Dir.RIGHT) == SWDefine.CircuitSignal.HIGH
+	var v3 = getValue(SWDefine.SW_Dir.DOWN) == SWDefine.CircuitSignal.HIGH
+	#var v4 = getValue(SWDefine.SW_Dir.LEFT) == SWDefine.CircuitSignal.HIGH
+	var loads = circuitCompoent.pinNetMap[SWDefine.SW_Dir.DOWN].wireGroup.wireBuilds
+	if not v3:
+		buildStateChanged(SWDefine.CircuitSignal.HIGH)
+		for load in loads:
+			load.setValue(SWDefine.SW_Dir.DOWN,SWDefine.CircuitSignal.HIGH)
+	else:
+		buildStateChanged(SWDefine.CircuitSignal.LOW)
+		for load in loads:
+			load.setValue(SWDefine.SW_Dir.DOWN,SWDefine.CircuitSignal.LOW)
+		
+	
+	return [self]
+func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
+	pass
