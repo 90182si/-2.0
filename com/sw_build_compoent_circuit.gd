@@ -90,11 +90,11 @@ func setPinValue(pinDir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
 		pinValueBit = pinValueBit & (0b11111-(1<<(3-pinDir)))
 
 func isPort(rotation:SWDefine.SW_Dir,value:int) -> bool:
-	value = (value-rotation)%4
+	value = posmod(value-rotation,4)
 	return pinConBit&(1<<value) > 0
 
 func portIsOutput(rotation:SWDefine.SW_Dir,value:int) -> bool:
-	var newValue = (value-rotation)%4
+	var newValue = posmod(value - rotation, 4)
 	if not isPort(rotation,value):
 		return false
 	if pinDefineBit >= 16:
@@ -102,7 +102,7 @@ func portIsOutput(rotation:SWDefine.SW_Dir,value:int) -> bool:
 	return pinDefineBit&(1<<newValue) > 0
 	
 func portIsInput(rotation:SWDefine.SW_Dir,value:int) -> bool:
-	var newValue = (value-rotation)%4
+	var newValue = posmod(value - rotation, 4)
 	if not isPort(rotation,value):
 		return false
 	if pinDefineBit >= 16:
@@ -110,11 +110,11 @@ func portIsInput(rotation:SWDefine.SW_Dir,value:int) -> bool:
 	return pinDefineBit&(1<<newValue) == 0
 
 func isLinkedPort(rotation:SWDefine.SW_Dir,dir:SWDefine.SW_Dir) -> bool:
-	var newValue = (dir-rotation)%4
+	var newValue = posmod(dir - rotation, 4)
 	return (linkedPort&(1<<newValue)) > 0
 
 func setLinkedPort(rotation:SWDefine.SW_Dir,dir:SWDefine.SW_Dir) -> void:
-	var newValue = (dir-rotation)%4
+	var newValue = posmod(dir - rotation, 4)
 	linkedPort|=(1<<newValue)
 	
 func resetPortState() -> void:

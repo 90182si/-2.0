@@ -45,7 +45,9 @@ func getBuildExpr() -> void:
 				for driver:Dictionary in drivers:
 					var build = driver["build"]
 					var pDir = driver["pinDir"]
-					circuit_compoent.pinExprMap[dir].args.append(build.getExpr(pDir))
+					var expr = build.getExpr(pDir)
+					if expr != null:
+						circuit_compoent.pinExprMap[dir].args.append(expr)
 			else:
 				pass
 	
@@ -57,17 +59,20 @@ func reCalSignals(swBuildManager:SWBuildManager) -> Array[SWBuildItemDefine]:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	#var v1 = getValue(SWDefine.SW_Dir.UP) == SWDefine.CircuitSignal.HIGH
 	#var v2 = getValue(SWDefine.SW_Dir.RIGHT) == SWDefine.CircuitSignal.HIGH
-	var v3 = getValue(SWDefine.SW_Dir.DOWN) == SWDefine.CircuitSignal.HIGH
+	var downDir = SWDefine.getAntiDir(rotation)
+	var v3 = getValue(downDir) == SWDefine.CircuitSignal.HIGH
 	#var v4 = getValue(SWDefine.SW_Dir.LEFT) == SWDefine.CircuitSignal.HIGH
-	var loads = circuitCompoent.pinNetMap[SWDefine.SW_Dir.DOWN].wireGroup.wireBuilds
+	var loads = []
+	if circuitCompoent.pinNetMap.has(downDir):
+		loads = circuitCompoent.pinNetMap[downDir].wireGroup.wireBuilds
 	if not v3:
 		buildStateChanged(SWDefine.CircuitSignal.HIGH)
 		for load in loads:
-			load.setValue(SWDefine.SW_Dir.DOWN,SWDefine.CircuitSignal.HIGH)
+			load.setValue(downDir,SWDefine.CircuitSignal.HIGH)
 	else:
 		buildStateChanged(SWDefine.CircuitSignal.LOW)
 		for load in loads:
-			load.setValue(SWDefine.SW_Dir.DOWN,SWDefine.CircuitSignal.LOW)
+			load.setValue(downDir,SWDefine.CircuitSignal.LOW)
 		
 	
 	return [self]

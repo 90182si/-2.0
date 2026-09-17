@@ -57,7 +57,9 @@ func getBuildExpr() -> void:
 				for driver:Dictionary in drivers:
 					var build = driver["build"]
 					var pDir = driver["pinDir"]
-					circuitCompoent.pinExprMap[dir].args.append(build.getExpr(pDir))
+					var expr = build.getExpr(pDir)
+					if expr:
+						circuitCompoent.pinExprMap[dir].args.append(expr)
 			else:
 				pass
 
