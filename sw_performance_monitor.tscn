@@ -68,12 +68,15 @@ text = "地图显示"
 
 [node name="AsyncLoadCheck" type="CheckButton" parent="StatsContainer/StatsDisplay" unique_id=391639326]
 layout_mode = 2
+tooltip_text = "异步模式下 ByContent 每帧最多加载的区块数"
 mouse_filter = 1
 text = "异步加载"
 
 [node name="HoverInfoCheck" type="CheckButton" parent="StatsContainer/StatsDisplay" unique_id=688363046]
 layout_mode = 2
+tooltip_text = "鼠标悬停显示建筑物信息"
 mouse_filter = 1
+button_pressed = true
 text = "建筑信息"
 
 [node name="BuildInfoLabel" type="Label" parent="." unique_id=263887776]

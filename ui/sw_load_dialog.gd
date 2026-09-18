@@ -14,7 +14,6 @@ var _selected_name: String = ""
 
 func _ready() -> void:
 	title = "加载"
-	unresizable = true
 	size = Vector2i(520, 380)
 	_confirm_btn.disabled = true
 	_delete_btn.disabled = true
@@ -85,6 +84,7 @@ func _on_confirm_pressed() -> void:
 func _on_cancel_pressed() -> void:
 	load_canceled.emit()
 	queue_free()
+	get_tree().paused = false
 
 func _on_delete_pressed() -> void:
 	if _selected_name.is_empty():

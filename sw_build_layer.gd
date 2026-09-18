@@ -10,6 +10,7 @@ var holdLayerRef:SWHoldLayer = null
 func _ready() -> void:
 	sw_build_manager = SWBuildManager.new()
 	sw_draw_manager.setBuildManager(sw_build_manager)
+	sw_draw_manager.set_name("buildDrawManager")
 	sw_draw_manager.setDrawMode(SWDefine.GridDrawMode.ByContent)
 	sw_draw_manager.useName = "Content"
 
@@ -59,7 +60,8 @@ func _on_drag_ended() -> void:
 
 func clear_all_builds() -> void:
 	#if sw_circuit_analyzer:
-		#sw_circuit_analyzer.begin_batch()
+		#sw_circuit_analyzer.begin_batch()、
+	_pendingRemovedBuilds.clear()
 	sw_build_manager.clearAllBuilds()
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.end_batch()
@@ -146,19 +148,33 @@ func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
 		selectedBuilds.clear()
 		return
 	var builds := sw_build_manager.getBuilds(poss)
-	var notifyBuilds = builds.duplicate()
-	if sw_circuit_control:
-		sw_build_manager.setBuildsState(builds,SWDefine.BuildState.TO_BE_REMOVED)
-		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(builds))
-		#sw_draw_manager.updataChunks(notifyChunkPosArr)
+	if builds.is_empty():
+		return
+	#按住右键期间只做视觉删除并记账，电路更新延迟到右键释放时统一执行
+	sw_build_manager.setBuildsState(builds,SWDefine.BuildState.TO_BE_REMOVED)
 	for build in builds:
 		if selectedBuilds.has(build):
 			selectedBuilds.erase(build)
+		_pendingRemovedBuilds[build] = true
 	sw_build_manager.delBuilds(builds)
+	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
+	sw_draw_manager.updataChunks(notifyChunkPosArr)
+
+#右键释放：把本次按住期间擦除的所有建筑物一次性提交给电路重建
+func onEraseDragEnded() -> void:
+	if _pendingRemovedBuilds.is_empty():
+		return
+	var removedBuilds:Array[SWBuildItemDefine] = _pendingRemovedBuilds.keys()
+	_pendingRemovedBuilds.clear()
+	var notifyBuilds = removedBuilds.duplicate()
+	if sw_circuit_control:
+		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(removedBuilds))
 	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 
 var selectedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
+#按住右键擦除期间暂存的被擦除建筑物，右键释放时统一更新电路
+var _pendingRemovedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 
 signal cut_builds()
 signal copy_builds()

@@ -41,7 +41,7 @@ static func RotationPos(srcPos:Vector2,deg:float,rotCenter:Vector2) -> Vector2:
 	return (srcPos - rotCenter).rotated(deg_to_rad(deg)) + rotCenter
 
 static func IsWireBuild(build:SWBuildItemDefine) -> bool:
-	if build.comp_type == SWDefine.CircuitComponentType.WIRE:
+	if build.comp_type == SWDefine.CircuitComponentType.WIRE or build.comp_type == SWDefine.CircuitComponentType.WIRE_TUNNEL:
 		return true
 	return false
 	

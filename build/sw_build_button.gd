@@ -1,10 +1,12 @@
 class_name SWBuildButton extends SWBuildItemDefine
 
+var pressed:bool = false
+
+#按钮定义
 func setPortFlag() -> void:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	circuitCompoent.setPinDefine(SWDefine.SW_Dir.UP,SWDefine.CircuitPinType.OUTPUT)
 
-var pressed:bool = false
 func onPressed(_pressed:bool) -> void:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	pressed = _pressed
@@ -17,18 +19,7 @@ func onPressed(_pressed:bool) -> void:
 
 func getExpr(pinDir:SWDefine.SW_Dir) -> SWDefine.SWCircuitStruct:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	#如果是按钮的出口方向
-	#函数就是直接等于
-	#参数是自己和出口端口
-	if pinDir == rotation:
-		if not circuitCompoent.pinExprMap.has(pinDir):
-			circuitCompoent.pinExprMap[pinDir] = SWDefine.SWCircuitStruct.new()
-			circuitCompoent.pinExprMap[pinDir].optFunc = SWCommon.EqualValues
-			circuitCompoent.pinExprMap[pinDir].optFuncName = "SWCommon.EqualValues"
-			circuitCompoent.pinExprMap[pinDir].args = [SWDefine.SWBuildPinStruct.new(self,pinDir)]
-			#return circuitCompoent.pinExprMap[pinDir]
-		return circuitCompoent.pinExprMap[pinDir]
-	return null
+	return circuitCompoent.pinExprMap.get(pinDir,null)
 
 func getBuildExpr() -> void:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
@@ -40,12 +31,6 @@ func getBuildExpr() -> void:
 
 
 func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
-	if dir == rotation:
-		if pressed == true:
-			return SWDefine.CircuitSignal.HIGH
-		elif pressed == false:
-			return SWDefine.CircuitSignal.LOW
-	return SWDefine.CircuitSignal.NONE
-
-func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
-	pass
+	if dir != rotation:
+		return SWDefine.CircuitSignal.NONE
+	return SWDefine.CircuitSignal.HIGH if pressed else SWDefine.CircuitSignal.LOW

@@ -7,3 +7,8 @@
 script = ExtResource("1_unbag")
 
 [node name="SWDrawManager" parent="." unique_id=805409719 instance=ExtResource("2_en58c")]
+useName = null
+_drawMode = null
+preLoadwidth = null
+max_chunks_per_frame = null
+async_chunks_per_frame = null

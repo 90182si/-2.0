@@ -33,6 +33,7 @@ func _ready() -> void:
 		buildLayer.copy_builds.connect(buildLayer._do_copy)
 		holdLayer.drag_started.connect(buildLayer._on_drag_started)
 		holdLayer.drag_ended.connect(buildLayer._on_drag_ended)
+		holdLayer.eraseDragEnded.connect(buildLayer.onEraseDragEnded)
 		
 	var build3:SWBuildDefine = load("res://res/非门.tres") as SWBuildDefine
 	var build2:SWBuildDefine = load("res://res/开关.tres") as SWBuildDefine
@@ -62,6 +63,7 @@ func _on_save_requested() -> void:
 		# 先隐藏对话框再截图
 		dialog.visible = false
 		await get_tree().process_frame
+		await RenderingServer.frame_post_draw
 		var builds = buildLayer.sw_build_manager.getAllBuilds()
 		print("[Save] 获取到建筑物: ", builds.size())
 		var vp = get_tree().root.get_viewport()

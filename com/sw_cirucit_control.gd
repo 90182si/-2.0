@@ -28,7 +28,8 @@ func find1(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
 	var buildMap:Dictionary[SWBuildItemDefine,bool] = {}
 	for build:SWBuildItemDefine in builds:
 		var neiBuilds = build.getBuildIOConnectBuildArr(buildManager)
-		for neiBuild in neiBuilds:
+		for neiBuildItem:Dictionary in neiBuilds:
+			var neiBuild = neiBuildItem["build"]
 			if neiBuild.circuit != null:
 				for cBuild in neiBuild.circuit.buildArr:
 					buildMap[cBuild] = true
@@ -42,48 +43,13 @@ func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
 	for build:SWBuildItemDefine in builds:
 		if build.circuit == null:
 			continue
-		build.resetPortState()
+		build.resetPortState(buildManager)
 		forDelCircuit[build.circuit] = true
 		build.circuit = null
+	for build:SWBuildItemDefine in builds:
+		build.initPortState(buildManager)
 	for circuit:SWDefine.SWCircuitData in forDelCircuit.keys():
 		circuits.erase(circuit.circuitID)
-func getWireBuilds(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
-	var wireBuilds:Array[SWBuildItemDefine] = []
-	for build:SWBuildItemDefine in builds:
-		if SWCommon.IsWireBuild(build):
-			wireBuilds.append(build)
-	return wireBuilds
-func getWireGroupBuilds(wireBuild:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
-	var wireGroup:Array[SWBuildItemDefine] = []
-	var wireBuildQueue:Array[SWBuildItemDefine] = [wireBuild]
-	var visited:Dictionary[Vector2i,bool] = {}
-	
-	visited[wireBuild.buildAxisPos] = true
-	wireGroup.append(wireBuild)
-	while wireBuildQueue.size() > 0:
-		var wBuild = wireBuildQueue.pop_back()
-		var neiBuilds = wBuild.getBuildIOConnectBuildArr(buildManager)
-		for neiBuild:SWBuildItemDefine in neiBuilds:
-			if SWCommon.IsWireBuild(neiBuild) and not visited.has(neiBuild.buildAxisPos):
-				visited[neiBuild.buildAxisPos] = true
-				wireBuildQueue.append(neiBuild)
-				wireGroup.append(neiBuild)
-	return wireGroup
-func connectWireGroup(builds:Array[SWBuildItemDefine]) -> void:
-	var wireBuilds:Array[SWBuildItemDefine] = getWireBuilds(builds)
-	var wireBuildQueue:Dictionary[SWBuildItemDefine,bool] = {}
-	for wireBuild in wireBuilds:
-		wireBuildQueue[wireBuild] = true
-	#从wireBuilds中获取与build相连的wire
-	while wireBuildQueue.size() > 0:
-		var wireBuild = wireBuildQueue.keys().back()
-		var wireGroupBuilds = getWireGroupBuilds(wireBuild)
-		var wireGroup:SWDefine.SWWireGroup = SWDefine.SWWireGroup.new()
-		var wireNet:SWNet = SWNet.new()
-		#从wireBuildQueue中删除wireGroup
-		for wBuild:SWBuildItemDefine in wireGroupBuilds:
-			wireBuildQueue.erase(wBuild)
-			wireNet.addWireBuild(wBuild)
 func createNets(builds:Array[SWBuildItemDefine]) -> void:
 	for build:SWBuildItemDefine in builds:
 		build.getNet(buildManager)
@@ -108,7 +74,8 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 				continue
 			visited[build] = true
 			var neiBuilds = build.getBuildIOConnectBuildArr(buildManager)
-			for neiBuild in neiBuilds:
+			for neiBuildItem:Dictionary in neiBuilds:
+				var neiBuild = neiBuildItem["build"]
 				if visited.has(neiBuild):
 					continue
 				#visited[neiBuild] = true
@@ -131,7 +98,7 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 					cir.noticeMap[depBuild].append(build)
 	for build:SWBuildItemDefine in builds:
 		if not build.bIsToBeRemoved():
-			build.reCalSignals(buildManager)
+			build.reCalSignals()
 		
 func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefine]:
 	if not buildManager:
@@ -144,8 +111,6 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	var affectBuilds = find1(builds)
 	#将这些受影响的建筑物关联的电路清空
 	clearBuildsCircuitState(affectBuilds)
-	#预先连接电线
-	connectWireGroup(affectBuilds)
 	#每个建筑物创建net
 	createNets(affectBuilds)
 	#获取网络终点建筑物
@@ -162,5 +127,5 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 	if build.circuit:
 		var cir = build.circuit
 		for noticeBuild:SWBuildItemDefine in cir.noticeMap[build]:
-			notifyPosArr.append_array(noticeBuild.reCalSignals(buildManager))
+			notifyPosArr.append_array(noticeBuild.reCalSignals())
 	return notifyPosArr

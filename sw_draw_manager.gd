@@ -22,6 +22,8 @@ var swTf:SWDefine.SWTransformData
 @export var useName:String = ""
 
 var _viewRect:Rect2
+#本绘制层的可见状态：作用于所有区块 mesh 实例，并对之后新加载的区块同样生效
+var _visible:bool = true
 
 @export var _drawMode:SWDefine.GridDrawMode = SWDefine.GridDrawMode.Tiling
 @export_range(0, 8, 1) var preLoadwidth: int = 1
@@ -114,6 +116,17 @@ func setDrawMode(drawMode:SWDefine.GridDrawMode) -> void:
 		initDrawContent()
 	pass
 	
+func set_visible(enable:bool) -> void:
+	if _visible == enable:
+		return
+	_visible = enable
+	for chunkIns:SWDefine.SWDrawChunkData in _chunkInstance.values():
+		if chunkIns.mesh_instance:
+			chunkIns.mesh_instance.visible = enable
+
+func is_visible() -> bool:
+	return _visible
+
 func _ready() -> void:
 	add_to_group("DrawManager")
 	if not mapDefine:
@@ -196,7 +209,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 			mi_parent = null
 		if mi_parent == null:
 			shouldAddToTree.append(mi)
-		mi.visible = true
+		mi.visible = _visible
 		mi.set_process(true)
 		chunkIns.status = SWDefine.ChunkStatus.FULLY_LOADED
 		tasks.erase(chunkPos)

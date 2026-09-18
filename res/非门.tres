@@ -18,5 +18,5 @@ script = ExtResource("1_xid3e")
 atlasTextureOn = SubResource("AtlasTexture_eilan")
 atlasTextureOff = SubResource("AtlasTexture_1402x")
 buildName = "非门"
-circuit_component_type = 7
+circuit_component_type = 8
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

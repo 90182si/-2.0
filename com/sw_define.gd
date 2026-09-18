@@ -133,73 +133,73 @@ class SWTransformData extends RefCounted:
 	#var angle:SW_Dir = SW_Dir.UP#方向
 
 #电路元件方向映射辅助
-static func get_circuit_dir(rot:int) -> int:
-	var r = ((rot % 360) + 360) % 360
-	var step = r / 90
-	return (4 - step) % 4
+#static func get_circuit_dir(rot:int) -> int:
+	#var r = ((rot % 360) + 360) % 360
+	#var step = r / 90
+	#return (4 - step) % 4
+#
+#static func get_output_dir(compType:int, rot:int) -> int:
+	#match compType:
+		#CircuitComponentType.BUTTON, CircuitComponentType.SWITCH:
+			#return get_circuit_dir(rot)
+		#CircuitComponentType.NOT_GATE:
+			#return get_circuit_dir(rot)
+		#_:
+			#return -1
+#
+#static func get_input_dirs(compType:int, rot:int) -> Array[int]:
+	#var dirs:Array[int] = []
+	#var d = get_circuit_dir(rot)
+	#match compType:
+		#CircuitComponentType.BUTTON, CircuitComponentType.SWITCH:
+			#pass
+		#CircuitComponentType.LED:
+			#dirs = [0, 1, 2, 3]
+		#CircuitComponentType.WIRE_STRAIGHT:
+			#dirs = [0, 1, 2, 3]
+		#CircuitComponentType.WIRE_BENT:
+			#dirs = [0, 1, 2, 3]
+		#CircuitComponentType.WIRE_BRIDGE:
+			#dirs = [0, 1, 2, 3]
+		#CircuitComponentType.NOT_GATE:
+			#dirs = [(d + 2) % 4]
+		#CircuitComponentType.WIRE_TUNNEL:
+			#dirs = [0, 1, 2, 3]
+		#_:
+			#pass
+	#return dirs
 
-static func get_output_dir(compType:int, rot:int) -> int:
-	match compType:
-		CircuitComponentType.BUTTON, CircuitComponentType.SWITCH:
-			return get_circuit_dir(rot)
-		CircuitComponentType.NOT_GATE:
-			return get_circuit_dir(rot)
-		_:
-			return -1
+#static func get_output_dirs(compType:int, rot:int) -> Array[int]:
+	#var dirs:Array[int] = []
+	#var d = get_circuit_dir(rot)
+	#match compType:
+		#CircuitComponentType.BUTTON, CircuitComponentType.SWITCH:
+			#dirs = [d]
+		#CircuitComponentType.WIRE_STRAIGHT:
+			#dirs = [0, 1, 2, 3]
+		#CircuitComponentType.WIRE_BENT:
+			#dirs = [0, 1, 2, 3]
+		#CircuitComponentType.WIRE_BRIDGE:
+			#dirs = [0, 1, 2, 3]
+		#CircuitComponentType.NOT_GATE:
+			#dirs = [d]
+		#CircuitComponentType.WIRE_TUNNEL:
+			#dirs = [0, 1, 2, 3]
+		#_:
+			#pass
+	#return dirs
 
-static func get_input_dirs(compType:int, rot:int) -> Array[int]:
-	var dirs:Array[int] = []
-	var d = get_circuit_dir(rot)
-	match compType:
-		CircuitComponentType.BUTTON, CircuitComponentType.SWITCH:
-			pass
-		CircuitComponentType.LED:
-			dirs = [0, 1, 2, 3]
-		CircuitComponentType.WIRE_STRAIGHT:
-			dirs = [0, 1, 2, 3]
-		CircuitComponentType.WIRE_BENT:
-			dirs = [0, 1, 2, 3]
-		CircuitComponentType.WIRE_BRIDGE:
-			dirs = [0, 1, 2, 3]
-		CircuitComponentType.NOT_GATE:
-			dirs = [(d + 2) % 4]
-		CircuitComponentType.WIRE_TUNNEL:
-			dirs = [0, 1, 2, 3]
-		_:
-			pass
-	return dirs
+#static func opposite_dir(dir:int) -> int:
+	#return (dir + 2) % 4
 
-static func get_output_dirs(compType:int, rot:int) -> Array[int]:
-	var dirs:Array[int] = []
-	var d = get_circuit_dir(rot)
-	match compType:
-		CircuitComponentType.BUTTON, CircuitComponentType.SWITCH:
-			dirs = [d]
-		CircuitComponentType.WIRE_STRAIGHT:
-			dirs = [0, 1, 2, 3]
-		CircuitComponentType.WIRE_BENT:
-			dirs = [0, 1, 2, 3]
-		CircuitComponentType.WIRE_BRIDGE:
-			dirs = [0, 1, 2, 3]
-		CircuitComponentType.NOT_GATE:
-			dirs = [d]
-		CircuitComponentType.WIRE_TUNNEL:
-			dirs = [0, 1, 2, 3]
-		_:
-			pass
-	return dirs
-
-static func opposite_dir(dir:int) -> int:
-	return (dir + 2) % 4
-	
-static func get_wire_dir_except(dir:int) -> Array[int]:
-	var dirs:Array[int] = [0,1,2,3]
-	match dir:
-		0:dirs.erase(2)
-		1:dirs.erase(3)
-		2:dirs.erase(0)
-		3:dirs.erase(1)
-	return dirs
+#static func get_wire_dir_except(dir:int) -> Array[int]:
+	#var dirs:Array[int] = [0,1,2,3]
+	#match dir:
+		#0:dirs.erase(2)
+		#1:dirs.erase(3)
+		#2:dirs.erase(0)
+		#3:dirs.erase(1)
+	#return dirs
 
 static func dir_to_vec(dir:int) -> Vector2i:
 	match dir:
@@ -232,6 +232,7 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) 
 		"非门":return SWBuildNot.new(axisPos,buildDef,rot)
 		"电线A":return SWBuildWire.new(axisPos,buildDef,rot)
 		"电线B":return SWBuildWire.new(axisPos,buildDef,rot)
+		"电线桥梁":return SWBuildWireCross.new(axisPos,buildDef,rot)
 		"开关":return SWBuildButton.new(axisPos,buildDef,rot)
 		_:return SWBuildNone.new(axisPos,buildDef,rot)
 	return null

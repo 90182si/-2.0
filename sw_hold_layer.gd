@@ -30,6 +30,7 @@ signal selectBuildsByRect(rect)
 signal deselectBuildsByRect(rect)
 signal drag_started()
 signal drag_ended()
+signal eraseDragEnded()
 
 var _drag_count: int = 0
 var _last_anchor_pos: Vector2i = Vector2i.ZERO
@@ -281,6 +282,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					if _right_drag_started:
 						_right_drag_started = false
 						_end_drag()
+						eraseDragEnded.emit()
 	elif event is InputEventMouseMotion:
 		if not ctrl_pressed:
 			var world_pos = getCurGridWorldPosByMouse()

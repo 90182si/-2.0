@@ -167,9 +167,13 @@ func _on_vsync_toggled(toggled_on: bool) -> void:
 
 
 func _on_map_switch_toggled(toggled_on: bool) -> void:
-	if _map_layer != null:
-		_set_layer_visible_recursive(_map_layer, toggled_on)
-
+	#if _map_layer != null:
+		#_set_layer_visible_recursive(_map_layer, toggled_on)
+	var draw_managers = get_tree().get_nodes_in_group("DrawManager")
+	for dm in draw_managers:
+		if dm.get_name() == "mapDrawManager":
+			var dmr = dm as SWDrawManager
+			dmr.set_visible(toggled_on)
 
 func _on_async_load_toggled(toggled_on: bool) -> void:
 	# 通知所有 DrawManager 切换异步加载模式

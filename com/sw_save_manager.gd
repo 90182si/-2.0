@@ -2,7 +2,7 @@ class_name SWSaveManager extends RefCounted
 
 const SAVE_VERSION: int = 1
 const SAVE_DIR_NAME: String = "saves"
-const THUMBNAIL_SIZE: Vector2i = Vector2i(256, 256)
+const THUMBNAIL_SIZE: Vector2i = Vector2i(1920, 1080)
 
 static func _get_save_dir() -> String:
 	return "user://saves"
