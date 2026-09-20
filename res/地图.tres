@@ -1,11 +1,16 @@
-[gd_resource type="Resource" script_class="SWBuildDefine" load_steps=3 format=3 uid="uid://csjirldjgwi6y"]
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://csjirldjgwi6y"]
 
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_h0xp7"]
-[ext_resource type="Texture2D" uid="uid://cbxfi7ncswaip" path="res://res/atlasTexture/地图texture.tres" id="1_r4pps"]
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/atlasTexture/SWtexture2D.tres" id="1_r4pps"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kt1vn"]
+atlas = ExtResource("1_r4pps")
+region = Rect2(0, 0, 256, 256)
+filter_clip = true
 
 [resource]
 script = ExtResource("1_h0xp7")
-atlasTextureOn = ExtResource("1_r4pps")
-atlasTextureOff = ExtResource("1_r4pps")
+atlasTextureOn = SubResource("AtlasTexture_kt1vn")
+atlasTextureOff = SubResource("AtlasTexture_kt1vn")
 buildName = "地图"
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

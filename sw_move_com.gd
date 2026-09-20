@@ -23,6 +23,7 @@ var target_velocity = Vector2.ZERO    # 目标速度
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	set_process_priority(-1)
 
 func _process(delta: float) -> void:
 	# 计算目标速度

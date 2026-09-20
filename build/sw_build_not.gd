@@ -49,6 +49,10 @@ func getBuildExpr() -> void:
 		var build = driver["build"]
 		var pDir = driver["pinDir"]
 		build.getBuildExpr()
+		if build._buildingExpr:
+			build.in_loop = true
+			in_loop = true
+			continue
 		var expr = build.getExpr(pDir)
 		if expr != null:
 			circuit_compoent.pinExprMap[dir].args.append(expr)
@@ -69,9 +73,15 @@ func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
 	return wireValue
 
 func reCalSignals() -> Array[SWBuildItemDefine]:
+	var retArr:Array[SWBuildItemDefine] = [self]
 	var downDir = SWDefine.getAntiDir(rotation)
 	buildStateChanged(getValue(downDir))
-	return [self]
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var net = circuitCompoent.pinNetMap.get(downDir,null)
+	if net:
+		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
+			retArr.append(load)
+	return retArr
 	
 func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
 	pass

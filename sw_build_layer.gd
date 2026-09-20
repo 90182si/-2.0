@@ -132,10 +132,13 @@ func holdIdleBuilds(builds:Array[SWBuildItemDefine],poss:Array[Vector2i]) -> voi
 
 	var notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
-	if sw_circuit_control:
-		successBuilds.append_array(sw_circuit_control.updateBuildCircuit(successBuilds))
-		notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
-		sw_draw_manager.updataChunks(notifyChunkPosArr)
+	 #按住左键期间只做视觉放置并记账，电路更新延迟到左键释放时统一执行
+	for b in successBuilds:
+		_pendingPlacedBuilds[b] = true
+	# if sw_circuit_control:
+	# 	successBuilds.append_array(sw_circuit_control.updateBuildCircuit(successBuilds))
+	# 	notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
+	# 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 
 func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
 	if selectedBuilds.size() != 0:
@@ -172,9 +175,23 @@ func onEraseDragEnded() -> void:
 	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
 
+#左键释放：把本次按住期间放置的所有建筑物一次性提交给电路重建
+func onPlaceDragEnded() -> void:
+	if _pendingPlacedBuilds.is_empty():
+		return
+	var placedBuilds:Array[SWBuildItemDefine] = _pendingPlacedBuilds.keys()
+	_pendingPlacedBuilds.clear()
+	var notifyBuilds = placedBuilds.duplicate()
+	if sw_circuit_control:
+		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(placedBuilds))
+	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
+	sw_draw_manager.updataChunks(notifyChunkPosArr)
+
 var selectedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 #按住右键擦除期间暂存的被擦除建筑物，右键释放时统一更新电路
 var _pendingRemovedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
+#按住左键放置期间暂存的新放置建筑物，左键释放时统一更新电路
+var _pendingPlacedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 
 signal cut_builds()
 signal copy_builds()

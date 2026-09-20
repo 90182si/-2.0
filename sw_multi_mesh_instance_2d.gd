@@ -23,6 +23,38 @@ var planIsRunning = false
 var semaphore: Semaphore
 var semaphore2: Semaphore
 
+#func _init() -> void:
+	#_swTransform = SWDefine.SWTransformData.new()
+	#thread = Thread.new()
+	#semaphore = Semaphore.new()
+	#semaphore2 = Semaphore.new()
+	##mutex = Mutex.new()
+	#n = e.x * e.y
+	#if multimesh:
+		## 启用颜色支持（如果需要）
+		#multimesh.use_colors = true
+		#multimesh.instance_count = n
+	#thread.start(calBuffer)
+	
+func _init() -> void:
+	_swTransform = SWDefine.SWTransformData.new()
+	thread = Thread.new()
+	semaphore = Semaphore.new()
+	semaphore2 = Semaphore.new()
+	#mutex = Mutex.new()
+	n = e.x * e.y
+	if multimesh:
+		# 启用颜色支持（如果需要）
+		multimesh.use_colors = true
+		multimesh.instance_count = n
+	thread.start(calBuffer)
+	
+func _ready() -> void:
+	# 运行前从全局配置 SwAtlas 取当前图集，覆盖 shader 采样用的 srcImg
+	var mat := material as ShaderMaterial
+	if mat and SwAtlas.current:
+		mat.set_shader_parameter("srcImg", SwAtlas.current)
+		
 func setDrawMode(mode:SWDefine.GridDrawMode) -> void:
 	_drawMode = mode
 	if _drawMode == SWDefine.GridDrawMode.Tiling:
@@ -49,19 +81,6 @@ func _exit_tree() -> void:
 	semaphore.post()
 	if thread and thread.is_started():
 		thread.wait_to_finish()
-
-func _init() -> void:
-	_swTransform = SWDefine.SWTransformData.new()
-	thread = Thread.new()
-	semaphore = Semaphore.new()
-	semaphore2 = Semaphore.new()
-	#mutex = Mutex.new()
-	n = e.x * e.y
-	if multimesh:
-		# 启用颜色支持（如果需要）
-		multimesh.use_colors = true
-		multimesh.instance_count = n
-	thread.start(calBuffer)
 
 # 公开方法用于控制颜色支持
 func set_use_color(enabled:bool) -> void:

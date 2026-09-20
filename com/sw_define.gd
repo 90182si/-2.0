@@ -322,21 +322,14 @@ class SWCircuitData extends RefCounted:
 		circuitID = SWCommon.GenNextBuildId()
 
 class SWWireGroup extends RefCounted:
-	#var net:SWNet = null
 	var wireGroupID:int
-	var wireHeaderID:int
-	var wireBuilds:Dictionary[SWBuildItemDefine,bool] = {}
-	#格式[{"id":1,"signal":'!'},{"id":2,"signal":'!'}]
-	#var signalDepends:Dictionary[SWBuildItemDefine,bool] = {}
+	var wireBuilds:Dictionary[SWBuildItemDefine,SWBuildItemDefine] = {}
 	func _init() -> void:
 		wireGroupID = SWCommon.GenNextBuildId()
-		#net = SWNet.new()
 
 	#自动给wireBuild设置wireGroup
 	func addWireBuild(build:SWBuildItemDefine) -> void:
-		wireBuilds[build]=true
-		var wireBuild := build as SWBuildWire
-		#wireBuild.net.wireGroup = self
+		wireBuilds[build]=build
 
 # 区块数据结构（存储核心信息，不直接存储渲染节点）
 class SWDrawChunkData extends RefCounted:

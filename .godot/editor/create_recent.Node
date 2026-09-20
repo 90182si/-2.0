@@ -1,12 +1,12 @@
+HBoxContainer
+VBoxContainer
 ColorRect
 Button
 Label
-VBoxContainer
 PanelContainer
 CanvasLayer
 Node
 TextureButton
-HBoxContainer
 MarginContainer
 Control
 Node2D

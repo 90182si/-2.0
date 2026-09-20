@@ -1,6 +1,7 @@
 class_name SWBuildLed extends SWBuildItemDefine
 
-
+func rotOnce() -> void:
+	pass
 
 func buildStateChanged(signalValue:SWDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
@@ -46,6 +47,10 @@ func getBuildExpr() -> void:
 			var build = driver["build"]
 			var pDir = driver["pinDir"]
 			build.getBuildExpr()
+			if build._buildingExpr:
+				build.in_loop = true
+				in_loop = true
+				continue
 			var expr = build.getExpr(pDir)
 			if expr:
 				circuitCompoent.pinExprMap[dir].args.append(expr)

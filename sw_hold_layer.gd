@@ -31,6 +31,7 @@ signal deselectBuildsByRect(rect)
 signal drag_started()
 signal drag_ended()
 signal eraseDragEnded()
+signal placeDragEnded()
 
 var _drag_count: int = 0
 var _last_anchor_pos: Vector2i = Vector2i.ZERO
@@ -243,7 +244,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					right_mouse_pressed = true
 			elif event.button_index == MOUSE_BUTTON_LEFT:
 				#90182si 鼠标连续操作
-				left_mouse_pressed = false
+				left_mouse_pressed = true
 				if _cur_hold_builds.size() > 0:
 					var world_pos = getCurWorldPosByMouse()
 					var anchorPos = _get_anchor_pos(world_pos)
@@ -268,6 +269,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _left_drag_started:
 					_left_drag_started = false
 					_end_drag()
+					placeDragEnded.emit()
 			elif event.button_index == MOUSE_BUTTON_RIGHT:
 				if _right_ctrl_dragging:
 					_right_ctrl_dragging = false
@@ -313,6 +315,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey:
 		if Input.is_action_pressed("Rotation"):
 			var drawData = sw_draw_manager.getHoldBuild()
+			if drawData == null:
+				return
 			var centerPos = Vector2(0,0)#sw_draw_manager_shadow.getHoldCenter()-Vector2(64,64)
 			var chunkPosMap:Dictionary[Vector2i,bool]={}
 			for data:SWBuildItemDefine in drawData.mapDatas:

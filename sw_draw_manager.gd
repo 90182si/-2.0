@@ -199,6 +199,8 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		chunkIns.mesh_instance.setMeshSize(_blockSize)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		chunkIns.mesh_instance.setDrawMode(_drawMode)
+		if _drawMode == SWDefine.GridDrawMode.ByContent and chunkIns.mesh_instance.multimesh:
+			chunkIns.mesh_instance.multimesh.visible_instance_count = 0
 		chunkIns.mesh_instance.drawMap(chunkMapDataArray)
 		
 		_chunkInstance[chunkPos] = chunkIns

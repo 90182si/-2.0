@@ -10,7 +10,8 @@ class_name SWPerformanceMonitor extends CanvasLayer
 @onready var map_switch: CheckButton = $StatsContainer/StatsDisplay/MapSwitch
 @onready var async_load_check: CheckButton = $StatsContainer/StatsDisplay/AsyncLoadCheck
 @onready var hover_info_check: CheckButton = $StatsContainer/StatsDisplay/HoverInfoCheck
-@onready var build_info_label: Label = $BuildInfoLabel
+@onready var build_info_label: Label = $HBoxContainer/BuildInfoLabel
+@onready var build_info_label_box: HBoxContainer = $HBoxContainer
 @onready var crash_log_viewer: Node = $CrashLogViewer
 @onready var button: Button = $StatsContainer/StatsDisplay/Button
 
@@ -213,7 +214,7 @@ func _update_build_tooltip() -> void:
 		var build:SWBuildItemDefine = _build_layer.sw_build_manager.getBuild(grid_pos)
 		if build != null:
 			build_info_label.text = _format_build_info(build)
-			build_info_label.position = _clamp_tooltip_pos(mouse_view_pos)
+			build_info_label_box.position = _clamp_tooltip_pos(mouse_view_pos)
 			show = true
 	build_info_label.visible = show
 
@@ -231,6 +232,10 @@ func _format_build_info(build: SWBuildItemDefine) -> String:
 	if build.comp_type == SWDefine.CircuitComponentType.WIRE:
 		var wireBuild:SWBuildWire = build as SWBuildWire
 		lines.append("WireGroup: %s" % _wire_group_to_text(wireBuild.net.wireGroup))
+	elif build.comp_type == SWDefine.CircuitComponentType.WIRE_BRIDGE:
+		var wireBuild:SWBuildWireCross = build as SWBuildWireCross
+		lines.append("VerticalWireGroup: %s" % _wire_group_to_text(wireBuild.v_net.wireGroup))
+		lines.append("HorizontalWireGroup: %s" % _wire_group_to_text(wireBuild.h_net.wireGroup))
 	if build.circuit_on:
 		lines.append("电路: 通电")
 	return "\n".join(lines)
@@ -272,7 +277,7 @@ func _circuit_to_text(circuit: SWDefine.SWCircuitData) -> String:
 
 func _wire_group_to_text(wiregroup:SWDefine.SWWireGroup) -> String:
 	if wiregroup:
-		return str(wiregroup.wireHeaderID)
+		return str(wiregroup.wireGroupID)
 	return "无WireGroup"
 
 ## 提示框跟随鼠标，超出视口边缘时翻转到另一侧

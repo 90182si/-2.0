@@ -96,6 +96,7 @@ func onPressed(_pressed:bool) -> void:
 	pass
 
 func resetPortState(swBuildManager:SWBuildManager) -> void:
+	in_loop = false
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	circuitCompoent.resetPortState()
 	
@@ -124,8 +125,8 @@ func setValue(dir:SWDefine.SW_Dir,value:SWDefine.CircuitSignal) -> void:
 
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	var v = getValue(SWDefine.SW_Dir.UP)
-	if v > 0:
+	var v = getValue(SWDefine.SW_Dir.UP) == SWDefine.CircuitSignal.HIGH
+	if v:
 		buildStateChanged(SWDefine.CircuitSignal.HIGH)
 	else:
 		buildStateChanged(SWDefine.CircuitSignal.LOW)

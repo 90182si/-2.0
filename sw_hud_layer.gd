@@ -9,6 +9,7 @@ var selTools:Array = []
 
 func _ready() -> void:
 	selTools = get_tree().get_nodes_in_group("SelTool")
+	_apply_atlas()
 	for tool:TextureButton in selTools:
 		tool.pressed.connect(_on_sel_tool_pressed.bind(tool.name))
 	var save_btn = get_node_or_null("HBoxContainer/MarginContainer/MarginContainer/HBoxContainer/保存")
@@ -17,6 +18,18 @@ func _ready() -> void:
 	var load_btn = get_node_or_null("HBoxContainer/MarginContainer/MarginContainer/HBoxContainer/加载")
 	if load_btn:
 		load_btn.pressed.connect(_on_load_pressed)
+
+# 把 HUD 图标用的 AtlasTexture 切到全局选中的图集
+func _apply_atlas() -> void:
+	if SwAtlas == null or SwAtlas.current == null:
+		return
+	for tool in selTools:
+		var btn := tool as TextureButton
+		if btn == null:
+			continue
+		var atex := btn.texture_normal as AtlasTexture
+		if atex != null:
+			atex.atlas = SwAtlas.current
 
 func on_view_rect_changed(_viewRect:Rect2,_speedVec:Vector2) -> void:
 	pass

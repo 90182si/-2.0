@@ -12,10 +12,6 @@ var _loads:Array = []
 func _init() -> void:
 	wireGroup = SWDefine.SWWireGroup.new()
 
-func addWireBuild(build:SWBuildWire) -> void:
-	wireGroup.addWireBuild(build)
-	build.net = self
-	
 func getDrivers() -> Array:
 	return _drivers
 

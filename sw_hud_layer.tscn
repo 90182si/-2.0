@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://08awj5donysx"]
+[gd_scene format=3 uid="uid://08awj5donysx"]
 
 [ext_resource type="Script" uid="uid://cn8f067d4ut35" path="res://sw_hud_layer.gd" id="1_vnhh4"]
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://res/atlasTexture/SWtexture2D.tres" id="2_kmd2l"]
@@ -30,7 +30,7 @@ margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_hmxvy"]
 atlas = ExtResource("2_kmd2l")
-region = Rect2(512, 256, 128, 128)
+region = Rect2(640, 256, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_ygg11"]

@@ -32,18 +32,21 @@ func find1(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
 			var neiBuild = neiBuildItem["build"]
 			if neiBuild.circuit != null:
 				for cBuild in neiBuild.circuit.buildArr:
-					buildMap[cBuild] = true
+					if cBuild.innerData.state != SWDefine.BuildState.TO_BE_REMOVED:
+						buildMap[cBuild] = true
 			else:
-				buildMap[neiBuild] = true
-		buildMap[build] = true
+				if neiBuild.innerData.state != SWDefine.BuildState.TO_BE_REMOVED:
+					buildMap[neiBuild] = true
+		if build.innerData.state != SWDefine.BuildState.TO_BE_REMOVED:
+			buildMap[build] = true
 	retArr = buildMap.keys()
 	return retArr
 func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
 	var forDelCircuit:Dictionary = {}
 	for build:SWBuildItemDefine in builds:
+		build.resetPortState(buildManager)
 		if build.circuit == null:
 			continue
-		build.resetPortState(buildManager)
 		forDelCircuit[build.circuit] = true
 		build.circuit = null
 	for build:SWBuildItemDefine in builds:
@@ -62,6 +65,8 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	var visited:Dictionary[SWBuildItemDefine,bool] = {}
 	var circuitBuildsGroup:Dictionary = {}
 	
+	#90182si 20260919  builds是去掉了wire类型的build
+	#90182si 在判断是否是一个circuit的时候再添加wire
 	for buildOne in builds:
 		if buildOne.circuit != null:
 			continue
@@ -75,9 +80,24 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 			visited[build] = true
 			var neiBuilds = build.getBuildIOConnectBuildArr(buildManager)
 			for neiBuildItem:Dictionary in neiBuilds:
+				var dir = neiBuildItem["dir"]
+				var neiBuild:SWBuildItemDefine = neiBuildItem["build"]
+				if not SwCommon.IsWireBuild(neiBuild):
+					continue
+				var circuit = neiBuild.getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+				if circuit:
+					var net:SWNet = circuit.pinNetMap[dir]
+					for wireBuild in net.wireGroup.wireBuilds.keys():
+						visited[wireBuild] = true
+					for nextBuildItem in net.getLoads():
+						var nextBuild = nextBuildItem["build"]
+						buildQueue.append(nextBuild)
+			for neiBuildItem:Dictionary in neiBuilds:
 				var neiBuild = neiBuildItem["build"]
 				if visited.has(neiBuild):
 					continue
+				#if SwCommon.IsWireBuild(neiBuild):
+					#continue
 				#visited[neiBuild] = true
 				buildQueue.append(neiBuild)
 		var buildGroup = visited.keys()
@@ -88,7 +108,7 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 			if build.comp_type != SWDefine.CircuitComponentType.BUTTON and build.comp_type != SWDefine.CircuitComponentType.SWITCH:
 				var cirComp := build.getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 				var dependBuildIds = cirComp.getDependBuildIds()
-				print(build.buildDefine.buildName+"的dependIds是"+str(dependBuildIds))
+				#print(build.buildDefine.buildName+"的dependIds是"+str(dependBuildIds))
 				for id in dependBuildIds:
 					var depBuild = buildManager.getBuildById(id)
 					if not depBuild:
@@ -118,7 +138,11 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	#方向构建依赖电路
 	getCircuit(affectBuilds)
 	
-	createCircuit(affectBuilds)
+	var affectBuilds2:Array[SWBuildItemDefine] = []
+	for affectBuild in affectBuilds:
+		if not SwCommon.IsWireBuild(affectBuild):
+			affectBuilds2.append(affectBuild)
+	createCircuit(affectBuilds2)
 	
 	return affectBuilds
 	
@@ -126,6 +150,6 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 	var notifyPosArr:Array[SWBuildItemDefine] = []
 	if build.circuit:
 		var cir = build.circuit
-		for noticeBuild:SWBuildItemDefine in cir.noticeMap[build]:
+		for noticeBuild:SWBuildItemDefine in cir.noticeMap.get(build,[]):
 			notifyPosArr.append_array(noticeBuild.reCalSignals())
 	return notifyPosArr

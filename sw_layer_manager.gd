@@ -34,6 +34,7 @@ func _ready() -> void:
 		holdLayer.drag_started.connect(buildLayer._on_drag_started)
 		holdLayer.drag_ended.connect(buildLayer._on_drag_ended)
 		holdLayer.eraseDragEnded.connect(buildLayer.onEraseDragEnded)
+		holdLayer.placeDragEnded.connect(buildLayer.onPlaceDragEnded)
 		
 	var build3:SWBuildDefine = load("res://res/非门.tres") as SWBuildDefine
 	var build2:SWBuildDefine = load("res://res/开关.tres") as SWBuildDefine

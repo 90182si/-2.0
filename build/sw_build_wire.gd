@@ -1,7 +1,10 @@
-class_name SWBuildWire extends SWBuildItemDefine
+class_name SWBuildWire extends SWBuildWireCom
 
 var net:SWNet = null
 
+func rotOnce() -> void:
+	pass
+	
 func getDirBuild(swBuildManager:SWBuildManager,rot:SWDefine.SW_Dir) -> SWBuildItemDefine:
 	var build = super.getDirBuild(swBuildManager,rot)
 	if build is SWBuildWire:
@@ -25,50 +28,21 @@ func setPortFlag() -> void:
 	circuitCompoent.setPinDefine(SWDefine.SW_Dir.LEFT,SWDefine.CircuitPinType.WIRE)
 	pass
 
-func getWireGroupBuilds(swBuildManager:SWBuildManager,wireBuild:SWBuildWire) -> Array[SWBuildWire]:
-	var wireGroup:Array[SWBuildWire] = []
-	var wireBuildQueue:Array[SWBuildWire] = [wireBuild]
-	var visited:Dictionary[Vector2i,bool] = {}
+
 	
-	visited[wireBuild.buildAxisPos] = true
-	wireGroup.append(wireBuild)
-	while wireBuildQueue.size() > 0:
-		var wBuild:SWBuildWire = wireBuildQueue.pop_back()
-		var neiBuilds = wBuild.getBuildIOConnectBuildArr(swBuildManager)
-		for neiBuildItem:Dictionary in neiBuilds:
-			var neiBuild = neiBuildItem["build"]
-			if not SWCommon.IsWireBuild(neiBuild):
-				continue
-			var neiWireBuild = neiBuild as SWBuildWire
-			if neiWireBuild.buildDefine.buildName != wBuild.buildDefine.buildName:
-				continue
-			if visited.has(neiBuild.buildAxisPos):
-				continue
-			visited[neiBuild.buildAxisPos] = true
-			wireBuildQueue.append(neiBuild)
-			wireGroup.append(neiBuild)
-	return wireGroup
-	
-func connectWireGroup(swBuildManager:SWBuildManager) -> void:
-	if net:
-		return
-	var wireBuildQueue:Dictionary[SWBuildWire,bool] = {}
-	wireBuildQueue[self] = true
-	#从wireBuilds中获取与build相连的wire
-	while wireBuildQueue.size() > 0:
-		var wireBuild = wireBuildQueue.keys().back()
-		var wireGroupBuilds = getWireGroupBuilds(swBuildManager,wireBuild)
-		var wireNet:SWNet = SWNet.new()
-		#从wireBuildQueue中删除wireGroup
-		for wBuild:SWBuildWire in wireGroupBuilds:
-			wireBuildQueue.erase(wBuild)
-			wireNet.addWireBuild(wBuild)
+func setNet(srcNet:SWNet,dir:SWDefine.SW_Dir) -> void:
+	net = srcNet
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	for pinIndex in range(3,-1,-1):
+		circuitCompoent.pinNetMap[pinIndex] = srcNet
+
 			
 func setDriverOrLoader(drivers:Array,loaders:Array) -> void:
 	loaders = []
 	net.setNet(drivers,loaders)
 	
 func getNet(swBuildManager:SWBuildManager) -> Array:
+	var circuitCompoent := getCompoent(SWDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	for pinIndex:int in range(3,-1,-1):
 		#如果这个方向的端口不可用 或者 是这个建筑物即将被删除 或者 这个端口是输入口
 		if isLinkedPort(pinIndex):
@@ -96,10 +70,10 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 func resetPortState(swBuildManager:SWBuildManager) -> void:
 	super.resetPortState(swBuildManager)
 	drawRect = buildDefine.atlasTextureOff.region
-	net = null
+	setNet(null,0)
 	
 func initPortState(swBuildManager:SWBuildManager) -> void:
-	connectWireGroup(swBuildManager)
+	connectWireGroup(self,swBuildManager)
 
 func getValue(dir:SWDefine.SW_Dir) -> SWDefine.CircuitSignal:
 	return SWDefine.CircuitSignal.NONE
