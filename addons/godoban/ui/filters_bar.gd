@@ -1,0 +1,148 @@
+@tool
+extends HFlowContainer
+
+## Search box + five filter dropdowns (plus, in the toolbar, the two view-mode
+## toggles are prepended as leading controls). Emits a composed filter dict that
+## the board consumes via set_filters(). Uses a wrapping flow so the whole strip
+## fits narrow editors without a horizontal scrollbar.
+
+const Model = preload("res://addons/godoban/data/godoban_model.gd")
+const T = preload("res://addons/godoban/ui/theme.gd")
+
+## Sort modes, first entry = default (the OptionButton selects index 0). "Manual"
+## applies no sort at all: a column keeps the board's own order, which is the order the
+## user set by dragging cards.
+const SORTS := [
+	["Manual", "manual"],
+	["Created (oldest)", "created_asc"],
+	["Created (newest)", "created_desc"],
+	["Latest edited", "updated"],
+	["Priority", "priority"],
+	["Due date", "due"],
+	["Alphabetical", "alpha"],
+]
+
+signal filters_changed(filters: Dictionary)
+
+var store: RefCounted
+var _search: LineEdit
+var _sort: OptionButton
+var _priority: OptionButton
+var _epic: OptionButton
+var _tag: OptionButton
+var _date: OptionButton
+
+func setup(p_store: RefCounted) -> void:
+	store = p_store
+	_build()
+
+func _build() -> void:
+	add_theme_constant_override("h_separation", 8)
+	add_theme_constant_override("v_separation", 8)
+
+	_search = LineEdit.new()
+	_search.placeholder_text = "Search tasks…"
+	_search.clear_button_enabled = true
+	_search.custom_minimum_size.x = 220
+	_search.add_theme_font_size_override("font_size", 13)
+	T.field(_search)
+	_search.text_changed.connect(func(_s): _emit())
+	add_child(_search)
+
+	_sort = OptionButton.new()
+	_sort.add_theme_font_size_override("font_size", 13)
+	T.field(_sort)
+	_sort.item_selected.connect(func(_i): _emit())
+	add_child(_sort)
+	for i in SORTS.size():
+		_sort.add_item(SORTS[i][0])
+		_sort.set_item_metadata(i, SORTS[i][1])
+
+	_priority = _make_option("All priorities")
+	for i in Model.PRIORITIES.size():
+		_priority.add_item(Model.priority_title(Model.PRIORITIES[i]))
+		_priority.set_item_metadata(i + 1, Model.PRIORITIES[i])
+
+	_epic = _make_option("All epics")
+
+	_tag = _make_option("All tags")
+	_tag.search_bar_enabled = true
+	_tag.search_bar_fuzzy_search_enabled = true
+	_tag.search_bar_fuzzy_search_max_misses = 2
+	_tag.search_bar_min_item_count = 0  # keep the search bar visible even for short lists
+
+	_date = _make_option("All dates")
+	var date_opts := [["Overdue", "overdue"], ["Due today", "today"], ["Due this week", "week"], ["No due date", "none"]]
+	for i in date_opts.size():
+		_date.add_item(date_opts[i][0])
+		_date.set_item_metadata(i + 1, date_opts[i][1])
+
+	store.changed.connect(_refresh_dynamic)
+	_refresh_dynamic()
+
+
+func _make_option(text: String) -> OptionButton:
+	var o := OptionButton.new()
+	o.add_item(text)
+	o.set_item_metadata(0, "any")
+	o.add_theme_font_size_override("font_size", 13)
+	T.field(o)
+	o.item_selected.connect(func(_i): _emit())
+	add_child(o)
+	return o
+
+
+func _refresh_dynamic() -> void:
+	var cur_epic: String = str(_epic.get_item_metadata(_epic.selected)) if _epic.selected >= 0 else "any"
+	var cur_tag: String = str(_tag.get_item_metadata(_tag.selected)) if _tag.selected >= 0 else "any"
+
+	_epic.clear()
+	_epic.add_item("All epics")
+	_epic.set_item_metadata(0, "any")
+	for e in store.board.epics:
+		_epic.add_item(e.title)
+		_epic.set_item_metadata(_epic.item_count - 1, e.id)
+
+	var tags: Array = store.all_tags()
+	_tag.clear()
+	_tag.add_item("All tags")
+	_tag.set_item_metadata(0, "any")
+	for tag in tags:
+		# Truncated for display only; the metadata below keeps the full tag.
+		_tag.add_item(Model.tag_label(tag))
+		_tag.set_item_metadata(_tag.item_count - 1, tag)
+
+	_select_by_metadata(_epic, cur_epic)
+	_select_by_metadata(_tag, cur_tag)
+
+
+func _select_by_metadata(btn: OptionButton, value: String) -> void:
+	for i in btn.item_count:
+		if str(btn.get_item_metadata(i)) == value:
+			btn.select(i)
+			return
+	btn.select(0)
+
+
+## Clear the board-scoped dropdowns (epic + tag) and re-emit, so a filter from one
+## board can't hide every task after we switch to a board that lacks that epic/tag.
+## General filters (search, sort, priority, date) are left alone.
+func reset_scope() -> void:
+	_epic.select(0)
+	_tag.select(0)
+	_emit()
+
+
+func get_filters() -> Dictionary:
+	return {
+		"search": _search.text.strip_edges(),
+		"sort": str(_sort.get_item_metadata(_sort.selected)),
+		"priority": str(_priority.get_item_metadata(_priority.selected)),
+		"epic": str(_epic.get_item_metadata(_epic.selected)),
+		"tag": str(_tag.get_item_metadata(_tag.selected)),
+		"date": str(_date.get_item_metadata(_date.selected)),
+	}
+
+
+func _emit() -> void:
+	filters_changed.emit(get_filters())

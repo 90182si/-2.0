@@ -1,0 +1,244 @@
+class_name SWMultiMeshInstance2D extends MultiMeshInstance2D
+
+var _swTransform:SwDefine.SWTransformData
+var _gridSize:Vector2 = SwDefine.GRID_SIZE
+var _drawMode:SwDefine.GridDrawMode=SwDefine.GridDrawMode.Tiling
+
+var chunkPtr:SwDefine.SWDrawChunkData = null
+var thread:Thread = null
+var buffer:PackedFloat32Array
+
+# ========== 线程安全变量 ==========
+var _stopThread:int = 0           # 受 mutex 保护
+var _alive:bool = true            # 受 mutex 保护
+var _hadDraw:bool = false         # 受 mutex 保护
+var _gridSizeTmp:Vector2 = Vector2.ZERO  # 受 mutex 保护
+var _visibleCount:int = 0         # 受 mutex 保护，用于 bufferCalFinish
+
+var hasNewPlan = false
+var e = Vector2i(SwDefine.CHUNK_SIZE, SwDefine.CHUNK_SIZE)
+var n = e.x*e.y	
+var planIsRunning = false
+#var mutex:Mutex
+var semaphore: Semaphore
+var semaphore2: Semaphore
+
+func _init() -> void:
+	_swTransform = SwDefine.SWTransformData.new()
+	thread = Thread.new()
+	semaphore = Semaphore.new()
+	semaphore2 = Semaphore.new()
+	#mutex = Mutex.new()
+	n = e.x * e.y
+	if multimesh:
+		# 启用颜色支持（如果需要）
+		multimesh.use_colors = true
+		multimesh.instance_count = n
+	thread.start(calBuffer)
+	
+func _ready() -> void:
+	# 运行前从全局配置 SwAtlas 取当前图集，覆盖 shader 采样用的 srcImg
+	var mat := material as ShaderMaterial
+	if mat and SwAtlas.current:
+		mat.set_shader_parameter("srcImg", SwAtlas.current)
+		
+func setDrawMode(mode:SwDefine.GridDrawMode) -> void:
+	_drawMode = mode
+	if _drawMode == SwDefine.GridDrawMode.Tiling:
+		z_index = -100
+	elif _drawMode == SwDefine.GridDrawMode.ByContent:
+		z_index = 0
+	elif _drawMode == SwDefine.GridDrawMode.HoldShadow:
+		z_index = 50
+	elif _drawMode == SwDefine.GridDrawMode.ByHold:
+		z_index = 100
+		
+func resetOffsetAndScale(_swTf:SwDefine.SWTransformData) -> void:
+	_swTransform = _swTf
+	position = _swTransform.offset
+	#(multimesh.mesh as QuadMesh).set_size(Vector2(_gridSize.x, -_gridSize.y)*_swTransform.scale)
+
+func setMeshSize(size:Vector2) -> void:
+	_gridSize = size
+	if multimesh and multimesh.mesh:
+		(multimesh.mesh as QuadMesh).set_size(Vector2(size.x, -size.y))
+	
+func _exit_tree() -> void:
+	_alive = false
+	semaphore.post()
+	if thread and thread.is_started():
+		thread.wait_to_finish()
+
+# 公开方法用于控制颜色支持
+func set_use_color(enabled:bool) -> void:
+	if multimesh:
+		multimesh.use_colors = enabled
+		# 重置buffer以适应新的buffer大小
+		buffer.clear()
+
+# 获取当前颜色支持状态
+func get_use_color() -> bool:
+	return multimesh.use_colors if multimesh else false
+	
+func reUse() -> void:
+	while planIsRunning:
+		pass
+	#buffer.clear()
+	_hadDraw = false
+	curMapData = []
+	#bufferSize=0
+	mapDataIns=null
+	
+var mapDataIns:SWBuildItemDefine = null
+var bufferSize = 0
+
+var curMapData:Array[SWBuildItemDefine]
+
+func drawMap(mapData:Array[SWBuildItemDefine], _flashDrawRegion:bool = false) -> void:
+	if _hadDraw:
+		return
+	_gridSizeTmp = _gridSize * _swTransform.scale
+	if _drawMode == SwDefine.GridDrawMode.Tiling:
+		_hadDraw = true
+	curMapData = mapData
+	
+	# 动态计算buffer大小
+	var use_colors = multimesh.use_colors
+	var buffer_size_per_instance = 12 if not use_colors else 16
+	bufferSize = n * buffer_size_per_instance
+	
+	if buffer.size() == 0:
+		buffer = multimesh.get_buffer()
+		# 如果当前buffer大小不匹配，重新分配
+		if buffer.size() != bufferSize:
+			buffer.resize(bufferSize)
+	
+	hasNewPlan = true
+	semaphore.post()
+
+func calBuffer() -> void:
+	while true:
+		if not _alive:
+			break
+		semaphore.wait()
+		planIsRunning = true
+		var index = 0
+		var newBuffer:PackedFloat32Array
+		# 根据是否使用颜色调整buffer大小
+		var use_colors = multimesh.use_colors
+		var buffer_size_per_instance = 12 if not use_colors else 16
+		newBuffer.resize(n * buffer_size_per_instance)
+		var showCount = 0
+		
+		if _drawMode == SwDefine.GridDrawMode.Tiling:
+			if curMapData.is_empty():
+				continue
+			var localMapDataIns:SWBuildItemDefine
+			localMapDataIns = curMapData[0]
+			for i in range(e.x):
+				for j in range(e.y):
+					var gridPos = Vector2i(_gridSizeTmp.x * i, _gridSizeTmp.y * j)
+					var t = Transform2D(
+						deg_to_rad(localMapDataIns.rotation*-90),
+						Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
+								gridPos.y + _gridSizeTmp.y / 2.0))
+					
+					var buffer_index = index * buffer_size_per_instance
+					
+					# Transform2D (8个float)
+					newBuffer[buffer_index + 0] = t.x.x
+					newBuffer[buffer_index + 1] = t.x.y
+					newBuffer[buffer_index + 2] = 0
+					newBuffer[buffer_index + 3] = t.origin.x
+					newBuffer[buffer_index + 4] = t.x.y
+					newBuffer[buffer_index + 5] = t.y.y
+					newBuffer[buffer_index + 6] = 0
+					newBuffer[buffer_index + 7] = t.origin.y
+					
+					# 颜色数据 (4个float) - 如果开启use_color，放到UV数据之前
+					if use_colors:
+						var color = _get_instance_color(localMapDataIns, i, j)
+						newBuffer[buffer_index + 8] = color.r
+						newBuffer[buffer_index + 9] = color.g
+						newBuffer[buffer_index + 10] = color.b
+						newBuffer[buffer_index + 11] = color.a
+						
+						# UV数据 (4个float) - 必须放在最后，INSTANCE_CUSTOM才能正确读取
+						newBuffer[buffer_index + 12] = float(localMapDataIns.drawRect.position.x)
+						newBuffer[buffer_index + 13] = float(localMapDataIns.drawRect.position.y)
+						newBuffer[buffer_index + 14] = float(localMapDataIns.drawRect.size.x)
+						newBuffer[buffer_index + 15] = float(localMapDataIns.drawRect.size.y)
+					else:
+						# 如果不使用颜色，UV数据仍然需要放在最后4个位置
+						newBuffer[buffer_index + 8] = float(localMapDataIns.drawRect.position.x)
+						newBuffer[buffer_index + 9] = float(localMapDataIns.drawRect.position.y)
+						newBuffer[buffer_index + 10] = float(localMapDataIns.drawRect.size.x)
+						newBuffer[buffer_index + 11] = float(localMapDataIns.drawRect.size.y)
+					
+					index += 1
+			showCount = e.x*e.y
+		else:
+			if curMapData.is_empty():
+				showCount = 0
+				call_deferred("bufferCalFinish", newBuffer, showCount)
+				planIsRunning = false
+				continue
+			var max_instances = n
+			for mapData:SWBuildItemDefine in curMapData:
+				if index >= max_instances:
+					break
+				var gridPos = mapData.buildAxisPos
+				var t = Transform2D(
+					deg_to_rad(mapData.rotation*-90),
+					Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
+							gridPos.y + _gridSizeTmp.y / 2.0))
+				
+				var buffer_index = index * buffer_size_per_instance
+				
+				# Transform2D (8个float)
+				newBuffer[buffer_index + 0] = t.x.x
+				newBuffer[buffer_index + 1] = t.x.y
+				newBuffer[buffer_index + 2] = 0
+				newBuffer[buffer_index + 3] = t.origin.x
+				newBuffer[buffer_index + 4] = t.x.y
+				newBuffer[buffer_index + 5] = t.y.y
+				newBuffer[buffer_index + 6] = 0
+				newBuffer[buffer_index + 7] = t.origin.y
+				
+				# 颜色数据 (4个float) - 如果开启use_color，放到UV数据之前
+				if use_colors:
+					var color = _get_instance_color(mapData, gridPos.x / _gridSizeTmp.x, gridPos.y / _gridSizeTmp.y)
+					newBuffer[buffer_index + 8] = color.r
+					newBuffer[buffer_index + 9] = color.g
+					newBuffer[buffer_index + 10] = color.b
+					newBuffer[buffer_index + 11] = color.a
+					
+					# UV数据 (4个float) - 必须放在最后，INSTANCE_CUSTOM才能正确读取
+					newBuffer[buffer_index + 12] = float(mapData.drawRect.position.x)
+					newBuffer[buffer_index + 13] = float(mapData.drawRect.position.y)
+					newBuffer[buffer_index + 14] = float(mapData.drawRect.size.x)
+					newBuffer[buffer_index + 15] = float(mapData.drawRect.size.y)
+				else:
+					# 如果不使用颜色，UV数据仍然需要放在最后4个位置
+					newBuffer[buffer_index + 8] = float(mapData.drawRect.position.x)
+					newBuffer[buffer_index + 9] = float(mapData.drawRect.position.y)
+					newBuffer[buffer_index + 10] = float(mapData.drawRect.size.x)
+					newBuffer[buffer_index + 11] = float(mapData.drawRect.size.y)
+				
+				index += 1
+			showCount = index
+		# 使用 call_deferred 传递数据，但 n 通过参数传递
+		call_deferred("bufferCalFinish", newBuffer, showCount)
+		planIsRunning = false
+
+# 获取实例颜色的辅助函数
+func _get_instance_color(mapData:SWBuildItemDefine, grid_x:float, grid_y:float) -> Color:
+	var color = mapData.innerData.mask_color
+	if _drawMode == SwDefine.GridDrawMode.ByHold:
+		color.a *= 0.85
+	return color
+
+func bufferCalFinish(newBuffer:PackedFloat32Array, localN:int) -> void:
+	multimesh.set_buffer(newBuffer)
+	multimesh.visible_instance_count = localN
+	multimesh.emit_changed()

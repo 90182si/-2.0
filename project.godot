@@ -13,15 +13,17 @@ config_version=5
 config/name="无限地图"
 run/main_scene="uid://bcrtwm1jv1lli"
 config/features=PackedStringArray("4.7", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://atlas/icon.svg"
 
 [autoload]
 
-SwDefine="uid://ceq3j2fx1hgap"
+SwDefine="*uid://ceq3j2fx1hgap"
 SwObjectPool="*uid://onkk3u0cap7s"
-SwCrashLogger="*res://sw_crash_logger.gd"
+SwCrashLogger="*res://performance/sw_crash_logger.gd"
 SwCommon="*uid://d3s671y2ttvwt"
 SwAtlas="*uid://dub4tq5e41llw"
+Ezcha="*uid://b6odi12jokac"
+SwTimeTool="*uid://cvvag6exuwjtt"
 
 [debug]
 
@@ -39,7 +41,7 @@ movie_writer/movie_file="J:/godot/无限地图/aaa.avi"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/Todo_Manager/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/script-ide/plugin.cfg")
+enabled=PackedStringArray("res://addons/Todo_Manager/plugin.cfg", "res://addons/ezcha_network/plugin.cfg", "res://addons/godoban/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/inspector_tabs/plugin.cfg", "res://addons/script_splitter/plugin.cfg", "res://addons/yard/plugin.cfg")
 
 [global_group]
 

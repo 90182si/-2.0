@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="Registry" format=3 uid="uid://dy5cu13kgt8q"]
+
+[ext_resource type="Script" uid="uid://dqtv77mng5dyh" path="res://addons/yard/registry.gd" id="1_6vcxc"]
+
+[resource]
+script = ExtResource("1_6vcxc")
+_version = 2
+_scan_rulesets = Array[Dictionary]([{
+&"allowed_file_extensions": Array[String]([]),
+&"class_restrictions": Array[StringName]([&"\"res://res/sw_build_define.gd\""]),
+&"recursive_scan": false,
+&"scan_directories": Array[String]([]),
+&"scan_regex_exclude": "",
+&"scan_regex_include": ""
+}])
+_uids_to_string_ids = Dictionary[StringName, StringName]({
+&"uid://33cmsq5uc3hb": &"电线隧道",
+&"uid://b0p61tq7m0m6q": &"非门",
+&"uid://bysn6qa4xtydj": &"格子",
+&"uid://c3joxf6qdeus0": &"电线桥梁",
+&"uid://cdimxr0tjor41": &"开关",
+&"uid://csjirldjgwi6y": &"地图",
+&"uid://d4ibjxwj8wp56": &"灯泡",
+&"uid://di1ix4geb5laq": &"电线B",
+&"uid://k5gnnkk8y6t5": &"按钮",
+&"uid://us85u265wmve": &"电线A"
+})
+_string_ids_to_uids = Dictionary[StringName, StringName]({
+&"地图": &"uid://csjirldjgwi6y",
+&"开关": &"uid://cdimxr0tjor41",
+&"按钮": &"uid://k5gnnkk8y6t5",
+&"格子": &"uid://bysn6qa4xtydj",
+&"灯泡": &"uid://d4ibjxwj8wp56",
+&"电线A": &"uid://us85u265wmve",
+&"电线B": &"uid://di1ix4geb5laq",
+&"电线桥梁": &"uid://c3joxf6qdeus0",
+&"电线隧道": &"uid://33cmsq5uc3hb",
+&"非门": &"uid://b0p61tq7m0m6q"
+})

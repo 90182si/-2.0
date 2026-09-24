@@ -1,0 +1,10 @@
+{
+  "current": "board_0a35",
+  "boards": [
+    {
+      "id": "board_0a35",
+      "name": "测试",
+      "path": "res://godoban_boards/board_0a35.json"
+    }
+  ]
+}

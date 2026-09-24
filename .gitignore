@@ -1,1 +1,21 @@
-aaa.avi
+# --- 编辑器缓存 / 导入产物 (Godot 4) ---
+.godot/
+
+# --- 临时与备份文件（场景保存 / 脚本切分 / 崩溃残留）---
+*.tmp
+
+# --- 根目录导出产物（建议把 export_path 改到 exports/ 目录）---
+/*.exe
+/*.pck
+/*.zip
+/*.dmg
+/*.x86_64
+/*.html
+
+# --- Movie Writer 录屏输出 ---
+/*.avi
+
+# --- 操作系统 ---
+.DS_Store
+Thumbs.db
+desktop.ini

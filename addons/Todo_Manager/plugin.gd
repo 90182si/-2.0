@@ -7,6 +7,7 @@ const Todo := preload("res://addons/Todo_Manager/todo_class.gd")
 const TodoItem := preload("res://addons/Todo_Manager/todoItem_class.gd")
 
 var _dockUI : Dock
+var _dock_button : Button
 
 class TodoCacheValue:
 	var todos: Array
@@ -26,7 +27,7 @@ var refresh_lock := false # makes sure _on_filesystem_changed only triggers once
 
 func _enter_tree() -> void:
 	_dockUI = DockScene.instantiate() as Control
-	add_control_to_bottom_panel(_dockUI, "Todo")
+	_dock_button = add_control_to_bottom_panel(_dockUI, "Todo")
 	get_editor_interface().get_resource_filesystem().connect("filesystem_changed", 
 			_on_filesystem_changed)
 	get_editor_interface().get_file_system_dock().connect("file_removed", queue_remove)
@@ -291,16 +292,21 @@ func create_todo(todo_string: String, script_path: String) -> Todo:
 	return todo
 
 func count_todos() -> void:
+	var title := "Todo"
 	if _dockUI.show_count:
 		var count : int = 0
 		for i in _dockUI.todo_items.size():
 			count += _dockUI.todo_items[i].todos.size()
-		# Remove and re-add to update title
-		remove_control_from_bottom_panel(_dockUI)
-		add_control_to_bottom_panel(_dockUI, "Todo (%01d)" % [count])
-	else:
-		remove_control_from_bottom_panel(_dockUI)
-		add_control_to_bottom_panel(_dockUI, "Todo")
+		title = "Todo (%01d)" % [count]
+	# 直接更新 Tab 按钮文字，避免移除/重加底部面板导致面板被关闭
+	if _dock_button:
+		_dock_button.text = title
+		## Remove and re-add to update title
+		#remove_control_from_bottom_panel(_dockUI)
+		#add_control_to_bottom_panel(_dockUI, "Todo (%01d)" % [count])
+	#else:
+		#remove_control_from_bottom_panel(_dockUI)
+		#add_control_to_bottom_panel(_dockUI, "Todo")
 
 
 func _on_active_script_changed(script) -> void:

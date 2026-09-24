@@ -1,19 +1,19 @@
-class_name SWCommon extends Node
+extends Node
 
 static var id = 0
 static func GenNextBuildId() -> int:
 	id += 1
 	return id
 	
-static func GetAngleBySWDir(dir:SWDefine.SW_Dir) -> int:
+static func GetAngleBySWDir(dir:SwDefine.SW_Dir) -> int:
 	match dir:
-		SWDefine.SW_Dir.UP:
+		SwDefine.SW_Dir.UP:
 			return 0
-		SWDefine.SW_Dir.DOWN:
+		SwDefine.SW_Dir.DOWN:
 			return 180
-		SWDefine.SW_Dir.RIGHT:
+		SwDefine.SW_Dir.RIGHT:
 			return 270
-		SWDefine.SW_Dir.LEFT:
+		SwDefine.SW_Dir.LEFT:
 			return 90
 	return 0
 
@@ -23,15 +23,15 @@ static func GetGlobalPosByViewPos(viewPos: Vector2, viewport: Viewport) -> Vecto
 
 #获取某个位置对应网格的起始坐标
 static func GetGridPos(worldPos:Vector2i) -> Vector2i:
-	var pos1 = Vector2(worldPos)/Vector2(SWDefine.GRID_SIZE)
+	var pos1 = Vector2(worldPos)/Vector2(SwDefine.GRID_SIZE)
 	var pos = pos1.floor()
-	var gridPos:Vector2i = Vector2i(pos)*SWDefine.GRID_SIZE
+	var gridPos:Vector2i = Vector2i(pos)*SwDefine.GRID_SIZE
 	return gridPos
 
 static func GetChunkPos(worldPos:Vector2i) -> Vector2i:
-	var pos1 = Vector2(worldPos)/(Vector2(SWDefine.GRID_SIZE)*SWDefine.CHUNK_SIZE)
+	var pos1 = Vector2(worldPos)/(Vector2(SwDefine.GRID_SIZE)*SwDefine.CHUNK_SIZE)
 	var pos = pos1.floor()
-	var chunkPos:Vector2i = Vector2i(pos)*SWDefine.GRID_SIZE*SWDefine.CHUNK_SIZE
+	var chunkPos:Vector2i = Vector2i(pos)*SwDefine.GRID_SIZE*SwDefine.CHUNK_SIZE
 	return chunkPos
 
 #以rotCenter为旋转中心，对srcPos旋转deg度
@@ -41,18 +41,18 @@ static func RotationPos(srcPos:Vector2,deg:float,rotCenter:Vector2) -> Vector2:
 	return (srcPos - rotCenter).rotated(deg_to_rad(deg)) + rotCenter
 
 static func IsWireBuild(build:SWBuildItemDefine) -> bool:
-	if build.comp_type == SWDefine.CircuitComponentType.WIRE or build.comp_type == SWDefine.CircuitComponentType.WIRE_BRIDGE:
+	if build.comp_type == SwDefine.CircuitComponentType.WIRE or build.comp_type == SwDefine.CircuitComponentType.WIRE_BRIDGE:
 		return true
 	return false
 	
 static func IsWireEndBuild(build:SWBuildItemDefine) -> bool:
-	if build.comp_type == SWDefine.CircuitComponentType.LED:
+	if build.comp_type == SwDefine.CircuitComponentType.LED:
 		return true
 	return false
 	
-static func CreateCompoent(compoentType:SWDefine.BuildCompoentType) -> SWBuildCompoent:
+static func CreateCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCompoent:
 	match compoentType:
-		SWDefine.BuildCompoentType.CIRCUIT:
+		SwDefine.BuildCompoentType.CIRCUIT:
 			return SWBuildCompoentCircuit.new()
 	return null
 
@@ -65,15 +65,32 @@ static func get_all_text_in_brackets(input: String) -> Array[String]:
 		res.append(m.get_string(1))
 	return res
 
+#求值轮次：每次电路重建或信号变化时自增，表达式节点缓存按轮次失效
+static var evalEpoch:int = 0
+static func NextEvalEpoch() -> int:
+	evalEpoch += 1
+	return evalEpoch
+
+#求值一个表达式节点；同一轮次内共享子树只计算一次，避免重复递归导致的指数级耗时
+static func EvalStruct(cirStruct:SwDefine.SWCircuitStruct) -> int:
+	if cirStruct == null:
+		return 0
+	if cirStruct.cachedEpoch == evalEpoch:
+		return cirStruct.cachedValue
+	var v:int = cirStruct.optFunc.call(cirStruct.args)
+	cirStruct.cachedEpoch = evalEpoch
+	cirStruct.cachedValue = v
+	return v
+	
 static func AndValues(args: Array) -> int:
 	var v:int = 0
 	var b:bool = false
 	for arg in args:
 		if b == false:
 			b = true
-			v = arg.optFunc.call(arg.args)
+			v = EvalStruct(arg)
 			continue
-		v &= arg.optFunc.call(arg.args)
+		v &= EvalStruct(arg)
 	return v
 	
 static func NotAndValues(args: Array) -> int:
@@ -82,31 +99,31 @@ static func NotAndValues(args: Array) -> int:
 	for arg in args:
 		if b == false:
 			b = true
-			v = arg.optFunc.call(arg.args)
+			v = EvalStruct(arg)
 			continue
-		v &= arg.optFunc.call(arg.args)
+		v &= EvalStruct(arg)
 	return 1-v
 	
 static func NotValues(args: Array) -> int:
 	var arg = null
 	if args.size() > 0:
 		arg = args[0]
-	if arg is SWDefine.SWBuildPinStruct:
-		if arg.build.getValue(null,arg.dir) == SWDefine.CircuitSignal.HIGH:
+	if arg is SwDefine.SWBuildPinStruct:
+		if arg.build.getValue(null,arg.dir) == SwDefine.CircuitSignal.HIGH:
 			return 0
 		return 1
-	elif arg is SWDefine.SWCircuitStruct:
-		return 1-arg.optFunc.call(arg.args)
+	elif arg is SwDefine.SWCircuitStruct:
+		return 1-EvalStruct(arg)
 	return 0
 
 static func EqualValues(args: Array) -> int:
 	var arg = null
 	if args.size() > 0:
 		arg = args[0]
-	if arg is SWDefine.SWBuildPinStruct:
-		if arg.build.getValue(arg.dir) == SWDefine.CircuitSignal.HIGH:
+	if arg is SwDefine.SWBuildPinStruct:
+		if arg.build.getValue(arg.dir) == SwDefine.CircuitSignal.HIGH:
 			return 1
 		return 0
-	elif arg is SWDefine.SWCircuitStruct:
-		return arg.optFunc.call(arg.args)
+	elif arg is SwDefine.SWCircuitStruct:
+		return EvalStruct(arg)
 	return 0

@@ -245,9 +245,21 @@ func _enter_tree() -> void:
 
 ## Restore the old Engine script UI and free everything we created
 func _exit_tree() -> void:
+# Stop any pending updates so we never touch nodes while freeing them.
+	set_process(false)
+
 	var file_system: EditorFileSystem = EditorInterface.get_resource_filesystem()
-	file_system.filesystem_changed.disconnect(schedule_update)
-	get_editor_settings().settings_changed.disconnect(sync_settings)
+	if (file_system.filesystem_changed.is_connected(schedule_update)):
+		file_system.filesystem_changed.disconnect(schedule_update)
+	if (get_editor_settings().settings_changed.is_connected(sync_settings)):
+		get_editor_settings().settings_changed.disconnect(sync_settings)
+
+	# The current script editor survives this plugin. Disconnect it, otherwise its
+	# 'edited_script_changed' would call into our freed plugin instance and crash.
+	if (is_instance_valid(old_script_editor_base)):
+		if (old_script_editor_base.edited_script_changed.is_connected(update_selected_tab)):
+			old_script_editor_base.edited_script_changed.disconnect(update_selected_tab)
+		old_script_editor_base = null
 
 	if (tab_splitter != null):
 		var tab_container_parent: Control = tab_splitter.get_parent()
@@ -260,43 +272,59 @@ func _exit_tree() -> void:
 			script_editor_split_container.add_child(files_panel)
 
 		# Try to restore the previous split offset.
-		if (is_outline_right):
+		if (is_outline_right and script_editor_split_container.get_child_count() > 1):
 			var split_offset: float = script_editor_split_container.get_child(1).size.x
 			script_editor_split_container.split_offset = split_offset
 
 		script_editor_split_container.move_child(files_panel, 0)
 
-		outline_filter_txt.gui_input.disconnect(navigate_in_outline)
-		outline_filter_txt.text_changed.disconnect(update_outline)
-		sort_btn.pressed.disconnect(update_outline)
+		if (outline_filter_txt != null):
+			if (outline_filter_txt.gui_input.is_connected(navigate_in_outline)):
+				outline_filter_txt.gui_input.disconnect(navigate_in_outline)
+			# Connected with '.unbind(1)' in _enter_tree -> must use the same Callable here.
+			var outline_text_callable: Callable = update_outline.unbind(1)
+			if (outline_filter_txt.text_changed.is_connected(outline_text_callable)):
+				outline_filter_txt.text_changed.disconnect(outline_text_callable)
 
-		var outline_parent: Control = outline_container.get_parent()
-		outline_parent.remove_child(outline_container)
-		outline_parent.add_child(old_outline)
-		outline_parent.move_child(old_outline, outline_filter_txt.get_index() + 1)
+		if (sort_btn != null and sort_btn.pressed.is_connected(update_outline)):
+			sort_btn.pressed.disconnect(update_outline)
 
-		outline_container.free()
+		if (outline_container != null and old_outline != null):
+			var outline_parent: Control = outline_container.get_parent()
+			outline_parent.remove_child(outline_container)
+			outline_parent.add_child(old_outline)
+			outline_parent.move_child(old_outline, outline_filter_txt.get_index() + 1)
 
-	if (old_scripts_tab_bar != null):
+			outline_container.free()
+
+	if (old_scripts_tab_bar != null and old_scripts_tab_bar.tab_changed.is_connected(on_tab_changed)):
 		old_scripts_tab_bar.tab_changed.disconnect(on_tab_changed)
 
 	if (old_scripts_tab_container != null):
-		old_scripts_tab_container.child_order_changed.disconnect(notify_order_changed)
+		if (old_scripts_tab_container.child_order_changed.is_connected(notify_order_changed)):
+			old_scripts_tab_container.child_order_changed.disconnect(notify_order_changed)
 		old_scripts_tab_container.get_parent().remove_theme_constant_override(&"separation")
 		old_scripts_tab_container.get_parent().remove_child(multiline_tab_bar)
 
 	if (multiline_tab_bar != null):
 		multiline_tab_bar.free_tabs()
 		multiline_tab_bar.free()
-		scripts_popup.free()
+		if (scripts_popup != null):
+			scripts_popup.free()
 
 	if (scripts_item_list != null):
 		scripts_item_list.allow_reselect = false
-		scripts_item_list.item_selected.disconnect(hide_scripts_popup)
+		# Connected with '.unbind(1)' in _enter_tree -> must use the same Callable here.
+		var item_selected_callable: Callable = hide_scripts_popup.unbind(1)
+		if (scripts_item_list.item_selected.is_connected(item_selected_callable)):
+			scripts_item_list.item_selected.disconnect(item_selected_callable)
 		scripts_item_list.get_parent().visible = true
 
 		if (script_filter_txt != null):
-			script_filter_txt.gui_input.disconnect(navigate_on_list)
+			# Connected with '.bind(...)' in _enter_tree -> must use the same Callable here.
+			var filter_gui_callable: Callable = navigate_on_list.bind(scripts_item_list, select_script)
+			if (script_filter_txt.gui_input.is_connected(filter_gui_callable)):
+				script_filter_txt.gui_input.disconnect(filter_gui_callable)
 
 	if (outline_popup != null):
 		outline_popup.free()

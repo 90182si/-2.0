@@ -1,0 +1,48 @@
+{
+	"categories": [
+		{
+			"uuid": "a8c580d4-78c9-47af-915b-c380d6213749",
+			"title": "Task",
+			"color": "70bafa"
+		}
+	],
+	"stages": [
+		{
+			"uuid": "c9282892-5b62-4eff-b42d-3b2e246cb560",
+			"title": "Doing",
+			"tasks": []
+		},
+		{
+			"uuid": "891e95bb-3f49-4ea8-9966-2bfb534862b1",
+			"title": "Done",
+			"tasks": []
+		},
+		{
+			"uuid": "574d3522-63ea-44bf-9660-4c241c1b44f2",
+			"title": "New Stage",
+			"tasks": []
+		}
+	],
+	"tasks": [
+		{
+			"uuid": "fde64c70-e914-4018-bfc9-a06d114cab84",
+			"title": "awdawdwad",
+			"description": "wadawdawdAWedAWEDFFFFFFFFFFFFFFFFFFFFF",
+			"category": "a8c580d4-78c9-47af-915b-c380d6213749",
+			"steps": []
+		}
+	],
+	"layout": {
+		"columns": [
+			[
+				"c9282892-5b62-4eff-b42d-3b2e246cb560"
+			],
+			[
+				"891e95bb-3f49-4ea8-9966-2bfb534862b1"
+			],
+			[
+				"574d3522-63ea-44bf-9660-4c241c1b44f2"
+			]
+		]
+	}
+}
