@@ -2,6 +2,8 @@
 
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_fjpic"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_hw82b"]
+[ext_resource type="Texture2D" uid="uid://cyg13odficnjn" path="res://res/建筑物底座.tres" id="1_nkwd7"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin.gd" id="2_nkwd7"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_peapy"]
 atlas = ExtResource("1_fjpic")
@@ -13,10 +15,16 @@ atlas = ExtResource("1_fjpic")
 region = Rect2(768, 128, 128, 128)
 filter_clip = true
 
+[sub_resource type="Resource" id="Resource_fjpic"]
+script = ExtResource("2_nkwd7")
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
 [resource]
 script = ExtResource("1_hw82b")
+atlasBuildBase = ExtResource("1_nkwd7")
 atlasTextureOn = SubResource("AtlasTexture_nkwd7")
 atlasTextureOff = SubResource("AtlasTexture_peapy")
 buildName = "开关"
 circuit_component_type = 2
+build_pin = Array[ExtResource("2_nkwd7")]([SubResource("Resource_fjpic")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

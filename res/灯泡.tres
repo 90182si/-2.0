@@ -1,7 +1,9 @@
 [gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://d4ibjxwj8wp56"]
 
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_6d7fi"]
+[ext_resource type="Texture2D" uid="uid://cyg13odficnjn" path="res://res/建筑物底座.tres" id="1_op667"]
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_s4nln"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin.gd" id="3_c8ya4"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_0sal7"]
 atlas = ExtResource("1_s4nln")
@@ -13,10 +15,31 @@ atlas = ExtResource("1_s4nln")
 region = Rect2(512, 128, 128, 128)
 filter_clip = true
 
+[sub_resource type="Resource" id="Resource_av2nh"]
+script = ExtResource("3_c8ya4")
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[sub_resource type="Resource" id="Resource_kmvm0"]
+script = ExtResource("3_c8ya4")
+pin_dir = 1
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[sub_resource type="Resource" id="Resource_k5hpx"]
+script = ExtResource("3_c8ya4")
+pin_dir = 2
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[sub_resource type="Resource" id="Resource_vxchy"]
+script = ExtResource("3_c8ya4")
+pin_dir = 3
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
 [resource]
 script = ExtResource("1_6d7fi")
+atlasBuildBase = ExtResource("1_op667")
 atlasTextureOn = SubResource("AtlasTexture_op667")
 atlasTextureOff = SubResource("AtlasTexture_0sal7")
 buildName = "灯泡"
 circuit_component_type = 3
+build_pin = Array[ExtResource("3_c8ya4")]([SubResource("Resource_av2nh"), SubResource("Resource_kmvm0"), SubResource("Resource_k5hpx"), SubResource("Resource_vxchy")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"
