@@ -18,6 +18,7 @@ var _visibleCount:int = 0         # 受 mutex 保护，用于 bufferCalFinish
 var hasNewPlan = false
 var e = Vector2i(SwDefine.CHUNK_SIZE, SwDefine.CHUNK_SIZE)
 var n = e.x*e.y	
+var maxInstances:int = 0   #含部件叠加后的最大实例容量
 var planIsRunning = false
 #var mutex:Mutex
 var semaphore: Semaphore
@@ -30,10 +31,11 @@ func _init() -> void:
 	semaphore2 = Semaphore.new()
 	#mutex = Mutex.new()
 	n = e.x * e.y
+	maxInstances = n * SwDefine.MAX_RENDER_PARTS
 	if multimesh:
 		# 启用颜色支持（如果需要）
 		multimesh.use_colors = true
-		multimesh.instance_count = n
+		multimesh.instance_count = maxInstances
 	thread.start(calBuffer)
 	
 func _ready() -> void:
@@ -127,7 +129,7 @@ func calBuffer() -> void:
 		# 根据是否使用颜色调整buffer大小
 		var use_colors = multimesh.use_colors
 		var buffer_size_per_instance = 12 if not use_colors else 16
-		newBuffer.resize(n * buffer_size_per_instance)
+		newBuffer.resize(maxInstances * buffer_size_per_instance)
 		var showCount = 0
 		
 		if _drawMode == SwDefine.GridDrawMode.Tiling:
@@ -138,43 +140,13 @@ func calBuffer() -> void:
 			for i in range(e.x):
 				for j in range(e.y):
 					var gridPos = Vector2i(_gridSizeTmp.x * i, _gridSizeTmp.y * j)
+					var color = _get_instance_color(localMapDataIns, i, j)
 					var t = Transform2D(
 						deg_to_rad(localMapDataIns.rotation*-90),
 						Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
 								gridPos.y + _gridSizeTmp.y / 2.0))
-					
 					var buffer_index = index * buffer_size_per_instance
-					
-					# Transform2D (8个float)
-					newBuffer[buffer_index + 0] = t.x.x
-					newBuffer[buffer_index + 1] = t.x.y
-					newBuffer[buffer_index + 2] = 0
-					newBuffer[buffer_index + 3] = t.origin.x
-					newBuffer[buffer_index + 4] = t.x.y
-					newBuffer[buffer_index + 5] = t.y.y
-					newBuffer[buffer_index + 6] = 0
-					newBuffer[buffer_index + 7] = t.origin.y
-					
-					# 颜色数据 (4个float) - 如果开启use_color，放到UV数据之前
-					if use_colors:
-						var color = _get_instance_color(localMapDataIns, i, j)
-						newBuffer[buffer_index + 8] = color.r
-						newBuffer[buffer_index + 9] = color.g
-						newBuffer[buffer_index + 10] = color.b
-						newBuffer[buffer_index + 11] = color.a
-						
-						# UV数据 (4个float) - 必须放在最后，INSTANCE_CUSTOM才能正确读取
-						newBuffer[buffer_index + 12] = float(localMapDataIns.drawRect.position.x)
-						newBuffer[buffer_index + 13] = float(localMapDataIns.drawRect.position.y)
-						newBuffer[buffer_index + 14] = float(localMapDataIns.drawRect.size.x)
-						newBuffer[buffer_index + 15] = float(localMapDataIns.drawRect.size.y)
-					else:
-						# 如果不使用颜色，UV数据仍然需要放在最后4个位置
-						newBuffer[buffer_index + 8] = float(localMapDataIns.drawRect.position.x)
-						newBuffer[buffer_index + 9] = float(localMapDataIns.drawRect.position.y)
-						newBuffer[buffer_index + 10] = float(localMapDataIns.drawRect.size.x)
-						newBuffer[buffer_index + 11] = float(localMapDataIns.drawRect.size.y)
-					
+					_fill_instance(newBuffer,buffer_index,t,color,localMapDataIns.getRenderableCompoent().drawRect,use_colors)
 					index += 1
 			showCount = e.x*e.y
 		else:
@@ -183,49 +155,24 @@ func calBuffer() -> void:
 				call_deferred("bufferCalFinish", newBuffer, showCount)
 				planIsRunning = false
 				continue
-			var max_instances = n
+			var max_instances = maxInstances
 			for mapData:SWBuildItemDefine in curMapData:
 				if index >= max_instances:
 					break
 				var gridPos = mapData.buildAxisPos
-				var t = Transform2D(
-					deg_to_rad(mapData.rotation*-90),
-					Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
-							gridPos.y + _gridSizeTmp.y / 2.0))
-				
-				var buffer_index = index * buffer_size_per_instance
-				
-				# Transform2D (8个float)
-				newBuffer[buffer_index + 0] = t.x.x
-				newBuffer[buffer_index + 1] = t.x.y
-				newBuffer[buffer_index + 2] = 0
-				newBuffer[buffer_index + 3] = t.origin.x
-				newBuffer[buffer_index + 4] = t.x.y
-				newBuffer[buffer_index + 5] = t.y.y
-				newBuffer[buffer_index + 6] = 0
-				newBuffer[buffer_index + 7] = t.origin.y
-				
-				# 颜色数据 (4个float) - 如果开启use_color，放到UV数据之前
-				if use_colors:
-					var color = _get_instance_color(mapData, gridPos.x / _gridSizeTmp.x, gridPos.y / _gridSizeTmp.y)
-					newBuffer[buffer_index + 8] = color.r
-					newBuffer[buffer_index + 9] = color.g
-					newBuffer[buffer_index + 10] = color.b
-					newBuffer[buffer_index + 11] = color.a
-					
-					# UV数据 (4个float) - 必须放在最后，INSTANCE_CUSTOM才能正确读取
-					newBuffer[buffer_index + 12] = float(mapData.drawRect.position.x)
-					newBuffer[buffer_index + 13] = float(mapData.drawRect.position.y)
-					newBuffer[buffer_index + 14] = float(mapData.drawRect.size.x)
-					newBuffer[buffer_index + 15] = float(mapData.drawRect.size.y)
-				else:
-					# 如果不使用颜色，UV数据仍然需要放在最后4个位置
-					newBuffer[buffer_index + 8] = float(mapData.drawRect.position.x)
-					newBuffer[buffer_index + 9] = float(mapData.drawRect.position.y)
-					newBuffer[buffer_index + 10] = float(mapData.drawRect.size.x)
-					newBuffer[buffer_index + 11] = float(mapData.drawRect.size.y)
-				
-				index += 1
+				var color = _get_instance_color(mapData, gridPos.x / _gridSizeTmp.x, gridPos.y / _gridSizeTmp.y)
+				var render_able = mapData.getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable
+				for part in render_able.getRenderParts():
+					if index >= max_instances:
+						break
+					var offset:Vector2i = part["offset"]
+					var t = Transform2D(
+						deg_to_rad(part["rotation"]*-90),
+						Vector2(gridPos.x + _gridSizeTmp.x * (offset.x + 0.5), 
+								gridPos.y + _gridSizeTmp.y * (offset.y + 0.5)))
+					var buffer_index = index * buffer_size_per_instance
+					_fill_instance(newBuffer,buffer_index,t,color,part["rect"],use_colors)
+					index += 1
 			showCount = index
 		# 使用 call_deferred 传递数据，但 n 通过参数传递
 		call_deferred("bufferCalFinish", newBuffer, showCount)
@@ -233,7 +180,7 @@ func calBuffer() -> void:
 
 # 获取实例颜色的辅助函数
 func _get_instance_color(mapData:SWBuildItemDefine, grid_x:float, grid_y:float) -> Color:
-	var color = mapData.innerData.mask_color
+	var color = mapData.buildState.mask_color
 	if _drawMode == SwDefine.GridDrawMode.ByHold:
 		color.a *= 0.85
 	return color
@@ -242,3 +189,27 @@ func bufferCalFinish(newBuffer:PackedFloat32Array, localN:int) -> void:
 	multimesh.set_buffer(newBuffer)
 	multimesh.visible_instance_count = localN
 	multimesh.emit_changed()
+
+func _fill_instance(newBuffer:PackedFloat32Array, buffer_index:int, t:Transform2D, color:Color, rect:Rect2, use_colors:bool) -> void:
+	newBuffer[buffer_index + 0] = t.x.x
+	newBuffer[buffer_index + 1] = t.x.y
+	newBuffer[buffer_index + 2] = 0
+	newBuffer[buffer_index + 3] = t.origin.x
+	newBuffer[buffer_index + 4] = t.x.y
+	newBuffer[buffer_index + 5] = t.y.y
+	newBuffer[buffer_index + 6] = 0
+	newBuffer[buffer_index + 7] = t.origin.y
+	if use_colors:
+		newBuffer[buffer_index + 8] = color.r
+		newBuffer[buffer_index + 9] = color.g
+		newBuffer[buffer_index + 10] = color.b
+		newBuffer[buffer_index + 11] = color.a
+		newBuffer[buffer_index + 12] = float(rect.position.x)
+		newBuffer[buffer_index + 13] = float(rect.position.y)
+		newBuffer[buffer_index + 14] = float(rect.size.x)
+		newBuffer[buffer_index + 15] = float(rect.size.y)
+	else:
+		newBuffer[buffer_index + 8] = float(rect.position.x)
+		newBuffer[buffer_index + 9] = float(rect.position.y)
+		newBuffer[buffer_index + 10] = float(rect.size.x)
+		newBuffer[buffer_index + 11] = float(rect.size.y)

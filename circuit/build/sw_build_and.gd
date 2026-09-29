@@ -5,8 +5,8 @@
 #      请在 setPortFlag 里去掉多余输入口并核对信号极性后再上线。
 class_name SWBuildAnd extends SWBuildItemDefine
 
-func setPortFlag() -> void:
-	var circuit := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+func setPortFlag(buildDef:SWBuildDefine) -> void:
+	var circuit := getCircuitCompoent()
 	circuit.setPinDefine(SwDefine.SW_Dir.UP, SwDefine.CircuitPinType.OUTPUT)
 	circuit.setPinDefine(SwDefine.SW_Dir.DOWN, SwDefine.CircuitPinType.INPUT)
 	circuit.setPinDefine(SwDefine.SW_Dir.LEFT, SwDefine.CircuitPinType.INPUT)
@@ -14,11 +14,11 @@ func setPortFlag() -> void:
 
 func resetPortState() -> void:
 	super.resetPortState()
-	drawRect = buildDefine.atlasTextureOff.region
+	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 
 func getExpr(pinDir: SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
-	var circuit := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	if portIsOutput(pinDir):
+	var circuit := getCircuitCompoent()
+	if getCircuitCompoent().portIsOutput(pinDir):
 		return circuit.pinExprMap.get(rotation, null)
 	return null
 
@@ -26,7 +26,7 @@ func getBuildExpr() -> void:
 	if _buildingExpr:
 		return
 	_buildingExpr = true
-	var circuit := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuit := getCircuitCompoent()
 	if circuit.pinExprMap.has(rotation):
 		_buildingExpr = false
 		return
@@ -34,7 +34,7 @@ func getBuildExpr() -> void:
 	expr.optFunc = SwCommon.AndValues
 	expr.optFuncName = "SwCommon.AndValues"
 	for dir in range(3, -1, -1):
-		if not portIsInput(dir):
+		if not getCircuitCompoent().portIsInput(dir):
 			continue
 		var net: SWNet = circuit.pinNetMap.get(dir, null)
 		if not net:
@@ -54,7 +54,7 @@ func getBuildExpr() -> void:
 	_buildingExpr = false
 
 func getValue(dir: SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	var circuit := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuit := getCircuitCompoent()
 	var value = circuit.getValue(dir)
 	var net = circuit.pinNetMap.get(dir, null)
 	if net:
@@ -70,9 +70,9 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 func buildStateChanged(signalValue: SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
 	if signalValue == SwDefine.CircuitSignal.LOW:
-		drawRect = buildDefine.atlasTextureOff.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
-		drawRect = buildDefine.atlasTextureOn.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 
 func setValue(dir: SwDefine.SW_Dir, value: SwDefine.CircuitSignal) -> void:
 	pass

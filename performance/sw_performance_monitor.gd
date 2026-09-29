@@ -226,16 +226,16 @@ func _format_build_info(build: SWBuildItemDefine) -> String:
 	lines.append("ID: %d" % build.id)
 	lines.append("位置: (%d, %d)" % [build.buildAxisPos.x, build.buildAxisPos.y])
 	lines.append("朝向: %s" % _dir_to_text(build.rotation))
-	lines.append("类型: %s" % _comp_type_to_text(build.comp_type))
+	lines.append("类型: %s" % _comp_type_to_text(build.buildDefine.circuit_component_type))
 	lines.append("信号: %s" % _signal_to_text(build.signal_state))
 	lines.append("电路: %s" % _circuit_to_text(build.circuit))
-	if build.comp_type == SwDefine.CircuitComponentType.WIRE:
+	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
 		var wireBuild:SWBuildWire = build as SWBuildWire
-		lines.append("WireGroup: %s" % _wire_group_to_text(wireBuild.net.wireGroup))
-	elif build.comp_type == SwDefine.CircuitComponentType.WIRE_BRIDGE:
+		lines.append("WireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().net.wireGroup))
+	elif build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_BRIDGE:
 		var wireBuild:SWBuildWireCross = build as SWBuildWireCross
-		lines.append("VerticalWireGroup: %s" % _wire_group_to_text(wireBuild.v_net.wireGroup))
-		lines.append("HorizontalWireGroup: %s" % _wire_group_to_text(wireBuild.h_net.wireGroup))
+		lines.append("VerticalWireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().v_net.wireGroup))
+		lines.append("HorizontalWireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().h_net.wireGroup))
 	if build.circuit_on:
 		lines.append("电路: 通电")
 	return "\n".join(lines)

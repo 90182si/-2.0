@@ -2,6 +2,12 @@
 
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_cwgjj"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_ny4gd"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin.gd" id="2_iqwy4"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3xqnr"]
+atlas = ExtResource("1_cwgjj")
+region = Rect2(0, 256, 128, 128)
+filter_clip = true
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_iqwy4"]
 atlas = ExtResource("1_cwgjj")
@@ -13,10 +19,35 @@ atlas = ExtResource("1_cwgjj")
 region = Rect2(0, 256, 128, 128)
 filter_clip = true
 
+[sub_resource type="Resource" id="Resource_su13d"]
+script = ExtResource("2_iqwy4")
+pin_define = 3
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[sub_resource type="Resource" id="Resource_l4ore"]
+script = ExtResource("2_iqwy4")
+pin_dir = 1
+pin_define = 3
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[sub_resource type="Resource" id="Resource_xri1g"]
+script = ExtResource("2_iqwy4")
+pin_dir = 2
+pin_define = 3
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[sub_resource type="Resource" id="Resource_jhbv7"]
+script = ExtResource("2_iqwy4")
+pin_dir = 3
+pin_define = 3
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
 [resource]
 script = ExtResource("1_ny4gd")
+atlasIcon = SubResource("AtlasTexture_3xqnr")
 atlasTextureOn = SubResource("AtlasTexture_jnmd3")
 atlasTextureOff = SubResource("AtlasTexture_iqwy4")
 buildName = "电线A"
 circuit_component_type = 4
+build_pin = Array[ExtResource("2_iqwy4")]([SubResource("Resource_su13d"), SubResource("Resource_l4ore"), SubResource("Resource_xri1g"), SubResource("Resource_jhbv7")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

@@ -5,6 +5,7 @@ const VIEW_MAX_LEVEL = 4
 const VIEW_MIN_LEVEL = -30-15
 const VIEW_NEXT_LEVEL = -14
 const GRID_SIZE = Vector2i(128,128)
+const MAX_RENDER_PARTS:int = 6
 
 enum GridDrawMode {
 	Tiling,   #平铺显示
@@ -83,7 +84,10 @@ enum BuildState{
 
 #组件
 enum BuildCompoentType{
-	CIRCUIT
+	CIRCUIT,
+	CIRCUIT_WIRE,
+	CIRCUIT_WIRE_CROSS,
+	RENDER_ABLE
 }
 
 #{
@@ -238,6 +242,7 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) 
 		"电线B":return SWBuildWire.new(axisPos,buildDef,rot)
 		"电线桥梁":return SWBuildWireCross.new(axisPos,buildDef,rot)
 		"开关":return SWBuildButton.new(axisPos,buildDef,rot)
+		"电线隧道":return SWBuildWireTunnel.new(axisPos,buildDef,rot)
 		_:return SWBuildNone.new(axisPos,buildDef,rot)
 	return null
 
@@ -356,21 +361,21 @@ class SWDrawChunkData extends RefCounted:
 			#multi_mesh = mesh_instance.multimesh
 
 class SWBuildStateStrategy extends RefCounted:
-	var innerData:SWBuildInnerData = null
+	var buildState:SWBuildState = null
 	func _init() -> void:
 		pass
-	func stateChanged(innerData:SWBuildInnerData,state:BuildState) -> void:
-		innerData.mask_color = Color(1,1,1,1)
+	func stateChanged(buildState:SWBuildState,state:BuildState) -> void:
+		buildState.mask_color = Color(1,1,1,1)
 		
 class SWBuildStateSelected extends SWBuildStateStrategy:
-	func stateChanged(innerData:SWBuildInnerData,state:BuildState) -> void:
+	func stateChanged(buildState:SWBuildState,state:BuildState) -> void:
 		if state == BuildState.IDLE:
-			innerData.mask_color = Color(1,1,1,1)
+			buildState.mask_color = Color(1,1,1,1)
 		elif state == BuildState.SELECTED:
-			innerData.mask_color = Color(0.157, 0.557, 0.906, 0.788)
+			buildState.mask_color = Color(0.157, 0.557, 0.906, 0.788)
 
 #建筑物内部数据
-class SWBuildInnerData extends Resource:
+class SWBuildState extends Resource:
 	var mask_color:Color = Color(1.0, 1.0, 1.0, 1.0)
 	var buildStateStrategy:SWBuildStateStrategy = null
 	var state:BuildState = BuildState.IDLE:

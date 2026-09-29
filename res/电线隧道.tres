@@ -2,6 +2,12 @@
 
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_5x2pw"]
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_yt82c"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin.gd" id="2_knb6r"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bqb3s"]
+atlas = ExtResource("1_yt82c")
+region = Rect2(384, 384, 128, 128)
+filter_clip = true
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_knb6r"]
 atlas = ExtResource("1_yt82c")
@@ -13,10 +19,18 @@ atlas = ExtResource("1_yt82c")
 region = Rect2(896, 0, 128, 128)
 filter_clip = true
 
+[sub_resource type="Resource" id="Resource_su13d"]
+script = ExtResource("2_knb6r")
+pin_dir = 3
+pin_define = 3
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
 [resource]
 script = ExtResource("1_5x2pw")
+atlasIcon = SubResource("AtlasTexture_bqb3s")
 atlasTextureOn = SubResource("AtlasTexture_1earv")
 atlasTextureOff = SubResource("AtlasTexture_knb6r")
 buildName = "电线隧道"
 circuit_component_type = 9
+build_pin = Array[ExtResource("2_knb6r")]([SubResource("Resource_su13d")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

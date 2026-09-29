@@ -32,7 +32,7 @@ func setBuildNet(driversAndLoads:Array) -> void:
 		var pinDir = driver.get_or_add("pinDir",null)
 		if not build:
 			continue
-		var circuitCompoent:SWBuildCompoentCircuit = build.getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+		var circuitCompoent:SWBuildCompoentCircuit = build.getCircuitCompoent()
 		if circuitCompoent:
 			circuitCompoent.pinNetMap[pinDir] = self
 			

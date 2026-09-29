@@ -6,12 +6,12 @@ func rotOnce() -> void:
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
 	if signalValue == SwDefine.CircuitSignal.LOW:
-		drawRect = buildDefine.atlasTextureOff.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
-		drawRect = buildDefine.atlasTextureOn.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 
-func setPortFlag() -> void:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+func setPortFlag(buildDef:SWBuildDefine) -> void:
+	var circuitCompoent := getCircuitCompoent()
 	circuitCompoent.setPinDefine(SwDefine.SW_Dir.UP,SwDefine.CircuitPinType.INPUT)
 	circuitCompoent.setPinDefine(SwDefine.SW_Dir.RIGHT,SwDefine.CircuitPinType.INPUT)
 	circuitCompoent.setPinDefine(SwDefine.SW_Dir.DOWN,SwDefine.CircuitPinType.INPUT)
@@ -19,19 +19,19 @@ func setPortFlag() -> void:
 
 func resetPortState() -> void:
 	super.resetPortState()
-	drawRect = buildDefine.atlasTextureOff.region
+	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 
 func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	return null
 
 func getBuildExpr() -> void:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuitCompoent := getCircuitCompoent()
 	for dir in range(3,-1,-1):
 		#如果已经存在了就不计算
 		if circuitCompoent.pinExprMap.has(dir):
 			continue
 		#如果不是输入口
-		if not portIsInput(dir):
+		if not getCircuitCompoent().portIsInput(dir):
 			continue
 		var net:SWNet = circuitCompoent.pinNetMap.get(dir,null)
 		if not net:
@@ -56,7 +56,7 @@ func getBuildExpr() -> void:
 				circuitCompoent.pinExprMap[dir].args.append(expr)
 
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuitCompoent := getCircuitCompoent()
 	var value = circuitCompoent.getValue(dir)
 	var net = circuitCompoent.pinNetMap.get(dir,null)
 	if net:
@@ -77,3 +77,8 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 	
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	pass
+
+func _sub_init() -> void:
+	var renderable = getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable
+	renderable.buildHasAtlas = true
+	renderable.buildHasBase = false

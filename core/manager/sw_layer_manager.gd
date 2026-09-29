@@ -47,7 +47,7 @@ func _ready() -> void:
 	drawData.addOneDrawBuildDefine(Vector2i(0,-256),build3)
 	drawData.addOneDrawBuildDefine(Vector2i(128,-256),build3)
 	
-	holdLayer.on_sel_tool_draw_data(drawData)
+	#holdLayer.on_sel_tool_draw_data(drawData)
 			
 func hudLayerSelectedTool(buildDefine:SWBuildDefine) -> void:
 	var drawData:SWDrawData = SWDrawData.new()

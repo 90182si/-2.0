@@ -1,6 +1,6 @@
 {
   "name": "测试",
-  "next_id": 6,
+  "next_id": 7,
   "tags": [],
   "epics": [
     {
@@ -45,6 +45,18 @@
       "tags": [],
       "created_at": 1790146226,
       "updated_at": 1790149879
+    },
+    {
+      "id": "task_6",
+      "title": "移植reCalSignals函数",
+      "description": "",
+      "status": "todo",
+      "priority": "high",
+      "epic_id": "epic_5",
+      "due_date": null,
+      "tags": [],
+      "created_at": 1790691612,
+      "updated_at": 1790691666
     },
     {
       "id": "task_4",

@@ -21,15 +21,25 @@ func _ready() -> void:
 
 # 把 HUD 图标用的 AtlasTexture 切到全局选中的图集
 func _apply_atlas() -> void:
-	if SwAtlas == null or SwAtlas.current == null:
-		return
 	for tool in selTools:
+		var resPath = selToolPath+tool.name+".tres"
+		var buildDefine = load(resPath) as SWBuildDefine
+		if not buildDefine:
+			continue
 		var btn := tool as TextureButton
 		if btn == null:
 			continue
-		var atex := btn.texture_normal as AtlasTexture
-		if atex != null:
-			atex.atlas = SwAtlas.current
+		btn.set_texture_normal(buildDefine.atlasIcon)
+			
+	#if SwAtlas == null or SwAtlas.current == null:
+		#return
+	#for tool in selTools:
+		#var btn := tool as TextureButton
+		#if btn == null:
+			#continue
+		#var atex := btn.texture_normal as AtlasTexture
+		#if atex != null:
+			#atex.atlas = SwAtlas.current
 
 func on_view_rect_changed(_viewRect:Rect2,_speedVec:Vector2) -> void:
 	pass

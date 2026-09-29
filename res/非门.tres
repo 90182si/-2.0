@@ -2,6 +2,12 @@
 
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_wgx1k"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_xid3e"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin.gd" id="2_1402x"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1ttv0"]
+atlas = ExtResource("1_wgx1k")
+region = Rect2(128, 384, 128, 128)
+filter_clip = true
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_1402x"]
 atlas = ExtResource("1_wgx1k")
@@ -13,10 +19,23 @@ atlas = ExtResource("1_wgx1k")
 region = Rect2(384, 128, 128, 128)
 filter_clip = true
 
+[sub_resource type="Resource" id="Resource_1p3qu"]
+script = ExtResource("2_1402x")
+pin_define = 2
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[sub_resource type="Resource" id="Resource_y6gnr"]
+script = ExtResource("2_1402x")
+pin_dir = 2
+pin_define = 1
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
 [resource]
 script = ExtResource("1_xid3e")
+atlasIcon = SubResource("AtlasTexture_1ttv0")
 atlasTextureOn = SubResource("AtlasTexture_eilan")
 atlasTextureOff = SubResource("AtlasTexture_1402x")
 buildName = "非门"
 circuit_component_type = 8
+build_pin = Array[ExtResource("2_1402x")]([SubResource("Resource_1p3qu"), SubResource("Resource_y6gnr")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

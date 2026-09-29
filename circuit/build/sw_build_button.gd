@@ -3,26 +3,25 @@ class_name SWBuildButton extends SWBuildItemDefine
 var pressed:bool = false
 
 #按钮定义
-func setPortFlag() -> void:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+func setPortFlag(buildDef:SWBuildDefine) -> void:
+	var circuitCompoent := getCircuitCompoent()
 	circuitCompoent.setPinDefine(SwDefine.SW_Dir.UP,SwDefine.CircuitPinType.OUTPUT)
 
 func onPressed(_pressed:bool) -> void:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuitCompoent := getCircuitCompoent()
 	pressed = _pressed
 	if pressed == true:
-		drawRect = buildDefine.atlasTextureOn.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.HIGH)
 	else:
-		drawRect = buildDefine.atlasTextureOff.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
 
 func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	return circuitCompoent.pinExprMap.get(pinDir,null)
+	return getCircuitCompoent().pinExprMap.get(pinDir,null)
 
 func getBuildExpr() -> void:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuitCompoent := getCircuitCompoent()
 	if not circuitCompoent.pinExprMap.has(rotation):
 		circuitCompoent.pinExprMap[rotation] = SwDefine.SWCircuitStruct.new()
 		circuitCompoent.pinExprMap[rotation].optFunc = SwCommon.EqualValues

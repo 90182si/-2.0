@@ -68,7 +68,7 @@ static func save_builds(name: String, builds: Array, viewport: Viewport, karnaug
 	data["save_name"] = name
 	data["timestamp"] = Time.get_unix_time_from_system()
 	var builds_arr: Array = []
-	for build in builds:
+	for build:SWBuildItemDefine in builds:
 		if not build:
 			continue
 		var b: Dictionary = {}
@@ -76,7 +76,7 @@ static func save_builds(name: String, builds: Array, viewport: Viewport, karnaug
 		b["pos"] = {"x": build.buildAxisPos.x, "y": build.buildAxisPos.y}
 		b["def"] = build.buildDefine.buildName if build.buildDefine else ""
 		b["rot"] = build.rotation
-		b["comp_type"] = build.comp_type
+		b["comp_type"] = build.buildDefine.circuit_component_type
 		b["circuit_on"] = build.circuit_on
 		b["signal_state"] = build.signal_state
 		b["tunnel_pair_id"] = build.tunnel_pair_id

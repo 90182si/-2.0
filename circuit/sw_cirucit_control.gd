@@ -27,7 +27,7 @@ func setBuildManager(bManager:SWBuildManager) -> void:
 #总结：不管有没有circuit，都需要加入到retArr,有circuit就把circuit里面所有建筑物加进去，没有就不加
 func getNeighborsCached(build:SWBuildItemDefine) -> Array:
 	if not _neighborsCache.has(build):
-		_neighborsCache[build] = build.getBuildIOConnectBuildArr(buildManager)
+		_neighborsCache[build] = build.getCircuitCompoent().getBuildIOConnectBuildArr(buildManager)
 	return _neighborsCache[build]
 func find1(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
 	var retArr:Array[SWBuildItemDefine] = []
@@ -43,12 +43,12 @@ func find1(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
 					continue
 				handledCircuits[neiBuild.circuit] = true
 				for cBuild in neiBuild.circuit.buildArr:
-					if cBuild.innerData.state != SwDefine.BuildState.TO_BE_REMOVED:
+					if cBuild.buildState.state != SwDefine.BuildState.TO_BE_REMOVED:
 						buildMap[cBuild] = true
 			else:
-				if neiBuild.innerData.state != SwDefine.BuildState.TO_BE_REMOVED:
+				if neiBuild.buildState.state != SwDefine.BuildState.TO_BE_REMOVED:
 					buildMap[neiBuild] = true
-		if build.innerData.state != SwDefine.BuildState.TO_BE_REMOVED:
+		if build.buildState.state != SwDefine.BuildState.TO_BE_REMOVED:
 			buildMap[build] = true
 	retArr = buildMap.keys()
 	return retArr
@@ -66,7 +66,7 @@ func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
 		circuits.erase(circuit.circuitID)
 func createNets(builds:Array[SWBuildItemDefine]) -> void:
 	for build:SWBuildItemDefine in builds:
-		build.getNet(buildManager)
+		build.getCircuitCompoent().getNet(buildManager)
 func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
 	for build:SWBuildItemDefine in builds:
@@ -98,7 +98,7 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 				var neiBuild:SWBuildItemDefine = neiBuildItem["build"]
 				if not SwCommon.IsWireBuild(neiBuild):
 					continue
-				var circuit = neiBuild.getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+				var circuit = neiBuild.getCircuitCompoent()
 				if circuit:
 					var net:SWNet = circuit.pinNetMap[dir]
 					for wireBuild in net.wireGroup.wireBuilds.keys():
@@ -126,12 +126,12 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 			build.circuit = cir
 			if SwCommon.IsWireBuild(build):
 				continue
-			if build.comp_type == SwDefine.CircuitComponentType.BUTTON or build.comp_type == SwDefine.CircuitComponentType.SWITCH:
+			if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.SWITCH:
 				continue
-			var cirComp := build.getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+			var cirComp := build.getCircuitCompoent()
 			var depSeen:Dictionary[SWBuildItemDefine,bool] = {}
 			for dir in cirComp.pinNetMap.keys():
-				if not build.portIsInput(dir):
+				if not build.getCircuitCompoent().portIsInput(dir):
 					continue
 				var net:SWNet = cirComp.pinNetMap[dir]
 				if net == null:

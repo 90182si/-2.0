@@ -312,17 +312,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				var world_pos = SwCommon.GetGlobalPosByViewPos(mouse_pos, viewport)
 				var grid_pos:Vector2i = SwCommon.GetGridPos(Vector2i(world_pos))
 				var build = sw_build_manager.getBuild(grid_pos)
-				if build and (build.comp_type == SwDefine.CircuitComponentType.BUTTON or build.comp_type == SwDefine.CircuitComponentType.SWITCH):
-					if build.comp_type == SwDefine.CircuitComponentType.BUTTON:
+				if build and (build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.SWITCH):
+					if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON:
 						build.onPressed(true)
-					elif build.comp_type == SwDefine.CircuitComponentType.SWITCH:
+					elif build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.SWITCH:
 						build.onPressed(!build.pressed)
 					var newBuilds = sw_circuit_control.buildSignalChanged(build)
 					newBuilds.append(build)
 					#var notifyChunkPosArr = getNotifyChunkPosArr([build])
 					var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
 					sw_draw_manager.updataChunks(notifyChunkPosArr)
-					if build.comp_type == SwDefine.CircuitComponentType.BUTTON:
+					if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON:
 						_pressed_button_pos = grid_pos
 					get_viewport().set_input_as_handled()
 					return
@@ -331,11 +331,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _pressed_button_pos != Vector2i(-9999, -9999):
 					var grid_pos:Vector2i = SwCommon.GetGridPos(Vector2i(_pressed_button_pos))
 					var build = sw_build_manager.getBuild(grid_pos)
-					if build and (build.comp_type == SwDefine.CircuitComponentType.BUTTON or build.comp_type == SwDefine.CircuitComponentType.SWITCH):
-						if build.comp_type == SwDefine.CircuitComponentType.BUTTON:
+					if build and (build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.SWITCH):
+						if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON:
 							#90182si 按钮被点击
 							build.onPressed(false)
-						elif build.comp_type == SwDefine.CircuitComponentType.SWITCH:
+						elif build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.SWITCH:
 							pass
 						var newBuilds = sw_circuit_control.buildSignalChanged(build)
 						newBuilds.append(build)

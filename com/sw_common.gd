@@ -41,12 +41,12 @@ static func RotationPos(srcPos:Vector2,deg:float,rotCenter:Vector2) -> Vector2:
 	return (srcPos - rotCenter).rotated(deg_to_rad(deg)) + rotCenter
 
 static func IsWireBuild(build:SWBuildItemDefine) -> bool:
-	if build.comp_type == SwDefine.CircuitComponentType.WIRE or build.comp_type == SwDefine.CircuitComponentType.WIRE_BRIDGE:
+	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_BRIDGE:
 		return true
 	return false
 	
 static func IsWireEndBuild(build:SWBuildItemDefine) -> bool:
-	if build.comp_type == SwDefine.CircuitComponentType.LED:
+	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.LED:
 		return true
 	return false
 	
@@ -54,6 +54,12 @@ static func CreateCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCo
 	match compoentType:
 		SwDefine.BuildCompoentType.CIRCUIT:
 			return SWBuildCompoentCircuit.new()
+		SwDefine.BuildCompoentType.CIRCUIT_WIRE:
+			return SWBuildCompoentCircuitWire.new()
+		SwDefine.BuildCompoentType.CIRCUIT_WIRE_CROSS:
+			return SWBuildCompoentCircuitWireCross.new()
+		SwDefine.BuildCompoentType.RENDER_ABLE:
+			return SWBuildCompoentRenderable.new()
 	return null
 
 # 提取所有 [] 内文本，返回数组

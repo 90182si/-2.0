@@ -5,10 +5,11 @@ const ATLAS_PATHS: Array[String] = [
 	"res://atlas/图集.png",
 	"res://atlas/图集2.png",
 	"res://atlas/图集3.png",
+	"res://atlas/图集4.png"
 ]
 
 ## 【运行前改这里】选择用第几张图：0=图集.png，1=图集2.png，2=图集3.png
-var atlas_index: int = 0
+var atlas_index: int = 3
 
 ## 启动时按 atlas_index 载入好的纹理，全项目统一从这里取
 var current: Texture2D = null

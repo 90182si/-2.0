@@ -14,8 +14,8 @@ class_name SWBuildElementTemplate extends SWBuildItemDefine
 var _active: bool = false
 
 # 端口定义：声明每个方向是 INPUT / OUTPUT / WIRE
-func setPortFlag() -> void:
-	var circuit: SWBuildCompoentCircuit = getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+func setPortFlag(buildDef:SWBuildDefine) -> void:
+	var circuit: SWBuildCompoentCircuit = getCircuitCompoent()
 	circuit.setPinDefine(SwDefine.SW_Dir.UP, SwDefine.CircuitPinType.OUTPUT)
 	circuit.setPinDefine(SwDefine.SW_Dir.DOWN, SwDefine.CircuitPinType.INPUT)
 	circuit.setPinDefine(SwDefine.SW_Dir.LEFT, SwDefine.CircuitPinType.INPUT)
@@ -27,20 +27,20 @@ func getBuildExpr() -> void:
 	if _buildingExpr:
 		return
 	_buildingExpr = true
-	var circuit: SWBuildCompoentCircuit = getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuit: SWBuildCompoentCircuit = getCircuitCompoent()
 	# TODO: 遍历输入侧 net 的 drivers，收集子表达式后用 SwCommon.AndValues 等组合
 	_buildingExpr = false
 
 # 供上游取本元件在某方向上的输出表达式
 func getExpr(pinDir: SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
-	var circuit: SWBuildCompoentCircuit = getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
-	if portIsOutput(pinDir):
+	var circuit: SWBuildCompoentCircuit = getCircuitCompoent()
+	if circuit.portIsOutput(pinDir):
 		return circuit.pinExprMap.get(SwDefine.getAntiDir(pinDir), null)
 	return null
 
 # 求值：读取表达式树结果，并把值推给下游电线
 func getValue(dir: SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	var circuit: SWBuildCompoentCircuit = getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuit: SWBuildCompoentCircuit = getCircuitCompoent()
 	var value: SwDefine.CircuitSignal = circuit.getValue(dir)
 	var net: SWNet = circuit.pinNetMap.get(dir, null)
 	if net:
@@ -61,13 +61,13 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 func buildStateChanged(signalValue: SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
 	if signalValue == SwDefine.CircuitSignal.HIGH:
-		drawRect = buildDefine.atlasTextureOn.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 	else:
-		drawRect = buildDefine.atlasTextureOff.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 
 func resetPortState() -> void:
 	super.resetPortState()
-	drawRect = buildDefine.atlasTextureOff.region
+	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 
 # ===== 注册步骤（新增元件后必做）=====
 # 1) core/define/sw_define.gd -> enum CircuitComponentType 末尾加一个类型(如 AND_GATE)

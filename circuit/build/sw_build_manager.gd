@@ -10,12 +10,12 @@ signal build_changed()
 
 ########
 func setBuildState(build:SWBuildItemDefine,state:SwDefine.BuildState) -> void:
-	build.innerData.state = state
+	build.buildState.state = state
 	pass
 
 func setBuildsState(builds:Array[SWBuildItemDefine],state:SwDefine.BuildState) -> void:
 	for build in builds:
-		build.innerData.state = state
+		build.buildState.state = state
 	pass
 ########
 

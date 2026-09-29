@@ -3,25 +3,25 @@ class_name SWBuildNot extends SWBuildItemDefine
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
 	if signalValue == SwDefine.CircuitSignal.LOW:
-		drawRect = buildDefine.atlasTextureOff.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
-		drawRect = buildDefine.atlasTextureOn.region
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 
-func setPortFlag() -> void:
-	var circuit_compoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+func setPortFlag(buildDef:SWBuildDefine) -> void:
+	var circuit_compoent := getCircuitCompoent()
 	circuit_compoent.setPinDefine(SwDefine.SW_Dir.UP,SwDefine.CircuitPinType.OUTPUT)
 	circuit_compoent.setPinDefine(SwDefine.SW_Dir.DOWN,SwDefine.CircuitPinType.INPUT)
 	pass
 
 func resetPortState() -> void:
 	super.resetPortState()
-	drawRect = buildDefine.atlasTextureOff.region
+	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 
 func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	var circuit_compoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
 	#如果这个端口是输入口，并且电路组件里的pinNet存在这个方向的net
 	var antiDir = SwDefine.getAntiDir(pinDir)
-	if portIsOutput(pinDir):
+	if circuit_compoent.portIsOutput(pinDir):
 		return circuit_compoent.pinExprMap.get(antiDir,null)
 	return null
 
@@ -29,7 +29,7 @@ func getBuildExpr() -> void:
 	if _buildingExpr:
 		return
 	_buildingExpr = true
-	var circuit_compoent : SWBuildCompoentCircuit = getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuit_compoent : SWBuildCompoentCircuit = getCircuitCompoent()
 	var dir = SwDefine.getAntiDir(rotation)
 	var net:SWNet = circuit_compoent.pinNetMap.get(dir,null)
 	if not net:
@@ -59,7 +59,7 @@ func getBuildExpr() -> void:
 	_buildingExpr = false
 	
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuitCompoent := getCircuitCompoent()
 	var value = circuitCompoent.getValue(dir)
 	var wireValue = SwDefine.CircuitSignal.NONE
 	if value == SwDefine.CircuitSignal.HIGH:
@@ -76,7 +76,7 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 	var retArr:Array[SWBuildItemDefine] = [self]
 	var downDir = SwDefine.getAntiDir(rotation)
 	buildStateChanged(getValue(downDir))
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
+	var circuitCompoent := getCircuitCompoent()
 	var net = circuitCompoent.pinNetMap.get(downDir,null)
 	if net:
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
