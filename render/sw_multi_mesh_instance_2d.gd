@@ -4,7 +4,6 @@ var _swTransform:SwDefine.SWTransformData
 var _gridSize:Vector2 = SwDefine.GRID_SIZE
 var _drawMode:SwDefine.GridDrawMode=SwDefine.GridDrawMode.Tiling
 
-var chunkPtr:SwDefine.SWDrawChunkData = null
 var thread:Thread = null
 var buffer:PackedFloat32Array
 
@@ -26,7 +25,6 @@ var semaphore2: Semaphore
 
 func _init() -> void:
 	_swTransform = SwDefine.SWTransformData.new()
-	thread = Thread.new()
 	semaphore = Semaphore.new()
 	semaphore2 = Semaphore.new()
 	#mutex = Mutex.new()
@@ -36,7 +34,14 @@ func _init() -> void:
 		# 启用颜色支持（如果需要）
 		multimesh.use_colors = true
 		multimesh.instance_count = maxInstances
-	thread.start(calBuffer)
+	#线程改由 _enter_tree 启动、_exit_tree 停止，确保只在节点位于场景树时存活
+
+func _enter_tree() -> void:
+	_alive = true
+	if thread == null:
+		thread = Thread.new()
+	if not thread.is_started():
+		thread.start(calBuffer)
 	
 func _ready() -> void:
 	# 运行前从全局配置 SwAtlas 取当前图集，覆盖 shader 采样用的 srcImg
@@ -70,6 +75,7 @@ func _exit_tree() -> void:
 	semaphore.post()
 	if thread and thread.is_started():
 		thread.wait_to_finish()
+	thread = null
 
 # 公开方法用于控制颜色支持
 func set_use_color(enabled:bool) -> void:

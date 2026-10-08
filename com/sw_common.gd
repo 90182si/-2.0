@@ -58,6 +58,14 @@ static func CreateCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCo
 			return SWBuildCompoentCircuitWire.new()
 		SwDefine.BuildCompoentType.CIRCUIT_WIRE_CROSS:
 			return SWBuildCompoentCircuitWireCross.new()
+		SwDefine.BuildCompoentType.CIRCUIT_SOURCE:
+			return SWBuildCompoentCircuitSource.new()
+		SwDefine.BuildCompoentType.CIRCUIT_LED:
+			return SWBuildCompoentCircuitLed.new()
+		SwDefine.BuildCompoentType.CIRCUIT_NOT:
+			return SWBuildCompoentCircuitNot.new()
+		SwDefine.BuildCompoentType.CIRCUIT_AND:
+			return SWBuildCompoentCircuitAnd.new()
 		SwDefine.BuildCompoentType.RENDER_ABLE:
 			return SWBuildCompoentRenderable.new()
 	return null
@@ -115,7 +123,7 @@ static func NotValues(args: Array) -> int:
 	if args.size() > 0:
 		arg = args[0]
 	if arg is SwDefine.SWBuildPinStruct:
-		if arg.build.getValue(null,arg.dir) == SwDefine.CircuitSignal.HIGH:
+		if arg.build.getCircuitCompoent().getValue(arg.dir) == SwDefine.CircuitSignal.HIGH:
 			return 0
 		return 1
 	elif arg is SwDefine.SWCircuitStruct:
@@ -127,7 +135,7 @@ static func EqualValues(args: Array) -> int:
 	if args.size() > 0:
 		arg = args[0]
 	if arg is SwDefine.SWBuildPinStruct:
-		if arg.build.getValue(arg.dir) == SwDefine.CircuitSignal.HIGH:
+		if arg.build.getCircuitCompoent().getValue(arg.dir) == SwDefine.CircuitSignal.HIGH:
 			return 1
 		return 0
 	elif arg is SwDefine.SWCircuitStruct:

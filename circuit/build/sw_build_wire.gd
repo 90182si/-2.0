@@ -28,22 +28,11 @@ func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 
-func setPortFlag(buildDef:SWBuildDefine) -> void:
-	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT_WIRE) as SWBuildCompoentCircuit
-	circuitCompoent.setPinDefine(SwDefine.SW_Dir.UP,SwDefine.CircuitPinType.WIRE)
-	circuitCompoent.setPinDefine(SwDefine.SW_Dir.RIGHT,SwDefine.CircuitPinType.WIRE)
-	circuitCompoent.setPinDefine(SwDefine.SW_Dir.DOWN,SwDefine.CircuitPinType.WIRE)
-	circuitCompoent.setPinDefine(SwDefine.SW_Dir.LEFT,SwDefine.CircuitPinType.WIRE)
-	pass
-
 func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
 	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT_WIRE) as SWBuildCompoentCircuit
 	circuitCompoent.net = srcNet
 	for pinIndex in range(3,-1,-1):
 		circuitCompoent.pinNetMap[pinIndex] = srcNet
-
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	return [self]
 
 func resetPortState() -> void:
 	super.resetPortState()
@@ -54,9 +43,6 @@ func initPortState(swBuildManager:SWBuildManager) -> void:
 	var circuitCompoent := getCompoent(SwDefine.BuildCompoentType.CIRCUIT_WIRE) as SWBuildCompoentCircuit
 	circuitCompoent.connectWireGroup(swBuildManager)
 
-func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	return SwDefine.CircuitSignal.NONE
-	
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	buildStateChanged(value)
 	pass

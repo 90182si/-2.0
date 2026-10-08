@@ -3,9 +3,6 @@ class_name SWBuildWireCom extends SWBuildItemDefine
 func rotOnce() -> void:
 	pass
 	
-func setPortFlag(buildDef:SWBuildDefine) -> void:
-	pass
-	
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	return SwDefine.CircuitSignal.NONE
 	

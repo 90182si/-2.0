@@ -70,7 +70,7 @@ func createNets(builds:Array[SWBuildItemDefine]) -> void:
 func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
 	for build:SWBuildItemDefine in builds:
-		build.getBuildExpr()
+		build.getCircuitCompoent().getBuildExpr()
 func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	var buildQueue:Array[SWBuildItemDefine] = []
 	#var visited:Dictionary[SWBuildItemDefine,bool] = {}
@@ -157,7 +157,7 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	SwTimeTool.printGapTimes()
 	for build:SWBuildItemDefine in builds:
 		if not build.bIsToBeRemoved():
-			build.reCalSignals()
+			build.getCircuitCompoent().reCalSignals()
 		
 func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefine]:
 	if not buildManager:
@@ -217,6 +217,6 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 			if processed.has(noticeBuild):
 				continue
 			processed[noticeBuild] = true
-			notifyPosArr.append_array(noticeBuild.reCalSignals())
+			notifyPosArr.append_array(noticeBuild.getCircuitCompoent().reCalSignals())
 			queue.append(noticeBuild)
 	return notifyPosArr

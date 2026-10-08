@@ -87,6 +87,10 @@ enum BuildCompoentType{
 	CIRCUIT,
 	CIRCUIT_WIRE,
 	CIRCUIT_WIRE_CROSS,
+	CIRCUIT_SOURCE,
+	CIRCUIT_LED,
+	CIRCUIT_NOT,
+	CIRCUIT_AND,
 	RENDER_ABLE
 }
 
@@ -237,7 +241,6 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) 
 		"按钮":return SWBuildButton.new(axisPos,buildDef,rot)
 		"灯泡":return SWBuildLed.new(axisPos,buildDef,rot)
 		"非门":return SWBuildNot.new(axisPos,buildDef,rot)
-		"与门":return SWBuildAnd.new(axisPos,buildDef,rot)
 		"电线A":return SWBuildWire.new(axisPos,buildDef,rot)
 		"电线B":return SWBuildWire.new(axisPos,buildDef,rot)
 		"电线桥梁":return SWBuildWireCross.new(axisPos,buildDef,rot)
@@ -355,7 +358,6 @@ class SWDrawChunkData extends RefCounted:
 		priority = ChunkPriority.LOW
 		if not mesh_instance:
 			mesh_instance = preload("res://render/sw_multi_mesh_instance_2d.tscn").instantiate() 
-			mesh_instance.chunkPtr = self
 			mesh_instance._hadDraw = false
 		mesh_instance.reUse()
 			#multi_mesh = mesh_instance.multimesh

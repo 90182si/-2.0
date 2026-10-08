@@ -36,7 +36,6 @@ var circuit_on:bool = false
 var tunnel_pair_id:int = -1
 var tunnel_extra_data:int = 0
 var in_loop:bool = false
-var _buildingExpr:bool = false
 var circuit:SwDefine.SWCircuitData = null
 
 
@@ -49,7 +48,7 @@ func _init(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) -> void:
 	buildState = SwDefine.SWBuildState.new()
 	buildAxisPos = axisPos
 	buildDefine = buildDef
-	setPortFlag(buildDefine)
+	getCircuitCompoent().setPortFlag(buildDefine)
 	var rotCount:int = rot
 	for i in range(rotCount):
 		rotOnce()
@@ -58,9 +57,6 @@ func _init(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) -> void:
 	renderable.buildHasBase = true
 	renderable.drawRect = buildDefine.atlasTextureOff.region
 	_sub_init()
-
-@abstract
-func setPortFlag(buildDef:SWBuildDefine) -> void
 
 func getDirBuild(swBuildManager:SWBuildManager,rot:SwDefine.SW_Dir) -> SWBuildItemDefine:
 	var nextPos:Vector2i = buildAxisPos + 128*SwDefine.dir_to_vec(rot)
@@ -85,26 +81,9 @@ func initPortState(swBuildManager:SWBuildManager) -> void:
 
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	signal_state = signalValue
-	
-@abstract
-func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal
 
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	pass
 
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	var v = getValue(SwDefine.SW_Dir.UP) == SwDefine.CircuitSignal.HIGH
-	if v:
-		buildStateChanged(SwDefine.CircuitSignal.HIGH)
-	else:
-		buildStateChanged(SwDefine.CircuitSignal.LOW)
-	return [self]
-
 func bIsToBeRemoved() -> bool:
 	return buildState.state == SwDefine.BuildState.TO_BE_REMOVED
-
-func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
-	return null
-
-func getBuildExpr() -> void:
-	pass

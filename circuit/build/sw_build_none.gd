@@ -9,9 +9,6 @@ func getNet(swBuildManager:SWBuildManager) -> Array:
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	pass
 
-func setPortFlag(buildDef:SWBuildDefine) -> void:
-	pass
-	
 func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	return null
 

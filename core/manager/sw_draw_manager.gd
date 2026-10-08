@@ -240,6 +240,9 @@ func process_unload_chunk() -> void:
 		chunkIns.status = SwDefine.ChunkStatus.UNVISIBLE
 		chunkIns.mesh_instance.set_process(false)
 		chunkIns.mesh_instance.visible = false
+		#摘出场景树：触发 _exit_tree join 工作线程，归还池后不再有存活线程
+		if chunkIns.mesh_instance.get_parent() != null:
+			chunkIns.mesh_instance.get_parent().remove_child(chunkIns.mesh_instance)
 		forDelPosArr.append(chunkIns.chunk_pos)
 		SWObjectPool.DelSWChunkDataObject(chunkIns)
 	for pos in forDelPosArr:

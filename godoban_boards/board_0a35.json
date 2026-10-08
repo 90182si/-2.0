@@ -1,6 +1,6 @@
 {
   "name": "测试",
-  "next_id": 7,
+  "next_id": 9,
   "tags": [],
   "epics": [
     {
@@ -69,6 +69,30 @@
       "tags": [],
       "created_at": 1790146253,
       "updated_at": 1790149886
+    },
+    {
+      "id": "task_7",
+      "title": "电路改版pinversion",
+      "description": "",
+      "status": "in_progress",
+      "priority": "medium",
+      "epic_id": null,
+      "due_date": null,
+      "tags": [],
+      "created_at": 1791425291,
+      "updated_at": 1791425291
+    },
+    {
+      "id": "task_8",
+      "title": "选中数量多就会卡",
+      "description": "",
+      "status": "backlog",
+      "priority": "medium",
+      "epic_id": null,
+      "due_date": null,
+      "tags": [],
+      "created_at": 1791443765,
+      "updated_at": 1791443765
     }
   ]
 }

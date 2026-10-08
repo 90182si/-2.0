@@ -14,6 +14,8 @@ var linkedPort:int = 0
 
 var pinNetMap:Dictionary[SwDefine.SW_Dir,SWNet] = {}
 var pinExprMap:Dictionary[SwDefine.SW_Dir,SwDefine.SWCircuitStruct] = {}
+#表达式构建中标记（防环），由具体电路组件的 getBuildExpr 维护
+var _buildingExpr:bool = false
 
 func setBuildRef(build:SWBuildItemDefine) -> void:
 	buildRef = build
@@ -36,7 +38,7 @@ func iterate_bracket_text(swBuildManager:SWBuildManager,input: String) -> void:
 		print("找到：", content)
 		var build = swBuildManager.getBuildById(contentID)
 		if build:
-			var value = build.getValue(contentDir)
+			var value = build.getCircuitCompoent().getValue(contentDir)
 			if value == SwDefine.CircuitSignal.LOW or value == SwDefine.CircuitSignal.NONE:
 				input.replace(content,"0")
 			elif value == SwDefine.CircuitSignal.HIGH:
@@ -101,6 +103,13 @@ func getNet(swBuildManager:SWBuildManager) -> Array:
 
 #func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	#return null
+
+#以下为电路逻辑入口，默认空实现，子类按需覆盖
+func getBuildExpr() -> void:
+	pass
+
+func getExpr(_pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
+	return null
 	
 var _setDriverOrLoaderCallable:Callable = Callable()
 func driverOrLoaderCallable(cb: Callable) -> void:
@@ -147,6 +156,10 @@ func getDependBuildIds() -> Array[int]:
 		if pinExprMap.has(dir):
 			ids.append_array(ff(pinExprMap[dir]))
 	return ids
+
+#端口方向定义（原建筑 setPortFlag 逻辑下沉至组件），子类按需覆盖
+func setPortFlag(_buildDef:SWBuildDefine) -> void:
+	pass
 
 func setPinDefine(pinDir:SwDefine.SW_Dir,define:SwDefine.CircuitPinType) -> void:
 	if define == SwDefine.CircuitPinType.INPUT:
@@ -195,6 +208,7 @@ func resetPortState() -> void:
 	linkedPort = 0
 	pinNetMap = {}
 	pinExprMap = {}
+	_buildingExpr = false
 
 func getWireGroupBuilds(swBuildManager:SWBuildManager,wireBuild:SWBuildItemDefine,srcDir:SwDefine.SW_Dir) -> Array:
 	var wireGroup:Array = []

@@ -91,6 +91,9 @@ func _on_load_requested() -> void:
 			get_tree().paused = false
 			return
 		buildLayer.load_save_data(data)
+		#恢复视口（缩放与偏移）
+		var camera := get_viewport().get_camera_2d() as SWCamera2D
+		SWSaveManager.apply_viewport(camera, data)
 		print("加载存档成功: ", name)
 		get_tree().paused = false
 	)

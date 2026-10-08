@@ -83,6 +83,19 @@ static func save_builds(name: String, builds: Array, viewport: Viewport, karnaug
 		b["in_loop"] = build.in_loop
 		builds_arr.append(b)
 	data["builds"] = builds_arr
+	#记录视口信息（缩放与偏移），供加载时恢复相机视野
+	var camera: Camera2D = viewport.get_camera_2d() if viewport != null else null
+	if camera != null:
+		var vp_data: Dictionary = {
+			"zoom_x": camera.zoom.x,
+			"zoom_y": camera.zoom.y,
+			"pos_x": camera.global_position.x,
+			"pos_y": camera.global_position.y,
+		}
+		var swCam := camera as SWCamera2D
+		if swCam != null:
+			vp_data["view_scale_level"] = swCam.view_scale_level
+		data["viewport"] = vp_data
 	if not karnaugh_map_data.is_empty():
 		data["karnaugh_map"] = karnaugh_map_data
 	var json_str: String = JSON.stringify(data, "\t")
@@ -116,6 +129,18 @@ static func load_builds(name: String) -> Dictionary:
 		push_error("存档版本不兼容: v%d (当前v%d)".format([version, SAVE_VERSION]))
 		return {}
 	return data
+
+#从存档数据恢复相机视口（缩放与偏移）；旧存档无 viewport 字段则保持不变
+static func apply_viewport(camera: SWCamera2D, data: Dictionary) -> void:
+	if camera == null:
+		return
+	var vp_data: Dictionary = data.get("viewport", {})
+	if vp_data.is_empty():
+		return
+	camera.zoom = Vector2(vp_data.get("zoom_x", 1.0), vp_data.get("zoom_y", 1.0))
+	camera.global_position = Vector2(vp_data.get("pos_x", 0.0), vp_data.get("pos_y", 0.0))
+	camera.view_scale_level = int(vp_data.get("view_scale_level", 0))
+	camera.view_rect_changed()
 
 static func get_thumbnail_texture(name: String) -> Texture2D:
 	var path: String = _thumb_file_path(name)

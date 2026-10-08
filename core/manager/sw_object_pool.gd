@@ -13,6 +13,9 @@ static func _get_pool(dict:Dictionary, mode:int) -> Dictionary:
 static func InitSWChunkDataObject() -> void:
 	# 预热地图平铺（Tiling）用的对象池；其他模式按需创建
 	var del_pool := _get_pool(delChunkDataObjectArr, SwDefine.GridDrawMode.Tiling)
+	#幂等：已预热则跳过，避免反复实例化场景时向 static 池重复追加
+	if del_pool.size() > 0:
+		return
 	for index in range(max_chunk_pool):
 		var chunkData:SwDefine.SWDrawChunkData = SwDefine.SWDrawChunkData.new()
 		chunkData.init()

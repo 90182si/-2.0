@@ -3,6 +3,12 @@ class_name SWBuildCompoentCircuitWireCross extends SWBuildCompoentCircuit
 var v_net:SWNet = null
 var h_net:SWNet = null
 
+func setPortFlag(_buildDef:SWBuildDefine) -> void:
+	setPinDefine(SwDefine.SW_Dir.UP,SwDefine.CircuitPinType.WIRE)
+	setPinDefine(SwDefine.SW_Dir.RIGHT,SwDefine.CircuitPinType.WIRE)
+	setPinDefine(SwDefine.SW_Dir.DOWN,SwDefine.CircuitPinType.WIRE)
+	setPinDefine(SwDefine.SW_Dir.LEFT,SwDefine.CircuitPinType.WIRE)
+
 func setDriverOrLoader(drivers:Array,loaders:Array) -> void:
 	loaders = []
 	for driver:Dictionary in drivers:
@@ -57,3 +63,10 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 			var dir = wBuildItem["dir"]
 			wBuild.setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
+
+#交叉电线不自行求值，视觉由传播时的 setValue 驱动；仅返回自身
+func reCalSignals() -> Array[SWBuildItemDefine]:
+	return [buildRef]
+
+func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
+	return SwDefine.CircuitSignal.NONE
