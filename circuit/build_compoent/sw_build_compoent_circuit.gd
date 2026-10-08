@@ -244,3 +244,6 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 	else:
 		buildRef.buildStateChanged(SwDefine.CircuitSignal.LOW)
 	return [buildRef]
+
+func initPortState(swBuildManager:SWBuildManager) -> void:
+	pass

@@ -72,12 +72,10 @@ func onPressed(_pressed:bool) -> void:
 
 
 	
-func resetPortState() -> void:
+func resetBuildState() -> void:
 	in_loop = false
 	getCircuitCompoent().resetPortState()
-	
-func initPortState(swBuildManager:SWBuildManager) -> void:
-	pass
+	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	signal_state = signalValue

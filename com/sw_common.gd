@@ -141,3 +141,12 @@ static func EqualValues(args: Array) -> int:
 	elif arg is SwDefine.SWCircuitStruct:
 		return EvalStruct(arg)
 	return 0
+
+static func GetWireColor(wireName:String) -> Array[Color]:
+	var retArr:Array[Color] = []
+	match wireName:
+		"电线A":
+			retArr = [Color(0.071, 0.269, 0.362, 1.0),Color(0.338, 0.713, 0.896, 1.0)]
+		"电线B":
+			retArr = [Color(0.462, 0.034, 0.198, 1.0),Color(0.99, 0.57, 0.657, 1.0)]
+	return retArr

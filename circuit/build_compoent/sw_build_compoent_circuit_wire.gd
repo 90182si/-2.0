@@ -61,7 +61,7 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 		for wBuildItem:Dictionary in wireGroupBuilds:
 			var wBuild = wBuildItem["build"]
 			var dir = wBuildItem["dir"]
-			wBuild.setNet(wireNet,dir)
+			wBuild.getCircuitCompoent().setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
 
 #电线不自行求值，视觉由传播时的 setValue 驱动；仅返回自身
@@ -70,3 +70,19 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 
 func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	return SwDefine.CircuitSignal.NONE
+
+func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
+	net = srcNet
+	for pinIndex in range(3,-1,-1):
+		pinNetMap[pinIndex] = srcNet
+	
+func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
+	buildRef.buildStateChanged(value)
+	pass
+
+func initPortState(swBuildManager:SWBuildManager) -> void:
+	connectWireGroup(swBuildManager)
+
+func resetPortState() -> void:
+	super.resetPortState()
+	setNet(null,0)

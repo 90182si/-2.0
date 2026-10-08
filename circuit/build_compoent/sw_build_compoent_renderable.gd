@@ -9,11 +9,12 @@ func setBuildRef(build:SWBuildItemDefine) -> void:
 func getRenderParts() -> Array:
 	var out:Array = []
 	if buildHasBase:
-		out.append({"rect":buildRef.buildDefine.atlasBuildBase.region,"offset":Vector2i.ZERO,"rotation":0})
+		out.append({"rect":buildRef.buildDefine.atlasBuildBase.region,"offset":Vector2i.ZERO,"rotation":0,"color":Color(),"use_color":false})
 	if buildRef.buildDefine and buildRef.buildDefine.build_pin.size() > 0:
-		for p:SWBuildPin in buildRef.buildDefine.build_pin:
+		for p:SWBuildPinDefine in buildRef.buildDefine.build_pin:
 			var r:Rect2 = p.wire_pin.region
-			out.append({"rect":r,"offset":p.cell_offset,"rotation":posmod(p.pin_dir+buildRef.rotation,4)})
+			#SwCommon.getWireColor
+			out.append({"rect":r,"offset":p.cell_offset,"rotation":posmod(p.pin_dir+buildRef.rotation,4),"color":Color(),"use_color":false})
 	if buildHasAtlas:
-		out.append({"rect":drawRect,"offset":Vector2i.ZERO,"rotation":buildRef.rotation})
+		out.append({"rect":drawRect,"offset":Vector2i.ZERO,"rotation":buildRef.rotation,"color":Color(),"use_color":false})
 	return out

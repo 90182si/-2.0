@@ -177,7 +177,12 @@ func calBuffer() -> void:
 						Vector2(gridPos.x + _gridSizeTmp.x * (offset.x + 0.5), 
 								gridPos.y + _gridSizeTmp.y * (offset.y + 0.5)))
 					var buffer_index = index * buffer_size_per_instance
-					_fill_instance(newBuffer,buffer_index,t,color,part["rect"],use_colors)
+					var use_color = part["use_color"]
+					if use_color:
+						var mix_color = color * part["color"]
+						_fill_instance(newBuffer,buffer_index,t,mix_color,part["rect"],use_colors)
+					else:
+						_fill_instance(newBuffer,buffer_index,t,color,part["rect"],use_colors)
 					index += 1
 			showCount = index
 		# 使用 call_deferred 传递数据，但 n 通过参数传递

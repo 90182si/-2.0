@@ -17,10 +17,6 @@ func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 
-func resetPortState() -> void:
-	super.resetPortState()
-	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
-
 func _sub_init() -> void:
 	var renderable = getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable
 	renderable.buildHasAtlas = true

@@ -13,7 +13,3 @@ func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
-
-func resetPortState() -> void:
-	super.resetPortState()
-	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region

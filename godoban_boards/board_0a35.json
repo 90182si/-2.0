@@ -1,6 +1,6 @@
 {
   "name": "测试",
-  "next_id": 9,
+  "next_id": 10,
   "tags": [],
   "epics": [
     {
@@ -47,18 +47,6 @@
       "updated_at": 1790149879
     },
     {
-      "id": "task_6",
-      "title": "移植reCalSignals函数",
-      "description": "",
-      "status": "todo",
-      "priority": "high",
-      "epic_id": "epic_5",
-      "due_date": null,
-      "tags": [],
-      "created_at": 1790691612,
-      "updated_at": 1790691666
-    },
-    {
       "id": "task_4",
       "title": "电线隧道",
       "description": "",
@@ -93,6 +81,30 @@
       "tags": [],
       "created_at": 1791443765,
       "updated_at": 1791443765
+    },
+    {
+      "id": "task_6",
+      "title": "移植reCalSignals函数",
+      "description": "",
+      "status": "done",
+      "priority": "high",
+      "epic_id": "epic_5",
+      "due_date": null,
+      "tags": [],
+      "created_at": 1790691612,
+      "updated_at": 1791446787
+    },
+    {
+      "id": "task_9",
+      "title": "建筑物电路逻辑分离",
+      "description": "",
+      "status": "done",
+      "priority": "medium",
+      "epic_id": null,
+      "due_date": null,
+      "tags": [],
+      "created_at": 1791454289,
+      "updated_at": 1791454289
     }
   ]
 }

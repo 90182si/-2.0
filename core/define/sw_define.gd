@@ -336,6 +336,7 @@ class SWCircuitData extends RefCounted:
 class SWWireGroup extends RefCounted:
 	var wireGroupID:int
 	var wireBuilds:Dictionary[SWBuildItemDefine,SWBuildItemDefine] = {}
+	var wireColor:Color
 	func _init() -> void:
 		wireGroupID = SwCommon.GenNextBuildId()
 

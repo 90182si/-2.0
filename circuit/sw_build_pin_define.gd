@@ -1,4 +1,4 @@
-class_name SWBuildPin extends Resource
+class_name SWBuildPinDefine extends Resource
 
 const wire_pin = preload("res://res/电线端子.tres")
 

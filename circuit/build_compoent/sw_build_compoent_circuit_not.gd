@@ -56,7 +56,7 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	var net = pinNetMap.get(dir,null)
 	if net:
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
-			load.setValue(dir,wireValue)
+			load.getCircuitCompoent().setValue(dir,wireValue)
 	return wireValue
 
 func reCalSignals() -> Array[SWBuildItemDefine]:

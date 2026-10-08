@@ -53,7 +53,7 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 		for wBuildItem:Dictionary in wireGroupBuilds:
 			var wBuild = wBuildItem["build"]
 			var dir = wBuildItem["dir"]
-			wBuild.setNet(wireNet,dir)
+			wBuild.getCircuitCompoent().setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
 	if h_net == null:
 		var wireGroupBuilds = getWireGroupBuilds(swBuildManager,buildRef,1)
@@ -61,7 +61,7 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 		for wBuildItem:Dictionary in wireGroupBuilds:
 			var wBuild = wBuildItem["build"]
 			var dir = wBuildItem["dir"]
-			wBuild.setNet(wireNet,dir)
+			wBuild.getCircuitCompoent().setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
 
 #交叉电线不自行求值，视觉由传播时的 setValue 驱动；仅返回自身
@@ -70,3 +70,25 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 
 func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	return SwDefine.CircuitSignal.NONE
+
+func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
+	if dir == 0 or dir == 2:
+		v_net = srcNet
+		pinNetMap[0] = v_net
+		pinNetMap[2] = v_net
+	elif dir == 1 or dir == 3:
+		h_net = srcNet
+		pinNetMap[1] = h_net
+		pinNetMap[3] = h_net
+
+func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
+	buildRef.buildStateChanged(value)
+	pass
+
+func initPortState(swBuildManager:SWBuildManager) -> void:
+	connectWireGroup(swBuildManager)
+
+func resetPortState() -> void:
+	super.resetPortState()
+	v_net = null
+	h_net = null

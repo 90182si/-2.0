@@ -55,13 +55,13 @@ func find1(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
 func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
 	var forDelCircuit:Dictionary = {}
 	for build:SWBuildItemDefine in builds:
-		build.resetPortState()
+		build.resetBuildState()
 		if build.circuit == null:
 			continue
 		forDelCircuit[build.circuit] = true
 		build.circuit = null
 	for build:SWBuildItemDefine in builds:
-		build.initPortState(buildManager)
+		build.getCircuitCompoent().initPortState(buildManager)
 	for circuit:SwDefine.SWCircuitData in forDelCircuit.keys():
 		circuits.erase(circuit.circuitID)
 func createNets(builds:Array[SWBuildItemDefine]) -> void:
@@ -73,16 +73,9 @@ func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 		build.getCircuitCompoent().getBuildExpr()
 func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	var buildQueue:Array[SWBuildItemDefine] = []
-	#var visited:Dictionary[SWBuildItemDefine,bool] = {}
-	SwTimeTool.addItemGapTimeBegin("createCircuit.for")
 	for buildOne in builds:
 		if buildOne.circuit != null:
 			continue
-		#if visited.has(buildOne):
-			#continue
-		#性能与正确性修复：visited 必须每个独立电路新建一份。
-		#共用时第k个电路的 buildGroup 会包含之前所有电路的建筑，
-		#既把老建筑的 circuit 指针错误覆写成最后一个电路，又让工作量变成 O(电路数×建筑数)
 		var visited:Dictionary[SWBuildItemDefine,bool] = {}
 		buildQueue.append(buildOne)
 		while buildQueue.size() > 0:
@@ -106,8 +99,6 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 					for nextBuildItem in net.getLoads():
 						var nextBuild = nextBuildItem["build"]
 						buildQueue.append(nextBuild)
-					#修复：电线组被整组标记visited后永远不会出队，只查loads会漏掉上游驱动侧，
-					#导致"先放灯泡再放电线最后放开关"时开关被划出电路、noticeMap为空、切换无效
 					for driverBuildItem in net.getDrivers():
 						var driverBuild = driverBuildItem["build"]
 						if driverBuild == null or visited.has(driverBuild):
@@ -121,7 +112,6 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 		var buildGroup = visited.keys()
 		var cir:SwDefine.SWCircuitData = SwDefine.SWCircuitData.new()
 		cir.buildArr = buildGroup
-		SwTimeTool.addItemGapTimeBegin("createCircuit.for.for")
 		for build:SWBuildItemDefine in buildGroup:
 			build.circuit = cir
 			if SwCommon.IsWireBuild(build):
@@ -144,17 +134,6 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 					if not cir.noticeMap.has(depBuild):
 						cir.noticeMap[depBuild] = []
 					cir.noticeMap[depBuild].append(build)
-			#var dependBuildIds = cirComp.getDependBuildIds()
-			#for id in dependBuildIds:
-				#var depBuild = buildManager.getBuildById(id)
-				#if not depBuild:
-					#continue
-				#if not cir.noticeMap.has(depBuild):
-					#cir.noticeMap[depBuild] = []
-				#cir.noticeMap[depBuild].append(build)
-		SwTimeTool.addItemGapTimeEnd("createCircuit.for.for")
-	SwTimeTool.addItemGapTimeEnd("createCircuit.for")
-	SwTimeTool.printGapTimes()
 	for build:SWBuildItemDefine in builds:
 		if not build.bIsToBeRemoved():
 			build.getCircuitCompoent().reCalSignals()
@@ -170,25 +149,19 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	SwCommon.NextEvalEpoch()
 	_neighborsCache.clear()
 	#查找受影的所有响建筑物
-	SwTimeTool.getTime()
 	var affectBuilds = find1(builds)
-	print("[updateBuildCircuit.find1]耗时%.6f"%[SwTimeTool.getGapTime()])
 	#将这些受影响的建筑物关联的电路清空
 	clearBuildsCircuitState(affectBuilds)
-	print("[updateBuildCircuit.clearBuildsCircuitState]耗时%.6f"%[SwTimeTool.getGapTime()])
 	#每个建筑物创建net
 	createNets(affectBuilds)
-	print("[updateBuildCircuit.createNets]耗时%.6f"%[SwTimeTool.getGapTime()])
 	#方向构建依赖电路
 	getCircuit(affectBuilds)
-	print("[updateBuildCircuit.getCircuit]耗时%.6f"%[SwTimeTool.getGapTime()])
 	
 	var affectBuilds2:Array[SWBuildItemDefine] = []
 	for affectBuild in affectBuilds:
 		if not SwCommon.IsWireBuild(affectBuild):
 			affectBuilds2.append(affectBuild)
 	createCircuit(affectBuilds2)
-	print("[updateBuildCircuit.createCircuit]耗时%.6f"%[SwTimeTool.getGapTime()])
 	
 	return affectBuilds
 	

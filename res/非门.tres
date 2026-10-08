@@ -2,7 +2,7 @@
 
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_wgx1k"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_xid3e"]
-[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin.gd" id="2_1402x"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin_define.gd" id="2_1402x"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_1ttv0"]
 atlas = ExtResource("1_wgx1k")
