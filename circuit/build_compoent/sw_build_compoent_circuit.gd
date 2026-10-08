@@ -24,29 +24,6 @@ func _init() -> void:
 	#pinExprMap = SwDefine.SWCircuitStruct.new()
 	pass
 
-func iterate_bracket_text(swBuildManager:SWBuildManager,input: String) -> void:
-	var regex = RegEx.create_from_string(r"\[(.*?)\]")
-	var rmatch: RegExMatch
-	
-	while true:
-		rmatch = regex.search(input, 0)
-		if rmatch == null:
-			break
-		var content = int(rmatch.get_string(1))
-		var contentID = content.split(":")[0]
-		var contentDir = content.split(":")[1]
-		print("找到：", content)
-		var build = swBuildManager.getBuildById(contentID)
-		if build:
-			var value = build.getCircuitCompoent().getValue(contentDir)
-			if value == SwDefine.CircuitSignal.LOW or value == SwDefine.CircuitSignal.NONE:
-				input.replace(content,"0")
-			elif value == SwDefine.CircuitSignal.HIGH:
-				input.replace(content,"1")
-		# 下一次搜索从本次匹配结束位置往后走
-		#start_pos = rmatch.get_end()
-	print(input)
-
 func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array:
 	var linkedBuilds:Array = []
 	for pinIndex:int in range(3,-1,-1):

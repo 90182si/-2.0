@@ -19,3 +19,6 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+
+#测试产物
+test/*.xml
