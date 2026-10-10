@@ -6,6 +6,7 @@ const VIEW_MIN_LEVEL = -30-15
 const VIEW_NEXT_LEVEL = -14
 const GRID_SIZE = Vector2i(128,128)
 const MAX_RENDER_PARTS:int = 6
+const MAX_TUNNEL_DIS:int = 4
 
 enum GridDrawMode {
 	Tiling,   #平铺显示
@@ -79,6 +80,7 @@ enum CircuitComponentType{
 enum BuildState{
 	IDLE,
 	SELECTED,
+	HOLDING,
 	TO_BE_REMOVED
 }
 
@@ -87,10 +89,10 @@ enum BuildCompoentType{
 	CIRCUIT,
 	CIRCUIT_WIRE,
 	CIRCUIT_WIRE_CROSS,
+	CIRCUIT_WIRE_TUNNEL,
 	CIRCUIT_SOURCE,
 	CIRCUIT_LED,
 	CIRCUIT_NOT,
-	CIRCUIT_AND,
 	RENDER_ABLE
 }
 
@@ -336,7 +338,7 @@ class SWCircuitData extends RefCounted:
 class SWWireGroup extends RefCounted:
 	var wireGroupID:int
 	var wireBuilds:Dictionary[SWBuildItemDefine,SWBuildItemDefine] = {}
-	var wireColor:Color
+	var wireName:String
 	func _init() -> void:
 		wireGroupID = SwCommon.GenNextBuildId()
 

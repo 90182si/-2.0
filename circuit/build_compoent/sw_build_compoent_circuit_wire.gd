@@ -12,23 +12,23 @@ func setDriverOrLoader(drivers:Array,loaders:Array) -> void:
 	loaders = []
 	net.setNet(drivers,loaders)
 		
-func getDirBuild(swBuildManager:SWBuildManager,rot:SwDefine.SW_Dir) -> SWBuildItemDefine:
-	var nextBuild:SWBuildItemDefine = buildRef.getDirBuild(swBuildManager,rot)
-	if not nextBuild:
-		return null
-	var nextCircuitCom = nextBuild.getCircuitCompoent()
-	if not nextCircuitCom:
-		return null
-	var antiDir:SwDefine.SW_Dir = SwDefine.getAntiDir(rot)
-	if not nextCircuitCom.isPort(antiDir):
-		return null
-	if SwCommon.IsWireBuild(buildRef) or SwCommon.IsWireBuild(nextBuild):
-		return nextBuild
-	if portIsOutput(rot) and nextCircuitCom.portIsInput(antiDir):
-		return nextBuild
-	if portIsInput(rot) and nextCircuitCom.portIsOutput(antiDir):
-		return nextBuild
-	return null
+#func getDirBuild(swBuildManager:SWBuildManager,rot:SwDefine.SW_Dir) -> SWBuildItemDefine:
+	#var nextBuild:SWBuildItemDefine = buildRef.getDirBuild(swBuildManager,rot)
+	#if not nextBuild:
+		#return null
+	#var nextCircuitCom = nextBuild.getCircuitCompoent()
+	#if not nextCircuitCom:
+		#return null
+	#var antiDir:SwDefine.SW_Dir = SwDefine.getAntiDir(rot)
+	#if not nextCircuitCom.isPort(antiDir):
+		#return null
+	#if SwCommon.IsWireBuild(buildRef) or SwCommon.IsWireBuild(nextBuild):
+		#return nextBuild
+	#if portIsOutput(rot) and nextCircuitCom.portIsInput(antiDir):
+		#return nextBuild
+	#if portIsInput(rot) and nextCircuitCom.portIsOutput(antiDir):
+		#return nextBuild
+	#return null
 
 func getNet(swBuildManager:SWBuildManager) -> Array:
 	if buildRef.bIsToBeRemoved():
@@ -73,6 +73,8 @@ func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 
 func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
 	net = srcNet
+	if srcNet:
+		net.wireGroup.wireName = buildRef.buildDefine.buildName
 	for pinIndex in range(3,-1,-1):
 		pinNetMap[pinIndex] = srcNet
 	

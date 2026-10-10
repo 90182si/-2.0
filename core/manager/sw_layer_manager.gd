@@ -53,6 +53,10 @@ func hudLayerSelectedTool(buildDefine:SWBuildDefine) -> void:
 	var drawData:SWDrawData = SWDrawData.new()
 	drawData.addOneDrawBuildDefine(Vector2i(0,0),buildDefine)
 	holdLayer.on_sel_tool_draw_data(drawData)
+	if buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_TUNNEL:
+		holdLayer.selTunnel = true
+	else:
+		holdLayer.selTunnel = false
 
 func _on_save_requested() -> void:
 	var dialog = preload("res://ui/sw_save_dialog.tscn").instantiate()

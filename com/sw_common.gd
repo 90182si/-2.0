@@ -41,7 +41,9 @@ static func RotationPos(srcPos:Vector2,deg:float,rotCenter:Vector2) -> Vector2:
 	return (srcPos - rotCenter).rotated(deg_to_rad(deg)) + rotCenter
 
 static func IsWireBuild(build:SWBuildItemDefine) -> bool:
-	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_BRIDGE:
+	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE \
+		or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_BRIDGE \
+		or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_TUNNEL:
 		return true
 	return false
 	
@@ -64,10 +66,10 @@ static func CreateCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCo
 			return SWBuildCompoentCircuitLed.new()
 		SwDefine.BuildCompoentType.CIRCUIT_NOT:
 			return SWBuildCompoentCircuitNot.new()
-		SwDefine.BuildCompoentType.CIRCUIT_AND:
-			return SWBuildCompoentCircuitAnd.new()
 		SwDefine.BuildCompoentType.RENDER_ABLE:
 			return SWBuildCompoentRenderable.new()
+		SwDefine.BuildCompoentType.CIRCUIT_WIRE_TUNNEL:
+			return SWBuildCompoentCircuitTunnel.new()
 	return null
 
 # 提取所有 [] 内文本，返回数组
@@ -146,7 +148,13 @@ static func GetWireColor(wireName:String) -> Array[Color]:
 	var retArr:Array[Color] = []
 	match wireName:
 		"电线A":
-			retArr = [Color(0.071, 0.269, 0.362, 1.0),Color(0.338, 0.713, 0.896, 1.0)]
+			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
 		"电线B":
-			retArr = [Color(0.462, 0.034, 0.198, 1.0),Color(0.99, 0.57, 0.657, 1.0)]
+			retArr = [Color(0.335, 0.231, 0.737, 1.0),Color(0.721, 0.713, 0.977, 1.0)]
+		_:
+			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
 	return retArr
+
+# 循环依赖（反馈环）元件与电线的警示色
+static func GetLoopColor() -> Color:
+	return Color(1.0, 0.0, 0.0, 1.0)

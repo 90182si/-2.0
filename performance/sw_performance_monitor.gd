@@ -236,6 +236,9 @@ func _format_build_info(build: SWBuildItemDefine) -> String:
 		var wireBuild:SWBuildWireCross = build as SWBuildWireCross
 		lines.append("VerticalWireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().v_net.wireGroup))
 		lines.append("HorizontalWireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().h_net.wireGroup))
+	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_TUNNEL:
+		var tunnelBuild:SWBuildWireTunnel = build as SWBuildWireTunnel
+		lines.append("Tunnel PairId: %d" % tunnelBuild.pairId)
 	if build.circuit_on:
 		lines.append("电路: 通电")
 	return "\n".join(lines)

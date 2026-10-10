@@ -42,8 +42,9 @@ func getBuildExpr() -> void:
 
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	var value = super.getValue(dir)
-	var net = pinNetMap.get(dir,null)
+	var net:SWNet = pinNetMap.get(dir,null)
 	if net:
+		net.curSignal = value
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
 			load.getCircuitCompoent().setValue(dir,value)
 	return value

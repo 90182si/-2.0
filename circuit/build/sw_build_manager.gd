@@ -38,20 +38,22 @@ func addBuild(build:SWBuildItemDefine) -> bool:
 	var result = curChunk.addBuild(build)
 	if result:
 		buildStoreManager[build.id] = build
+		build.on_idled(self)
 		build_changed.emit()
 	return result
 	
-func delBuild(build:SWBuildItemDefine) -> bool:
-	if not build:
-		return false
-	var curChunk = getChunkOrCreate(build.buildAxisPos)
-	if not curChunk:
-		return false
-	var result = curChunk.delBuild(build)
-	if result:
-		buildStoreManager.erase(build.id)
-		build_changed.emit()
-	return result
+#func delBuild(build:SWBuildItemDefine) -> bool:
+	#if not build:
+		#return false
+	#var curChunk = getChunkOrCreate(build.buildAxisPos)
+	#if not curChunk:
+		#return false
+	#var result = curChunk.delBuild(build)
+	#if result:
+		#buildStoreManager.erase(build.id)
+		#build.on_deleted(self)
+		#build_changed.emit()
+	#return result
 
 func addBuilds(builds:Array[SWBuildItemDefine]) -> bool:
 	var success = true
@@ -88,6 +90,7 @@ func delBuilds(builds:Array[SWBuildItemDefine]) -> bool:
 		for build in chunkBuildMap[chunkPos]:
 			var ok = curChunk.delBuild(build)
 			if ok:
+				build.on_deleted(self)
 				anyDeleted = true
 			else:
 				success = false

@@ -36,6 +36,10 @@ signal placeDragEnded()
 var _drag_count: int = 0
 var _last_anchor_pos: Vector2i = Vector2i.ZERO
 
+
+#隧道特例
+var selTunnel:bool = false
+
 #手持物品是否为空（用于悬停信息显示等判断）
 func isHoldEmpty() -> bool:
 	return _cur_hold_builds.is_empty()
@@ -141,6 +145,7 @@ func on_sel_tool_draw_data(drawData:SWDrawData) -> void:
 	_cur_hold_builds = drawData.mapDatas
 
 func setHeldBuilds(builds:Array[SWBuildItemDefine], centerPos:Vector2i) -> void:
+	selTunnel = false
 	if builds.size() == 0:
 		return
 	var drawData:SWDrawData = SWDrawData.new()
@@ -228,6 +233,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					sw_draw_manager_shadow.setHoldBuild(null) 
 					_hold_pos_inited = false
 					_cur_hold_builds.clear()
+					selTunnel=false
 				elif ctrl_pressed:
 					_right_ctrl_dragging = true
 					var world_pos = getCurWorldPosByMouse()
@@ -270,6 +276,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					_left_drag_started = false
 					_end_drag()
 					placeDragEnded.emit()
+					if selTunnel:
+						rotOnceHoldBuilds(2)
 			elif event.button_index == MOUSE_BUTTON_RIGHT:
 				if _right_ctrl_dragging:
 					_right_ctrl_dragging = false
@@ -314,28 +322,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_handle_optimized_select_builds(world_pos_mouse, select_rect.get_rect())
 	elif event is InputEventKey:
 		if Input.is_action_pressed("Rotation"):
-			var drawData = sw_draw_manager.getHoldBuild()
-			if drawData == null:
-				return
-			var centerPos = Vector2(0,0)#sw_draw_manager_shadow.getHoldCenter()-Vector2(64,64)
-			var chunkPosMap:Dictionary[Vector2i,bool]={}
-			for data:SWBuildItemDefine in drawData.mapDatas:
-				data.buildAxisPos = SwCommon.RotationPos(data.buildAxisPos+Vector2i(64,64),90,centerPos)-Vector2(64,64)
-				data.buildAxisPos = data.buildAxisPos.snapped(Vector2i(128,128))
-				chunkPosMap[SwCommon.GetChunkPos(data.buildAxisPos)]=true
-				data.rotOnce()
-			var shadowData = sw_draw_manager_shadow.getHoldBuild()
-			if shadowData:
-				for i in min(drawData.mapDatas.size(), shadowData.mapDatas.size()):
-					shadowData.mapDatas[i].buildAxisPos = drawData.mapDatas[i].buildAxisPos
-					shadowData.mapDatas[i].rotation = drawData.mapDatas[i].rotation
-			sw_draw_manager.recalcHoldCenter()
-			sw_draw_manager_shadow.recalcHoldCenter()
-			sw_draw_manager.updataAllChunks()
-			sw_draw_manager.updataChunks(chunkPosMap.keys())
-			sw_draw_manager_shadow.updataAllChunks()
-			sw_draw_manager_shadow.updataChunks(chunkPosMap.keys())
-			_hold_pos_inited = false
+			rotOnceHoldBuilds()
 		else:
 			if Input.is_key_pressed(KEY_CTRL) and _cur_hold_builds.size() == 0:
 				ctrl_pressed = true
@@ -351,6 +338,30 @@ func _unhandled_input(event: InputEvent) -> void:
 				_last_emit_select_rect = Rect2(0,0,0,0)
 				_pending_select_rect = Rect2(0,0,0,0)
 	
+func rotOnceHoldBuilds(times:int = 1) -> void:
+	var drawData = sw_draw_manager.getHoldBuild()
+	if drawData == null:
+		return
+	var centerPos = Vector2(0,0)#sw_draw_manager_shadow.getHoldCenter()-Vector2(64,64)
+	var chunkPosMap:Dictionary[Vector2i,bool]={}
+	for data:SWBuildItemDefine in drawData.mapDatas:
+		for time in times:
+			data.buildAxisPos = SwCommon.RotationPos(data.buildAxisPos+SwDefine.GRID_SIZE/2,90,centerPos)-Vector2(SwDefine.GRID_SIZE/2)
+			data.buildAxisPos = data.buildAxisPos.snapped(SwDefine.GRID_SIZE)
+			chunkPosMap[SwCommon.GetChunkPos(data.buildAxisPos)]=true
+			data.rotOnce()
+	var shadowData = sw_draw_manager_shadow.getHoldBuild()
+	if shadowData:
+		for i in min(drawData.mapDatas.size(), shadowData.mapDatas.size()):
+			shadowData.mapDatas[i].buildAxisPos = drawData.mapDatas[i].buildAxisPos
+			shadowData.mapDatas[i].rotation = drawData.mapDatas[i].rotation
+	sw_draw_manager.recalcHoldCenter()
+	sw_draw_manager_shadow.recalcHoldCenter()
+	sw_draw_manager.updataAllChunks()
+	sw_draw_manager.updataChunks(chunkPosMap.keys())
+	sw_draw_manager_shadow.updataAllChunks()
+	sw_draw_manager_shadow.updataChunks(chunkPosMap.keys())
+	_hold_pos_inited = false
 # 优化相关函数
 func _setup_select_optimization() -> void:
 	"""设置选择优化定时器"""

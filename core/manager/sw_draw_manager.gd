@@ -97,7 +97,7 @@ func _refreshChunkContent(chunkPos:Vector2i) -> void:
 
 func initDrawMap() -> void:
 	_chunkSize=SwDefine.GRID_SIZE*SwDefine.CHUNK_SIZE*8
-	_blockSize = Vector2(128,128)*8
+	_blockSize = SwDefine.GRID_SIZE*8
 	if not mapData:
 		mapData = SwDefine.SWBuildCreator(Vector2i(0,0),mapDefine)
 		mapData.rotation = SwDefine.SW_Dir.UP#SwCommon.GetAngleBySWDir(SwDefine.SW_Dir.UP)
@@ -105,7 +105,7 @@ func initDrawMap() -> void:
 	
 func initDrawContent() -> void:
 	_chunkSize=SwDefine.GRID_SIZE*SwDefine.CHUNK_SIZE
-	_blockSize = Vector2(128,128)
+	_blockSize = SwDefine.GRID_SIZE
 	pass
 	
 func setDrawMode(drawMode:SwDefine.GridDrawMode) -> void:
@@ -352,7 +352,7 @@ func recalcHoldCenter() -> void:
 		if not caled:
 			caled = true
 			minPos = Vector2(mapData.buildAxisPos)
-			maxPos = Vector2(mapData.buildAxisPos)+_blockSize
+			maxPos = Vector2(mapData.buildAxisPos)+Vector2(_blockSize)
 		else:
 			minPos.x = min(mapData.buildAxisPos.x,minPos.x)
 			minPos.y = min(mapData.buildAxisPos.y,minPos.y)
@@ -376,13 +376,14 @@ func setHoldBuild(drawData:SWDrawData) -> void:
 		mapDataArray = drawData.mapDatas
 		var maxPos:Vector2
 		var minPos:Vector2
-		for mapData in mapDataArray:
+		for mapData:SWBuildItemDefine in mapDataArray:
+			mapData.buildState.state = SwDefine.BuildState.HOLDING
 			var chunkPos = SwCommon.GetChunkPos(mapData.buildAxisPos)
 			_pending_tasks[2][chunkPos] = false
 			if not caled:
 				caled = true
 				minPos = Vector2(mapData.buildAxisPos)
-				maxPos = Vector2(mapData.buildAxisPos)+_blockSize
+				maxPos = Vector2(mapData.buildAxisPos)+Vector2(_blockSize)
 			else:
 				minPos.x = min(mapData.buildAxisPos.x,minPos.x)
 				minPos.y = min(mapData.buildAxisPos.y,minPos.y)
@@ -403,7 +404,7 @@ func setHoldBuildsPos(mousePos:Vector2) -> void:
 	for chunkIns:SwDefine.SWDrawChunkData in _chunkInstance.values():
 		swTf.offset = mousePos - _center_offset
 		if _drawMode == SwDefine.GridDrawMode.HoldShadow:
-			swTf.offset = SwCommon.GetGridPos(swTf.offset+_blockSize/2)
+			swTf.offset = SwCommon.GetGridPos(swTf.offset+Vector2(_blockSize/2))
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		pass
 	pass

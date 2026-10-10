@@ -33,8 +33,8 @@ func rotOnce() -> void:
 	
 var signal_state:int = SwDefine.CircuitSignal.NONE
 var circuit_on:bool = false
-var tunnel_pair_id:int = -1
-var tunnel_extra_data:int = 0
+#var tunnel_pair_id:int = -1
+#var tunnel_extra_data:int = 0
 var in_loop:bool = false
 var circuit:SwDefine.SWCircuitData = null
 
@@ -59,7 +59,7 @@ func _init(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) -> void:
 	_sub_init()
 
 func getDirBuild(swBuildManager:SWBuildManager,rot:SwDefine.SW_Dir) -> SWBuildItemDefine:
-	var nextPos:Vector2i = buildAxisPos + 128*SwDefine.dir_to_vec(rot)
+	var nextPos:Vector2i = buildAxisPos + SwDefine.dir_to_vec(rot)*SwDefine.GRID_SIZE
 	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
 	if nextBuild == null:
 		return null
@@ -85,3 +85,10 @@ func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 
 func bIsToBeRemoved() -> bool:
 	return buildState.state == SwDefine.BuildState.TO_BE_REMOVED
+
+#建筑物放置结束时调用
+func on_idled(swBuildManager:SWBuildManager) -> void:
+	pass
+
+func on_deleted(swBuildManager:SWBuildManager) -> void:
+	pass

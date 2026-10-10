@@ -62,9 +62,11 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	var retArr:Array[SWBuildItemDefine] = [buildRef]
 	var downDir = SwDefine.getAntiDir(buildRef.rotation)
-	buildRef.buildStateChanged(getValue(downDir))
-	var net = pinNetMap.get(downDir,null)
+	var value = getValue(downDir)
+	buildRef.buildStateChanged(value)
+	var net:SWNet = pinNetMap.get(downDir,null)
 	if net:
+		net.curSignal = value
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
 			retArr.append(load)
 	return retArr

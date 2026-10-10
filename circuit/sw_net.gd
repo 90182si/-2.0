@@ -1,5 +1,6 @@
 class_name SWNet extends RefCounted
 
+var curSignal:SwDefine.CircuitSignal
 #输入
 var wireGroup:SwDefine.SWWireGroup = null
 #{SWBuildItemDefine,SwDefine.SW_Dir}

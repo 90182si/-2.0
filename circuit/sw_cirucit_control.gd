@@ -67,10 +67,45 @@ func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
 func createNets(builds:Array[SWBuildItemDefine]) -> void:
 	for build:SWBuildItemDefine in builds:
 		build.getCircuitCompoent().getNet(buildManager)
+func resetEmptyWireNet(builds:Array[SWBuildItemDefine]) -> void:
+	for build:SWBuildItemDefine in builds:
+		if build.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.WIRE:
+			continue
+		for dir in 4:
+			var nextBuild = build.getDirBuild(buildManager,dir)
+			if not nextBuild:
+				build.getCircuitCompoent().pinNetMap[dir] = null
 func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
 	for build:SWBuildItemDefine in builds:
 		build.getCircuitCompoent().getBuildExpr()
+#反馈环检测只会命中闭合环那一条边的net，环内其它电线不会被标记；
+#此处按拓扑补标：若某in_loop元件的输入net的驱动元件也in_loop，则该net上的电线均处于环内
+func markLoopWires(builds:Array[SWBuildItemDefine]) -> void:
+	for build:SWBuildItemDefine in builds:
+		if not build.in_loop:
+			continue
+		if SwCommon.IsWireBuild(build):
+			continue
+		var cirComp := build.getCircuitCompoent()
+		for dir in cirComp.pinNetMap.keys():
+			if not cirComp.portIsInput(dir):
+				continue
+			var net:SWNet = cirComp.pinNetMap[dir]
+			if net == null:
+				continue
+			var driverInLoop:bool = false
+			for driver:Dictionary in net.getDrivers():
+				var driverBuild = driver.get("build",null)
+				if driverBuild != null and driverBuild.in_loop:
+					driverInLoop = true
+					break
+			if not driverInLoop:
+				continue
+			if net.wireGroup == null:
+				continue
+			for wireBuild:SWBuildItemDefine in net.wireGroup.wireBuilds.keys():
+				wireBuild.in_loop = true
 func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	var buildQueue:Array[SWBuildItemDefine] = []
 	for buildOne in builds:
@@ -94,6 +129,8 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 				var circuit = neiBuild.getCircuitCompoent()
 				if circuit:
 					var net:SWNet = circuit.pinNetMap[dir]
+					if not net:
+						continue
 					for wireBuild in net.wireGroup.wireBuilds.keys():
 						visited[wireBuild] = true
 					for nextBuildItem in net.getLoads():
@@ -154,9 +191,11 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	clearBuildsCircuitState(affectBuilds)
 	#每个建筑物创建net
 	createNets(affectBuilds)
+	#对wire多余的net进行重置
+	resetEmptyWireNet(affectBuilds)
 	#方向构建依赖电路
 	getCircuit(affectBuilds)
-	
+	markLoopWires(affectBuilds)
 	var affectBuilds2:Array[SWBuildItemDefine] = []
 	for affectBuild in affectBuilds:
 		if not SwCommon.IsWireBuild(affectBuild):
