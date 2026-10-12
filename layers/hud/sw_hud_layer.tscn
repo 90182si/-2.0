@@ -40,7 +40,7 @@ margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_smq7v"]
 atlas = ExtResource("2_kmd2l")
-region = Rect2(896, 0, 128, 128)
+region = Rect2(1024, 128, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
 [node name="SWHudLayer" type="Node" unique_id=1512405539]
@@ -136,6 +136,14 @@ ignore_texture_size = true
 stretch_mode = 0
 
 [node name="电线隧道" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=2121561960 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_smq7v")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="时钟" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=1122577916 groups=["SelTool"]]
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3

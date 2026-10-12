@@ -66,6 +66,7 @@ enum CircuitComponentType{
 	NONE,
 	BUTTON,       #按钮：按下时输出HIGH
 	SWITCH,       #开关：切换状态
+	CLOCK,        #时钟：切换状态
 	LED,          #灯泡：接收信号发光
 	WIRE,         #普通电线
 	WIRE_STRAIGHT,#直线电线
@@ -73,7 +74,8 @@ enum CircuitComponentType{
 	WIRE_BRIDGE,  #十字不相交电线
 	NOT_GATE,     #非门
 	WIRE_TUNNEL,  #地下隧道传送信号
-	AND_GATE      #与门：所有输入HIGH才输出HIGH（脚手架示例）
+	AND_GATE,     #与门：所有输入HIGH才输出HIGH（脚手架示例）
+	ONE_BIT_REGISTER#1bit寄存器
 }
 
 #建筑物状态
@@ -91,6 +93,7 @@ enum BuildCompoentType{
 	CIRCUIT_WIRE_CROSS,
 	CIRCUIT_WIRE_TUNNEL,
 	CIRCUIT_SOURCE,
+	CIRCUIT_CLOCK_SIGGEN,
 	CIRCUIT_LED,
 	CIRCUIT_NOT,
 	RENDER_ABLE
@@ -248,6 +251,7 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) 
 		"电线桥梁":return SWBuildWireCross.new(axisPos,buildDef,rot)
 		"开关":return SWBuildButton.new(axisPos,buildDef,rot)
 		"电线隧道":return SWBuildWireTunnel.new(axisPos,buildDef,rot)
+		"时钟":return SWBuildClockSiggen.new(axisPos,buildDef,rot)
 		_:return SWBuildNone.new(axisPos,buildDef,rot)
 	return null
 

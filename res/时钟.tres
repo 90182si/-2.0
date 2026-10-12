@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://yq74vaesbo45"]
+
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_57j2y"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin_define.gd" id="1_gqaqy"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="2_57j2y"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_gqaqy"]
+atlas = ExtResource("1_57j2y")
+region = Rect2(1024, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_8k0d0"]
+atlas = ExtResource("1_57j2y")
+region = Rect2(1024, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_57j2y"]
+atlas = ExtResource("1_57j2y")
+region = Rect2(1024, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="Resource" id="Resource_su13d"]
+script = ExtResource("1_gqaqy")
+pin_define = 2
+metadata/_custom_type_script = "uid://bxtyohrrnlxyw"
+
+[resource]
+script = ExtResource("2_57j2y")
+atlasIcon = SubResource("AtlasTexture_gqaqy")
+atlasTextureOn = SubResource("AtlasTexture_57j2y")
+atlasTextureOff = SubResource("AtlasTexture_8k0d0")
+buildName = "时钟"
+circuit_component_type = 3
+build_pin = Array[ExtResource("1_gqaqy")]([SubResource("Resource_su13d")])
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

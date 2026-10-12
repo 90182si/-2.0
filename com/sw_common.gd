@@ -70,6 +70,8 @@ static func CreateCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCo
 			return SWBuildCompoentRenderable.new()
 		SwDefine.BuildCompoentType.CIRCUIT_WIRE_TUNNEL:
 			return SWBuildCompoentCircuitTunnel.new()
+		SwDefine.BuildCompoentType.CIRCUIT_CLOCK_SIGGEN:
+			return SWBuildCompoentCircuitClockSiggen.new()
 	return null
 
 # 提取所有 [] 内文本，返回数组

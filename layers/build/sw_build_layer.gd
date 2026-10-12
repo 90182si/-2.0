@@ -40,7 +40,6 @@ func _ready() -> void:
 			#holdIdleBuilds([build3],[Vector2i(x,y)-chunkPos])
 	#sw_circuit_analyzer.end_batch()
 
-
 func _on_circuit_signal_changed() -> void:
 	var all_builds = sw_build_manager.getAllBuilds()
 	var notifyChunkPosArr = getNotifyChunkPosArr(all_builds)
@@ -191,6 +190,9 @@ func onPlaceDragEnded() -> void:
 		print("耗时：%d us | %.3f ms | %.6f s" % [cost_us, cost_ms, cost_s])
 	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	for build in notifyBuilds:
+		if build is SWBuildClockSiggen:
+			addClockBuild(build)
 
 var selectedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 #按住右键擦除期间暂存的被擦除建筑物，右键释放时统一更新电路
@@ -353,3 +355,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		for region in test_regions:
 			sw_build_manager.test_getBuildsByRect_performance(region)
 			await get_tree().create_timer(0.5).timeout
+
+var clockBuildArr:Dictionary[SWBuildItemDefine,bool] = {}
+const CLOCK_GAP_TIME = 1.0/60
+var curTimeGap:float = 0
+func addClockBuild(build:SWBuildItemDefine) -> void:
+	clockBuildArr[build]=true
+func _process(delta: float) -> void:
+	curTimeGap+=delta
+	var changedBuilds:Array[SWBuildItemDefine] = []
+	if curTimeGap > CLOCK_GAP_TIME:
+		curTimeGap = 0
+		for build in clockBuildArr.keys():
+			build.onPressed(true)
+		#sw_circuit_control.updateBuildCircuit(clockBuildArr.keys())
+			var newBuilds = sw_circuit_control.buildSignalChanged(build)
+			changedBuilds.append_array(newBuilds)
+		#var notifyChunkPosArr = getNotifyChunkPosArr([build])
+		if changedBuilds.size() > 0:
+			var notifyChunkPosArr = getNotifyChunkPosArr(changedBuilds)
+			sw_draw_manager.updataChunks(notifyChunkPosArr)
