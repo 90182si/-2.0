@@ -89,7 +89,7 @@ func load_save_data(data: Dictionary) -> void:
 		var build = SwDefine.SWBuildCreator(pos, build_def, rot)
 		build.circuit_on = circuit_on
 		build.signal_state = signal_state
-		build.tunnel_pair_id = tunnel_pair_id
+		#build.tunnel_pair_id = tunnel_pair_id
 		build.in_loop = in_loop
 		sw_build_manager.addBuild(build)
 	#if sw_circuit_analyzer:

@@ -19,7 +19,12 @@ func getRenderParts() -> Array:
 	if buildRef.buildDefine and buildRef.buildDefine.build_pin.size() > 0:
 		var wire:bool = false
 		if buildRef.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
-			if buildRef.buildState.state != SwDefine.BuildState.HOLDING:
+			var pinShowCount = 4
+			for pinDir in 4:
+				var net:SWNet = buildRef.getCircuitCompoent().pinNetMap.get(pinDir,null)
+				if not net:
+					pinShowCount -= 1
+			if buildRef.buildState.state != SwDefine.BuildState.HOLDING and pinShowCount!=0:
 				wire = true
 		for p:SWBuildPinDefine in buildRef.buildDefine.build_pin:
 			var net:SWNet = buildRef.getCircuitCompoent().pinNetMap.get(posmod(p.pin_dir+buildRef.rotation,4),null)

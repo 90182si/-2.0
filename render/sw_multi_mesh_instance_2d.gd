@@ -148,7 +148,7 @@ func calBuffer() -> void:
 					var gridPos = Vector2i(_gridSizeTmp.x * i, _gridSizeTmp.y * j)
 					var color = _get_instance_color(localMapDataIns, i, j)
 					var t = Transform2D(
-						deg_to_rad(localMapDataIns.rotation*-90),
+						deg_to_rad(localMapDataIns.rotation*90),
 						Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
 								gridPos.y + _gridSizeTmp.y / 2.0))
 					var buffer_index = index * buffer_size_per_instance
@@ -173,7 +173,7 @@ func calBuffer() -> void:
 						break
 					var offset:Vector2i = part["offset"]
 					var t = Transform2D(
-						deg_to_rad(part["rotation"]*-90),
+						deg_to_rad(part["rotation"]*90),
 						Vector2(gridPos.x + _gridSizeTmp.x * (offset.x + 0.5), 
 								gridPos.y + _gridSizeTmp.y * (offset.y + 0.5)))
 					var buffer_index = index * buffer_size_per_instance
@@ -203,7 +203,7 @@ func bufferCalFinish(newBuffer:PackedFloat32Array, localN:int) -> void:
 
 func _fill_instance(newBuffer:PackedFloat32Array, buffer_index:int, t:Transform2D, color:Color, rect:Rect2, use_colors:bool) -> void:
 	newBuffer[buffer_index + 0] = t.x.x
-	newBuffer[buffer_index + 1] = t.x.y
+	newBuffer[buffer_index + 1] = t.y.x
 	newBuffer[buffer_index + 2] = 0
 	newBuffer[buffer_index + 3] = t.origin.x
 	newBuffer[buffer_index + 4] = t.x.y

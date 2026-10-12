@@ -75,6 +75,10 @@ func resetEmptyWireNet(builds:Array[SWBuildItemDefine]) -> void:
 			var nextBuild = build.getDirBuild(buildManager,dir)
 			if not nextBuild:
 				build.getCircuitCompoent().pinNetMap[dir] = null
+				continue
+			if not nextBuild.getCircuitCompoent().isPort(SwDefine.getAntiDir(dir)):
+				build.getCircuitCompoent().pinNetMap[dir] = null
+				
 func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
 	for build:SWBuildItemDefine in builds:
@@ -128,7 +132,7 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 					continue
 				var circuit = neiBuild.getCircuitCompoent()
 				if circuit:
-					var net:SWNet = circuit.pinNetMap[dir]
+					var net:SWNet = circuit.pinNetMap.get(dir,null)
 					if not net:
 						continue
 					for wireBuild in net.wireGroup.wireBuilds.keys():

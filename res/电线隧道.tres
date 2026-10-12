@@ -16,7 +16,7 @@ filter_clip = true
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_1earv"]
 atlas = ExtResource("1_yt82c")
-region = Rect2(896, 0, 128, 128)
+region = Rect2(384, 0, 128, 128)
 filter_clip = true
 
 [sub_resource type="Resource" id="Resource_su13d"]

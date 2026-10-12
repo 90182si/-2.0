@@ -13,20 +13,20 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 		_circuitCompoent.setBuildRef(self)
 	return _circuitCompoent
 
-#func getDirBuild(swBuildManager:SWBuildManager,rot:SwDefine.SW_Dir) -> SWBuildItemDefine:
-	#if rot == posmod(rotation+1,4) and pairId != -1:
-		#var pairBuild:SWBuildWireTunnel = swBuildManager.getBuildById(pairId) as SWBuildWireTunnel
-		#if pairBuild:
-			##return pairBuild.getDirBuild(swBuildManager,rot)
-			#return 
-		#return null
-	#var nextPos:Vector2i = buildAxisPos + 128*SwDefine.dir_to_vec(rot)
-	#var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
-	#if nextBuild == null:
-		#return null
-	#if nextBuild.bIsToBeRemoved():
-		#return null
-	#return nextBuild
+func getDirBuild(swBuildManager:SWBuildManager,rot:SwDefine.SW_Dir) -> SWBuildItemDefine:
+	if rot == posmod(rotation+1,4) and pairId != -1:
+		var pairBuild:SWBuildWireTunnel = swBuildManager.getBuildById(pairId) as SWBuildWireTunnel
+		if pairBuild:
+			var pos = pairBuild.buildAxisPos+SwDefine.dir_to_vec(rot)*SwDefine.GRID_SIZE
+			return swBuildManager.getBuild(pos)
+		return null
+	var nextPos:Vector2i = buildAxisPos + 128*SwDefine.dir_to_vec(rot)
+	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(nextPos)
+	if nextBuild == null:
+		return null
+	if nextBuild.bIsToBeRemoved():
+		return null
+	return nextBuild
 
 func on_idled(swBuildManager:SWBuildManager) -> void:
 	if pairId != -1:
@@ -48,4 +48,3 @@ func on_deleted(swBuildManager:SWBuildManager) -> void:
 	if nextBuild:
 		pairId = -1
 		nextBuild.pairId = -1
-		

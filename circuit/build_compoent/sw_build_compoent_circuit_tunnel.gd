@@ -8,7 +8,19 @@ func setPortFlag(_buildDef:SWBuildDefine) -> void:
 func setDriverOrLoader(drivers:Array,loaders:Array) -> void:
 	loaders = []
 	net.setNet(drivers,loaders)
-
+	
+func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array:
+	var linkedBuilds:Array = []
+	var pinIndex = posmod(buildRef.rotation+3,4)
+	var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,pinIndex)
+	if nextBuild:
+		linkedBuilds.append({"build":nextBuild,"dir":pinIndex})
+	pinIndex = posmod(buildRef.rotation+1,4)
+	nextBuild = getDirBuild(swBuildManager,pinIndex)
+	if nextBuild:
+		linkedBuilds.append({"build":nextBuild,"dir":pinIndex})
+	return linkedBuilds
+	
 func getNet(swBuildManager:SWBuildManager) -> Array:
 	if buildRef.bIsToBeRemoved():
 		return []
@@ -30,16 +42,18 @@ func getNet(swBuildManager:SWBuildManager) -> Array:
 		if nextBuildCircuitCom.portIsInput(antiDir):
 			setLinkedPort(pinIndex)
 			nextBuildCircuitCom.setLinkedPort(antiDir)
-			if pinIndex == 3:
+			if pinIndex == SwDefine.getAntiDir(posmod(buildRef.rotation-1,4)):
 				net.addLoader({"build":nextBuild,"pinDir":antiDir})
 	return []
 
 func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
 	var tunnelBuild:SWBuildWireTunnel = buildRef as SWBuildWireTunnel
+	net = srcNet
+	pinNetMap[dir] = srcNet
 	if tunnelBuild.pairId != -1:
-		net = srcNet
 		var circuitCom:SWBuildCompoentCircuitTunnel = tunnelBuild.getCircuitCompoent() as SWBuildCompoentCircuitTunnel
 		circuitCom.net = srcNet
+		circuitCom.pinNetMap[SwDefine.getAntiDir(dir)] = srcNet
 
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	return [buildRef]
@@ -48,23 +62,18 @@ func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	return SwDefine.CircuitSignal.NONE
 	
 func connectWireGroup(swBuildManager:SWBuildManager) -> void:
-	#var wireBuildwire = buildRef as SWBuildWireCross
-	#if v_net == null:
-		#var wireGroupBuilds = getWireGroupBuilds(swBuildManager,buildRef,0)
-		#var wireNet:SWNet = SWNet.new()
-		#for wBuildItem:Dictionary in wireGroupBuilds:
-			#var wBuild = wBuildItem["build"]
-			#var dir = wBuildItem["dir"]
-			#wBuild.getCircuitCompoent().setNet(wireNet,dir)
-			#wireNet.wireGroup.addWireBuild(wBuild)
-	#if h_net == null:
-		#var wireGroupBuilds = getWireGroupBuilds(swBuildManager,buildRef,1)
-		#var wireNet:SWNet = SWNet.new()
-		#for wBuildItem:Dictionary in wireGroupBuilds:
-			#var wBuild = wBuildItem["build"]
-			#var dir = wBuildItem["dir"]
-			#wBuild.getCircuitCompoent().setNet(wireNet,dir)
-			#wireNet.wireGroup.addWireBuild(wBuild)
+	if net == null:
+		var wireGroupBuilds = getWireGroupBuilds(swBuildManager,buildRef,posmod(buildRef.rotation+1,4))
+		var tunnelBuild:SWBuildWireTunnel = buildRef as SWBuildWireTunnel
+		if tunnelBuild.pairId != -1:
+			var pairTunnel = swBuildManager.getBuildById(tunnelBuild.pairId)
+			wireGroupBuilds.append({"build":pairTunnel,"dir":posmod(buildRef.rotation+3,4)})
+		var wireNet:SWNet = SWNet.new()
+		for wBuildItem:Dictionary in wireGroupBuilds:
+			var wBuild = wBuildItem["build"]
+			var dir = wBuildItem["dir"]
+			wBuild.getCircuitCompoent().setNet(wireNet,dir)
+			wireNet.wireGroup.addWireBuild(wBuild)
 	pass
 			
 func initPortState(swBuildManager:SWBuildManager) -> void:
@@ -73,3 +82,7 @@ func initPortState(swBuildManager:SWBuildManager) -> void:
 func resetPortState() -> void:
 	super.resetPortState()
 	setNet(null,0)
+
+func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
+	buildRef.buildStateChanged(value)
+	pass
