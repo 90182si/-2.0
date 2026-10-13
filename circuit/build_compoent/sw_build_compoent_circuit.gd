@@ -215,12 +215,14 @@ func getWireGroupBuilds(swBuildManager:SWBuildManager,wireBuild:SWBuildItemDefin
 	return wireGroup
 
 func reCalSignals() -> Array[SWBuildItemDefine]:
-	var v = getValue(SwDefine.SW_Dir.UP) == SwDefine.CircuitSignal.HIGH
-	if v:
-		buildRef.buildStateChanged(SwDefine.CircuitSignal.HIGH)
-	else:
-		buildRef.buildStateChanged(SwDefine.CircuitSignal.LOW)
-	return [buildRef]
+	var retArr:Array[SWBuildItemDefine] = [buildRef]
+	for dir in 4:
+		if not portIsInput(dir):
+			continue
+		var net:SWNet = pinNetMap.get(dir,null)
+		if net:
+			retArr.append_array(net.wireGroup.wireBuilds.keys())
+	return retArr
 
 func initPortState(swBuildManager:SWBuildManager) -> void:
 	pass

@@ -43,6 +43,11 @@ atlas = ExtResource("2_kmd2l")
 region = Rect2(1024, 128, 128, 128)
 margin = Rect2(-0.5, -0.5, -0.5, -0.5)
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_reg1b"]
+atlas = ExtResource("2_kmd2l")
+region = Rect2(768, 256, 128, 128)
+margin = Rect2(-0.5, -0.5, -0.5, -0.5)
+
 [node name="SWHudLayer" type="Node" unique_id=1512405539]
 script = ExtResource("1_vnhh4")
 
@@ -148,6 +153,14 @@ custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 texture_normal = SubResource("AtlasTexture_smq7v")
+ignore_texture_size = true
+stretch_mode = 0
+
+[node name="1bit寄存器" type="TextureButton" parent="HBoxContainer/MarginContainer/MarginContainer/HBoxContainer" unique_id=1180000001 groups=["SelTool"]]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+texture_normal = SubResource("AtlasTexture_reg1b")
 ignore_texture_size = true
 stretch_mode = 0
 

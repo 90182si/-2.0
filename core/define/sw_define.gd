@@ -62,6 +62,8 @@ enum CircuitSignal{
 }
 
 #电路元件类型枚举
+#注意：枚举值以整数形式序列化到 res/*.tres 中，新增类型只能追加到末尾，
+#中间插入会导致所有资源里的 circuit_component_type 错位（元件失效）
 enum CircuitComponentType{
 	NONE,
 	BUTTON,       #按钮：按下时输出HIGH
@@ -96,6 +98,7 @@ enum BuildCompoentType{
 	CIRCUIT_CLOCK_SIGGEN,
 	CIRCUIT_LED,
 	CIRCUIT_NOT,
+	CIRCUIT_REGISTER,
 	RENDER_ABLE
 }
 
@@ -252,6 +255,7 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) 
 		"开关":return SWBuildButton.new(axisPos,buildDef,rot)
 		"电线隧道":return SWBuildWireTunnel.new(axisPos,buildDef,rot)
 		"时钟":return SWBuildClockSiggen.new(axisPos,buildDef,rot)
+		"1bit寄存器":return SWBuildRegister1Bit.new(axisPos,buildDef,rot)
 		_:return SWBuildNone.new(axisPos,buildDef,rot)
 	return null
 

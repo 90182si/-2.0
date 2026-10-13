@@ -36,6 +36,6 @@ atlasIcon = SubResource("AtlasTexture_1ttv0")
 atlasTextureOn = SubResource("AtlasTexture_eilan")
 atlasTextureOff = SubResource("AtlasTexture_1402x")
 buildName = "非门"
-circuit_component_type = 8
+circuit_component_type = 9
 build_pin = Array[ExtResource("2_1402x")]([SubResource("Resource_1p3qu"), SubResource("Resource_y6gnr")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

@@ -26,7 +26,8 @@ func getBuildExpr() -> void:
 		pinExprMap[dir].optFunc = SwCommon.AndValues
 		pinExprMap[dir].optFuncName = "SwCommon.AndValues"
 		#把每个条件加到args里面
-		#获取net的驱动端口们
+		#获取net的驱动端口们（穿越寄存器的反馈不判环）
+		#appendDriverExprs(pinExprMap[dir], net)
 		var drivers = net.getDrivers()
 		for driver:Dictionary in drivers:
 			var build = driver["build"]
@@ -48,14 +49,17 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
 			load.getCircuitCompoent().setValue(dir,value)
 	return value
-
+	
 func reCalSignals() -> Array[SWBuildItemDefine]:
+	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
 	var v1 = getValue(SwDefine.SW_Dir.UP) == SwDefine.CircuitSignal.HIGH
 	var v2 = getValue(SwDefine.SW_Dir.RIGHT) == SwDefine.CircuitSignal.HIGH
 	var v3 = getValue(SwDefine.SW_Dir.DOWN) == SwDefine.CircuitSignal.HIGH
 	var v4 = getValue(SwDefine.SW_Dir.LEFT) == SwDefine.CircuitSignal.HIGH
+	var value = SwDefine.CircuitSignal.LOW
 	if v1 or v2 or v3 or v4:
-		buildRef.buildStateChanged(SwDefine.CircuitSignal.HIGH)
+		value = SwDefine.CircuitSignal.HIGH
 	else:
-		buildRef.buildStateChanged(SwDefine.CircuitSignal.LOW)
-	return [buildRef]
+		value = SwDefine.CircuitSignal.LOW
+	buildRef.buildStateChanged(value)
+	return retArr

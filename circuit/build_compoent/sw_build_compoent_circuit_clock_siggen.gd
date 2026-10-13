@@ -21,5 +21,16 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 		return SwDefine.CircuitSignal.NONE
 	if dir != buildRef.rotation:
 		return SwDefine.CircuitSignal.NONE
-	#return SwDefine.CircuitSignal.HIGH if btn.pressed else SwDefine.CircuitSignal.LOW
-	return btn.curSig
+	var value = btn.curSig
+	if portIsInput(dir):
+		var net:SWNet = pinNetMap.get(dir,null)
+		if net:
+			net.curSignal = value
+			for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
+				load.getCircuitCompoent().setValue(dir,value)
+	return value
+
+func reCalSignals() -> Array[SWBuildItemDefine]:
+	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
+	buildRef.buildStateChanged(getValue(buildRef.rotation))
+	return retArr

@@ -264,6 +264,9 @@ func _comp_type_to_text(comp_type: int) -> String:
 		SwDefine.CircuitComponentType.WIRE_BRIDGE: return "桥梁电线"
 		SwDefine.CircuitComponentType.NOT_GATE: return "非门"
 		SwDefine.CircuitComponentType.WIRE_TUNNEL: return "隧道电线"
+		SwDefine.CircuitComponentType.CLOCK: return "时钟"
+		SwDefine.CircuitComponentType.ONE_BIT_REGISTER: return "1bit寄存器"
+		SwDefine.CircuitComponentType.AND_GATE: return "与门"
 	return "无"
 
 

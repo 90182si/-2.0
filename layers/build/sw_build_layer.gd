@@ -171,6 +171,9 @@ func onEraseDragEnded() -> void:
 		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(removedBuilds))
 	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
 	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	for build in removedBuilds:
+		if build is SWBuildClockSiggen:
+			delClockBuild(build)
 
 #左键释放：把本次按住期间放置的所有建筑物一次性提交给电路重建
 func onPlaceDragEnded() -> void:
@@ -345,26 +348,28 @@ func _unhandled_input(event: InputEvent) -> void:
 						sw_draw_manager.updataChunks(notifyChunkPosArr)
 					_pressed_button_pos = Vector2i(-9999, -9999)
 
-	if event.is_action_pressed("TEST_PERFORMANCE"):
-		print("开始性能测试...")
-		var test_regions = [
-			Rect2i(Vector2i(0, 0), Vector2i(512, 512)),
-			Rect2i(Vector2i(0, 0), Vector2i(1024, 1024)),
-			Rect2i(Vector2i(-512, -512), Vector2i(2048, 2048))
-		]
-		for region in test_regions:
-			sw_build_manager.test_getBuildsByRect_performance(region)
-			await get_tree().create_timer(0.5).timeout
+	#if event.is_action_pressed("TEST_PERFORMANCE"):
+		#print("开始性能测试...")
+		#var test_regions = [
+			#Rect2i(Vector2i(0, 0), Vector2i(512, 512)),
+			#Rect2i(Vector2i(0, 0), Vector2i(1024, 1024)),
+			#Rect2i(Vector2i(-512, -512), Vector2i(2048, 2048))
+		#]
+		#for region in test_regions:
+			#sw_build_manager.test_getBuildsByRect_performance(region)
+			#await get_tree().create_timer(0.5).timeout
 
 var clockBuildArr:Dictionary[SWBuildItemDefine,bool] = {}
 const CLOCK_GAP_TIME = 1.0/60
 var curTimeGap:float = 0
 func addClockBuild(build:SWBuildItemDefine) -> void:
 	clockBuildArr[build]=true
+func delClockBuild(build:SWBuildItemDefine) -> void:
+	clockBuildArr.erase(build)
 func _process(delta: float) -> void:
 	curTimeGap+=delta
 	var changedBuilds:Array[SWBuildItemDefine] = []
-	if curTimeGap > CLOCK_GAP_TIME:
+	if curTimeGap > CLOCK_GAP_TIME*2:
 		curTimeGap = 0
 		for build in clockBuildArr.keys():
 			build.onPressed(true)

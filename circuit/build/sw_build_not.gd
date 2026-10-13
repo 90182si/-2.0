@@ -6,3 +6,10 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 		_circuitCompoent = getCompoent(SwDefine.BuildCompoentType.CIRCUIT_NOT) as SWBuildCompoentCircuit
 		_circuitCompoent.setBuildRef(self)
 	return _circuitCompoent
+
+func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
+	super.buildStateChanged(signalValue)
+	if signalValue == SwDefine.CircuitSignal.LOW:
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
+	elif signalValue == SwDefine.CircuitSignal.HIGH:
+		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region

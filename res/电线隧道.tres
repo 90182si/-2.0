@@ -31,6 +31,6 @@ atlasIcon = SubResource("AtlasTexture_bqb3s")
 atlasTextureOn = SubResource("AtlasTexture_1earv")
 atlasTextureOff = SubResource("AtlasTexture_knb6r")
 buildName = "电线隧道"
-circuit_component_type = 9
+circuit_component_type = 10
 build_pin = Array[ExtResource("2_knb6r")]([SubResource("Resource_su13d")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"

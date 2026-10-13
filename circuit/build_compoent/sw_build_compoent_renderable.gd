@@ -3,6 +3,7 @@ class_name SWBuildCompoentRenderable extends SWBuildCompoent
 var buildRef:SWBuildItemDefine = null
 var buildHasBase:bool = false
 var buildHasAtlas:bool = false
+var buildAtlasRotable:bool = true
 var drawRect:Rect2
 func setBuildRef(build:SWBuildItemDefine) -> void:
 	buildRef = build
@@ -57,5 +58,8 @@ func getRenderParts() -> Array:
 		#if buildRef.in_loop:
 			#atlasColor = SwCommon.GetLoopColor()
 			#atlasUseColor = true
-		out.append({"rect":drawRect,"offset":Vector2i.ZERO,"rotation":buildRef.rotation,"color":atlasColor,"use_color":atlasUseColor})
+		if buildAtlasRotable:
+			out.append({"rect":drawRect,"offset":Vector2i.ZERO,"rotation":buildRef.rotation,"color":atlasColor,"use_color":atlasUseColor})
+		else:
+			out.append({"rect":drawRect,"offset":Vector2i.ZERO,"rotation":0,"color":atlasColor,"use_color":atlasUseColor})
 	return out

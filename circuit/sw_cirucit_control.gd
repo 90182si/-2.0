@@ -83,33 +83,7 @@ func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
 	for build:SWBuildItemDefine in builds:
 		build.getCircuitCompoent().getBuildExpr()
-#反馈环检测只会命中闭合环那一条边的net，环内其它电线不会被标记；
-#此处按拓扑补标：若某in_loop元件的输入net的驱动元件也in_loop，则该net上的电线均处于环内
-func markLoopWires(builds:Array[SWBuildItemDefine]) -> void:
-	for build:SWBuildItemDefine in builds:
-		if not build.in_loop:
-			continue
-		if SwCommon.IsWireBuild(build):
-			continue
-		var cirComp := build.getCircuitCompoent()
-		for dir in cirComp.pinNetMap.keys():
-			if not cirComp.portIsInput(dir):
-				continue
-			var net:SWNet = cirComp.pinNetMap[dir]
-			if net == null:
-				continue
-			var driverInLoop:bool = false
-			for driver:Dictionary in net.getDrivers():
-				var driverBuild = driver.get("build",null)
-				if driverBuild != null and driverBuild.in_loop:
-					driverInLoop = true
-					break
-			if not driverInLoop:
-				continue
-			if net.wireGroup == null:
-				continue
-			for wireBuild:SWBuildItemDefine in net.wireGroup.wireBuilds.keys():
-				wireBuild.in_loop = true
+
 func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	var buildQueue:Array[SWBuildItemDefine] = []
 	for buildOne in builds:
@@ -199,7 +173,6 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	resetEmptyWireNet(affectBuilds)
 	#方向构建依赖电路
 	getCircuit(affectBuilds)
-	markLoopWires(affectBuilds)
 	var affectBuilds2:Array[SWBuildItemDefine] = []
 	for affectBuild in affectBuilds:
 		if not SwCommon.IsWireBuild(affectBuild):
@@ -209,13 +182,6 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	return affectBuilds
 	
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
-	#SwCommon.NextEvalEpoch()
-	#var notifyPosArr:Array[SWBuildItemDefine] = []
-	#if build.circuit:
-		#var cir = build.circuit
-		#for noticeBuild:SWBuildItemDefine in cir.noticeMap.get(build,[]):
-			#notifyPosArr.append_array(noticeBuild.reCalSignals())
-	#return notifyPosArr
 	SwCommon.NextEvalEpoch()
 	var notifyPosArr:Array[SWBuildItemDefine] = []
 	if not build.circuit:

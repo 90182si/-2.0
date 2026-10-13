@@ -48,6 +48,6 @@ atlasIcon = SubResource("AtlasTexture_wifgq")
 atlasTextureOn = SubResource("AtlasTexture_cc6hf")
 atlasTextureOff = SubResource("AtlasTexture_hclsj")
 buildName = "电线B"
-circuit_component_type = 4
+circuit_component_type = 5
 build_pin = Array[ExtResource("2_hclsj")]([SubResource("Resource_iqwy4"), SubResource("Resource_jnmd3"), SubResource("Resource_s5qxc"), SubResource("Resource_deef0")])
 metadata/_custom_type_script = "uid://c2bw70ox58gp4"
