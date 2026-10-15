@@ -15,7 +15,9 @@ var _circuitCompoent:SWBuildCompoentCircuit = null
 var _renderableCompoent:SWBuildCompoentRenderable = null
 
 func getCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCompoent:
-	return compoent.get_or_add(compoentType,SwCommon.CreateCompoent(compoentType))
+	if not compoent.has(compoentType):
+		compoent[compoentType] = SwCommon.CreateCompoent(compoentType)
+	return compoent[compoentType]
 func getCircuitCompoent() -> SWBuildCompoentCircuit:
 	if _circuitCompoent == null:
 		_circuitCompoent = getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit
