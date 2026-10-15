@@ -19,3 +19,7 @@ func onPressed(_pressed:bool) -> void:
 	else:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
+
+func resetBuildState() -> void:
+	in_loop = false
+	getCircuitCompoent().resetPortState()
