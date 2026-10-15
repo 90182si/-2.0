@@ -5,9 +5,26 @@ var buildHasBase:bool = false
 var buildHasAtlas:bool = false
 var buildAtlasRotable:bool = true
 var drawRect:Rect2
+
+# ========== 渲染部件缓存 ==========
+# 区块重绘时块内所有建筑都会调用 getRenderParts()，但绝大多数建筑本次并未变化。
+# 用脏标记缓存部件列表，只有当该建筑的渲染状态（信号/旋转/环路/连接等）变化时才重建。
+var _renderPartsCache: Array = []
+var _renderPartsDirty: bool = true
+
+func markRenderPartsDirty() -> void:
+	_renderPartsDirty = true
+
+func getRenderParts() -> Array:
+	if not _renderPartsDirty:
+		return _renderPartsCache
+	_renderPartsCache = _buildRenderParts()
+	_renderPartsDirty = false
+	return _renderPartsCache
+
 func setBuildRef(build:SWBuildItemDefine) -> void:
 	buildRef = build
-func getRenderParts() -> Array:
+func _buildRenderParts() -> Array:
 	var out:Array = []
 	if buildHasBase:
 		#非门等符号在图集中为黑色像素，乘法混色无法变红；改染可着色的灰色底板

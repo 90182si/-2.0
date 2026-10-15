@@ -9,6 +9,9 @@ var rotation:SwDefine.SW_Dir = 0:
 	set(new_value):
 		rotation = new_value
 		rotation = posmod(rotation,4)
+		#旋转会改变部件朝向，直接失效渲染缓存
+		if _renderableCompoent:
+			_renderableCompoent.markRenderPartsDirty()
 var compoent:Dictionary[SwDefine.BuildCompoentType,SWBuildCompoent] = {}
 #性能优化：缓存 CIRCUIT 组件引用，避免热点端口判断反复走 getCompoent 字典查找
 var _circuitCompoent:SWBuildCompoentCircuit = null
@@ -28,7 +31,10 @@ func getRenderableCompoent() -> SWBuildCompoentRenderable:
 		_renderableCompoent = getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable
 		_renderableCompoent.setBuildRef(self)
 	return _renderableCompoent
-
+#转发渲染部件缓存失效；组件尚未创建时无需处理（新建后默认 dirty）
+func markRenderPartsDirty() -> void:
+	if _renderableCompoent:
+		_renderableCompoent.markRenderPartsDirty()
 
 func rotOnce() -> void:
 	rotation += 1
@@ -39,7 +45,6 @@ var circuit_on:bool = false
 #var tunnel_extra_data:int = 0
 var in_loop:bool = false
 var circuit:SwDefine.SWCircuitData = null
-
 
 
 func _sub_init() -> void:

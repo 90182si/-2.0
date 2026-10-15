@@ -109,6 +109,7 @@ func getNotifyChunkPosArr(builds:Array[SWBuildItemDefine]) -> Array[Vector2i]:
 	for build in builds:
 		if not build:
 			continue
+		build.markRenderPartsDirty()
 		var chunkPos = SwCommon.GetChunkPos(build.buildAxisPos)
 		chunkPosMap[chunkPos] = true
 	return chunkPosMap.keys()

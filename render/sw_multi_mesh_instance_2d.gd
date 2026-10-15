@@ -23,6 +23,10 @@ var planIsRunning = false
 var semaphore: Semaphore
 var semaphore2: Semaphore
 
+# ========== 双缓冲(ping-pong) ==========
+# 交替使用两块预分配缓冲区，避免每次绘制都重新分配并清零大数组
+var _pingPongBuffers: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
+var _pingPongIndex: int = 0
 func _init() -> void:
 	_swTransform = SwDefine.SWTransformData.new()
 	semaphore = Semaphore.new()
@@ -131,11 +135,15 @@ func calBuffer() -> void:
 		semaphore.wait()
 		planIsRunning = true
 		var index = 0
-		var newBuffer:PackedFloat32Array
 		# 根据是否使用颜色调整buffer大小
 		var use_colors = multimesh.use_colors
 		var buffer_size_per_instance = 12 if not use_colors else 16
-		newBuffer.resize(maxInstances * buffer_size_per_instance)
+		var needed_size = maxInstances * buffer_size_per_instance
+		# 双缓冲交替：仅当容量或每实例字节数变化时才 resize，正常绘制直接复用，避免每帧分配与清零
+		_pingPongIndex = 1 - _pingPongIndex
+		if _pingPongBuffers[_pingPongIndex].size() != needed_size:
+			_pingPongBuffers[_pingPongIndex].resize(needed_size)
+		var newBuffer = _pingPongBuffers[_pingPongIndex]
 		var showCount = 0
 		
 		if _drawMode == SwDefine.GridDrawMode.Tiling:
@@ -168,7 +176,8 @@ func calBuffer() -> void:
 				var gridPos = mapData.buildAxisPos
 				var color = _get_instance_color(mapData, gridPos.x / _gridSizeTmp.x, gridPos.y / _gridSizeTmp.y)
 				var render_able = mapData.getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable
-				for part in render_able.getRenderParts():
+				var parts = render_able.getRenderParts()
+				for part in parts:
 					if index >= max_instances:
 						break
 					var offset:Vector2i = part["offset"]
