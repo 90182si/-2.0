@@ -97,11 +97,49 @@ static func EvalStruct(cirStruct:SwDefine.SWCircuitStruct) -> int:
 		return 0
 	if cirStruct.cachedEpoch == evalEpoch:
 		return cirStruct.cachedValue
+	# 新增: op 单态分派（op == -1 时走旧路径兜底）
+	if cirStruct.op != -1:
+		match cirStruct.op:
+			SwDefine.CircuitOp.OP_LEAF:
+				cirStruct.cachedValue = EvalLeaf(cirStruct.args[0])
+			SwDefine.CircuitOp.OP_PASS:
+				cirStruct.cachedValue = EvalArg(cirStruct, 0)
+			SwDefine.CircuitOp.OP_NOT:
+				cirStruct.cachedValue = 1 - EvalArg(cirStruct, 0)
+			SwDefine.CircuitOp.OP_AND:
+				cirStruct.cachedValue = EvalArgsAnd(cirStruct)
+			SwDefine.CircuitOp.OP_NAND:
+				cirStruct.cachedValue = 1 - EvalArgsAnd(cirStruct)
+		cirStruct.cachedEpoch = evalEpoch
+		return cirStruct.cachedValue
+	# 旧路径兜底（op == -1）
 	var v:int = cirStruct.optFunc.call(cirStruct.args)
 	cirStruct.cachedEpoch = evalEpoch
 	cirStruct.cachedValue = v
 	return v
-	
+
+static func EvalArg(parent:SwDefine.SWCircuitStruct, i:int) -> int:
+	if i >= parent.args.size():
+		return 0
+	var arg = parent.args[i]
+	if arg is SwDefine.SWCircuitStruct:
+		return EvalStruct(arg)
+	elif arg is SwDefine.SWBuildPinStruct:
+		return EvalLeaf(arg)
+	return 0
+
+static func EvalLeaf(pinStruct) -> int:
+	var val = pinStruct.build.getCircuitCompoent().getValue(pinStruct.dir)
+	return 1 if val == SwDefine.CircuitSignal.HIGH else 0
+
+static func EvalArgsAnd(parent:SwDefine.SWCircuitStruct) -> int:
+	if parent.args.size() == 0:
+		return 0
+	var v := EvalArg(parent, 0)
+	for i in range(1, parent.args.size()):
+		v &= EvalArg(parent, i)
+	return v
+
 static func AndValues(args: Array) -> int:
 	var v:int = 0
 	var b:bool = false
@@ -158,6 +196,16 @@ static func GetWireColor(wireName:String) -> Array[Color]:
 		_:
 			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
 	return retArr
+
+# 根据 net 的当前信号和电线名称，返回显示颜色
+static func get_net_display_color(net: SWNet) -> Color:
+	if net == null:
+		return Color.TRANSPARENT
+	var wire_name: String = net.wireGroup.wireName if net.wireGroup else ""
+	var color_arr: Array[Color] = GetWireColor(wire_name)
+	if net.curSignal == SwDefine.CircuitSignal.HIGH:
+		return color_arr[1] if color_arr.size() > 1 else color_arr[0]
+	return color_arr[0] if color_arr.size() > 0 else Color.TRANSPARENT
 
 # 循环依赖（反馈环）元件与电线的警示色
 static func GetLoopColor() -> Color:

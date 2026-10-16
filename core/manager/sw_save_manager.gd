@@ -81,6 +81,8 @@ static func save_builds(name: String, builds: Array, viewport: Viewport, karnaug
 		b["signal_state"] = build.signal_state
 		#b["tunnel_pair_id"] = build.tunnel_pair_id
 		b["in_loop"] = build.in_loop
+		b["w"] = build.buildDefine.size.x if build.buildDefine else 1
+		b["h"] = build.buildDefine.size.y if build.buildDefine else 1
 		builds_arr.append(b)
 	data["builds"] = builds_arr
 	#记录视口信息（缩放与偏移），供加载时恢复相机视野

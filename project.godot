@@ -11,19 +11,19 @@ config_version=5
 [application]
 
 config/name="无限地图"
-run/main_scene="uid://bcrtwm1jv1lli"
+run/main_scene="res://scene/sw_logic_scene.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://atlas/icon.svg"
 
 [autoload]
 
-SwDefine="*uid://ceq3j2fx1hgap"
-SwObjectPool="*uid://onkk3u0cap7s"
+SwDefine="*res://core/define/sw_define.gd"
+SwObjectPool="*res://core/manager/sw_object_pool.gd"
 SwCrashLogger="*res://performance/sw_crash_logger.gd"
-SwCommon="*uid://d3s671y2ttvwt"
-SwAtlas="*uid://dub4tq5e41llw"
+SwCommon="*res://com/sw_common.gd"
+SwAtlas="*res://atlas/sw_atlas.gd"
 Ezcha="*uid://b6odi12jokac"
-SwTimeTool="*uid://cvvag6exuwjtt"
+SwTimeTool="*res://tools/sw_time_tool.gd"
 
 [debug]
 
@@ -92,4 +92,4 @@ common/physics_ticks_per_second=144
 
 [rendering]
 
-rendering_device/driver.windows="d3d12"
+rendering_device/driver.windows="vulkan"

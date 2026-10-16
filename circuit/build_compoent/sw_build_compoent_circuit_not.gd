@@ -37,6 +37,7 @@ func getBuildExpr() -> void:
 			if expr != null:
 				pinExprMap[dir].args.append(expr)
 		_buildingExpr = false
+		pinExprMap[dir].op = SwDefine.CircuitOp.OP_NAND
 
 func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	#如果这个端口是输出口，返回antiDir方向的表达式

@@ -11,6 +11,7 @@ func getBuildExpr() -> void:
 		pinExprMap[buildRef.rotation].optFunc = SwCommon.EqualValues
 		pinExprMap[buildRef.rotation].optFuncName = "SwCommon.EqualValues"
 		pinExprMap[buildRef.rotation].args = [SwDefine.SWBuildPinStruct.new(buildRef,buildRef.rotation)]
+		pinExprMap[buildRef.rotation].op = SwDefine.CircuitOp.OP_PASS
 
 func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	return pinExprMap.get(pinDir,null)

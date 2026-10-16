@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://d1x3beam001ab"]
+
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_beam"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_bscript"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin_define.gd" id="2_bpin"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_beamoff"]
+atlas = ExtResource("1_beam")
+region = Rect2(256, 0, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_beamon"]
+atlas = ExtResource("1_beam")
+region = Rect2(256, 128, 128, 128)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_bscript")
+atlasTextureOn = SubResource("AtlasTexture_beamon")
+atlasTextureOff = SubResource("AtlasTexture_beamoff")
+buildName = "1x3横梁"
+size = Vector2i(1, 3)
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

@@ -40,9 +40,9 @@ func getBuildExpr() -> void:
 		if not net:
 			continue
 		#该部件的函数是需要线与and
-		pinExprMap[dir] = SwDefine.SWCircuitStruct.new()
-		pinExprMap[dir].optFunc = SwCommon.AndValues
-		pinExprMap[dir].optFuncName = "SwCommon.AndValues"
+		var expr_struct = SwDefine.SWCircuitStruct.new()
+		expr_struct.optFunc = SwCommon.AndValues
+		expr_struct.optFuncName = "SwCommon.AndValues"
 		#把每个条件加到args里面
 		#获取net的驱动端口们（穿越寄存器的反馈不判环）
 		#appendDriverExprs(pinExprMap[dir], net)
@@ -57,7 +57,11 @@ func getBuildExpr() -> void:
 				continue
 			var expr = build.getCircuitCompoent().getExpr(pDir)
 			if expr:
-				pinExprMap[dir].args.append(expr)
+				expr_struct.args.append(expr)
+		# 无驱动源时不创建表达式，让 getValue 返回 NONE（浮空=低电平）
+		if expr_struct.args.size() > 0:
+			expr_struct.op = SwDefine.CircuitOp.OP_AND
+			pinExprMap[dir] = expr_struct
 	for dir in range(3,-1,-1):
 		#如果已经存在了就不计算
 		if pinExprMap.has(dir):
@@ -72,6 +76,7 @@ func getBuildExpr() -> void:
 		pinExprMap[dir].optFunc = SwCommon.EqualValues
 		pinExprMap[dir].optFuncName = "SwCommon.EqualValues"
 		pinExprMap[dir].args = [SwDefine.SWBuildPinStruct.new(buildRef,dir)]
+		pinExprMap[dir].op = SwDefine.CircuitOp.OP_PASS
 	#if _buildingExpr:
 		#return
 	#_buildingExpr = true

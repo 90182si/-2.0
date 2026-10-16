@@ -109,4 +109,4 @@ func _notify_signal_changed(build: SWBuildItemDefine) -> void:
 	affected.append(build)
 	# 刷新受影响区块（与游戏运行时一致；纯逻辑断言其实不依赖此步）
 	var chunk_pos_arr = build_layer.getNotifyChunkPosArr(affected)
-	build_layer.sw_draw_manager.updataChunks(chunk_pos_arr)
+	build_layer.flush_and_update_chunks(chunk_pos_arr)

@@ -138,8 +138,11 @@ func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 func on_sel_tool_draw_data(drawData:SWDrawData) -> void:
 	var drawData2:SWDrawData = SWDrawData.new()
 	sw_draw_manager.setHoldBuild(drawData)
+	# T3.6: 阴影按 footprint 扩展，m×n 建筑高亮全部覆盖格
 	for mapData in drawData.mapDatas:
-		drawData2.addOneDrawBuildDefine(mapData.buildAxisPos,_hold_shadow_define)
+		var cells = mapData.getCoveredCells()
+		for cell in cells:
+			drawData2.addOneDrawBuildDefine(cell, _hold_shadow_define)
 	sw_draw_manager_shadow.setHoldBuild(drawData2)
 	_hold_pos_inited = false
 	_cur_hold_builds = drawData.mapDatas
@@ -352,9 +355,12 @@ func rotOnceHoldBuilds(times:int = 1) -> void:
 			data.rotOnce()
 	var shadowData = sw_draw_manager_shadow.getHoldBuild()
 	if shadowData:
-		for i in min(drawData.mapDatas.size(), shadowData.mapDatas.size()):
-			shadowData.mapDatas[i].buildAxisPos = drawData.mapDatas[i].buildAxisPos
-			shadowData.mapDatas[i].rotation = drawData.mapDatas[i].rotation
+		# T3.6: 旋转后重建阴影位置（shadow 条目数 ≠ main 条目数）
+		shadowData.mapDatas.clear()
+		for data:SWBuildItemDefine in drawData.mapDatas:
+			var cells = data.getCoveredCells()
+			for cell in cells:
+				shadowData.addOneDrawBuildDefine(cell, _hold_shadow_define)
 	sw_draw_manager.recalcHoldCenter()
 	sw_draw_manager_shadow.recalcHoldCenter()
 	sw_draw_manager.updataAllChunks()

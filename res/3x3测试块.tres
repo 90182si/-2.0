@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://d3x3test001ab"]
+
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_test"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_tscript"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin_define.gd" id="2_tpin"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_testoff"]
+atlas = ExtResource("1_test")
+region = Rect2(768, 0, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_teston"]
+atlas = ExtResource("1_test")
+region = Rect2(768, 128, 128, 128)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_tscript")
+atlasTextureOn = SubResource("AtlasTexture_teston")
+atlasTextureOff = SubResource("AtlasTexture_testoff")
+buildName = "3x3测试块"
+size = Vector2i(3, 3)
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

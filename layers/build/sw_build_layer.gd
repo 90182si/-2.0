@@ -43,7 +43,7 @@ func _ready() -> void:
 func _on_circuit_signal_changed() -> void:
 	var all_builds = sw_build_manager.getAllBuilds()
 	var notifyChunkPosArr = getNotifyChunkPosArr(all_builds)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 
 func _on_drag_started() -> void:
 	#if sw_circuit_analyzer:
@@ -62,7 +62,7 @@ func clear_all_builds() -> void:
 	sw_build_manager.clearAllBuilds()
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.end_batch()
-	sw_draw_manager.updataAllChunks()
+	flush_and_update_all_chunks()
 
 func load_save_data(data: Dictionary) -> void:
 	clear_all_builds()
@@ -80,11 +80,15 @@ func load_save_data(data: Dictionary) -> void:
 		var signal_state = b.get("signal_state", 0)
 		var tunnel_pair_id = b.get("tunnel_pair_id", -1)
 		var in_loop = b.get("in_loop", false)
+		var w = b.get("w", 1)
+		var h = b.get("h", 1)
 		var pos = Vector2i(pos_dict.get("x", 0), pos_dict.get("y", 0))
 		var def_path = "res://res/" + def_name + ".tres"
 		var build_def = load(def_path) as SWBuildDefine
 		if not build_def:
 			continue
+		# m×n 多格建筑：size 随 .tres 资源，w/h 字段仅用于向前兼容校验
+		# 旧档缺省 1×1，行为完全兼容
 		var build = SwDefine.SWBuildCreator(pos, build_def, rot)
 		build.circuit_on = circuit_on
 		build.signal_state = signal_state
@@ -97,7 +101,7 @@ func load_save_data(data: Dictionary) -> void:
 	#if sw_circuit_analyzer and kmap_data is Dictionary and not kmap_data.is_empty():
 		#sw_circuit_analyzer.load_karnaugh_map_data(kmap_data)
 	sw_circuit_control.updateBuildCircuit(sw_build_manager.getAllBuilds())
-	sw_draw_manager.updataAllChunks()
+	flush_and_update_all_chunks()
 	sw_draw_manager.on_view_rect_changed()
 
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
@@ -114,6 +118,32 @@ func getNotifyChunkPosArr(builds:Array[SWBuildItemDefine]) -> Array[Vector2i]:
 		chunkPosMap[chunkPos] = true
 	return chunkPosMap.keys()
 
+# T1.4: 在 updataChunks 前 flush signalTex，确保渲染时 net 颜色是最新的
+func flush_and_update_chunks(chunk_pos_arr: Array[Vector2i]) -> void:
+	flush_signal_tex()
+	sw_draw_manager.updataChunks(chunk_pos_arr)
+
+func flush_and_update_all_chunks() -> void:
+	flush_signal_tex()
+	sw_draw_manager.updataAllChunks()
+
+func flush_signal_tex() -> void:
+	if SWSignalTexture.instance == null:
+		return
+	var all_builds := sw_build_manager.getAllBuilds()
+	var seen_nets: Dictionary = {}
+	for build: SWBuildItemDefine in all_builds:
+		var circuit_comp: SWBuildCompoentCircuit = build.getCircuitCompoent()
+		if circuit_comp == null:
+			continue
+		for net: SWNet in circuit_comp.pinNetMap.values():
+			if net == null or seen_nets.has(net):
+				continue
+			seen_nets[net] = true
+			var c: Color = SwCommon.get_net_display_color(net)
+			SWSignalTexture.instance.set_net_color(net.netId, c)
+	SWSignalTexture.instance.flush()
+
 func holdIdleBuilds(builds:Array[SWBuildItemDefine],poss:Array[Vector2i]) -> void:
 	var successBuilds:Array[SWBuildItemDefine] = []
 	for pos in poss:
@@ -129,7 +159,7 @@ func holdIdleBuilds(builds:Array[SWBuildItemDefine],poss:Array[Vector2i]) -> voi
 		return
 
 	var notifyChunkPosArr = getNotifyChunkPosArr(successBuilds)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 	 #按住左键期间只做视觉放置并记账，电路更新延迟到左键释放时统一执行
 	for b in successBuilds:
 		_pendingPlacedBuilds[b] = true
@@ -145,7 +175,7 @@ func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
 			if not build:
 				continue
 			sw_build_manager.setBuildState(build,SwDefine.BuildState.IDLE)
-		sw_draw_manager.updataChunks(notifyChunkPosArr)
+		flush_and_update_chunks(notifyChunkPosArr)
 		selectedBuilds.clear()
 		return
 	var builds := sw_build_manager.getBuilds(poss)
@@ -159,7 +189,7 @@ func holdRemoveBuilds(poss:Array[Vector2i]) -> void:
 		_pendingRemovedBuilds[build] = true
 	sw_build_manager.delBuilds(builds)
 	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 
 #右键释放：把本次按住期间擦除的所有建筑物一次性提交给电路重建
 func onEraseDragEnded() -> void:
@@ -171,7 +201,7 @@ func onEraseDragEnded() -> void:
 	if sw_circuit_control:
 		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(removedBuilds))
 	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 	for build in removedBuilds:
 		if build is SWBuildClockSiggen:
 			delClockBuild(build)
@@ -193,7 +223,7 @@ func onPlaceDragEnded() -> void:
 
 		print("耗时：%d us | %.3f ms | %.6f s" % [cost_us, cost_ms, cost_s])
 	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 	for build in notifyBuilds:
 		if build is SWBuildClockSiggen:
 			addClockBuild(build)
@@ -213,7 +243,7 @@ func setSelectedRect(rect:Rect2) -> void:
 	for build in builds:
 		selectedBuilds[build] = true
 		sw_build_manager.setBuildState(build,SwDefine.BuildState.SELECTED)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 	pass
 
 func clearSelectedByRect(rect:Rect2) -> void:
@@ -223,7 +253,7 @@ func clearSelectedByRect(rect:Rect2) -> void:
 		if selectedBuilds.has(build):
 			selectedBuilds.erase(build)
 			sw_build_manager.setBuildState(build,SwDefine.BuildState.IDLE)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 	pass
 
 func _getSelectedBuildCenter() -> Vector2i:
@@ -256,7 +286,7 @@ func _do_cut() -> void:
 		poss.append(build.buildAxisPos)
 	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
 	sw_build_manager.delBuilds(builds)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 	selectedBuilds.clear()
 	#if sw_circuit_analyzer and not sw_circuit_analyzer.is_in_batch():
 		#sw_circuit_analyzer.analyze()
@@ -274,7 +304,7 @@ func _do_delete_selected() -> void:
 	sw_build_manager.delBuilds(builds)
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.end_batch()
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 
 func _do_copy() -> void:
 	if selectedBuilds.size() == 0:
@@ -290,7 +320,7 @@ func _do_copy() -> void:
 	for build in builds:
 		sw_build_manager.setBuildState(build,SwDefine.BuildState.IDLE)
 	selectedBuilds.clear()
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	flush_and_update_chunks(notifyChunkPosArr)
 
 var _pressed_button_pos:Vector2i = Vector2i(-9999, -9999)
 
@@ -325,9 +355,9 @@ func _unhandled_input(event: InputEvent) -> void:
 						build.onPressed(!build.pressed)
 					var newBuilds = sw_circuit_control.buildSignalChanged(build)
 					newBuilds.append(build)
-					#var notifyChunkPosArr = getNotifyChunkPosArr([build])
-					var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
-					sw_draw_manager.updataChunks(notifyChunkPosArr)
+					# T1.5: 点击路径只刷 signalTex，不走几何层重算
+					if SWSignalTexture.instance != null:
+						SWSignalTexture.instance.flush()
 					if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON:
 						_pressed_button_pos = grid_pos
 					get_viewport().set_input_as_handled()
@@ -345,8 +375,9 @@ func _unhandled_input(event: InputEvent) -> void:
 							pass
 						var newBuilds = sw_circuit_control.buildSignalChanged(build)
 						newBuilds.append(build)
-						var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
-						sw_draw_manager.updataChunks(notifyChunkPosArr)
+						# T1.5: 点击释放路径只刷 signalTex，不走几何层重算
+						if SWSignalTexture.instance != null:
+							SWSignalTexture.instance.flush()
 					_pressed_button_pos = Vector2i(-9999, -9999)
 
 	#if event.is_action_pressed("TEST_PERFORMANCE"):
@@ -377,7 +408,7 @@ func _process(delta: float) -> void:
 		#sw_circuit_control.updateBuildCircuit(clockBuildArr.keys())
 			var newBuilds = sw_circuit_control.buildSignalChanged(build)
 			changedBuilds.append_array(newBuilds)
-		#var notifyChunkPosArr = getNotifyChunkPosArr([build])
+		# T1.5: 时钟 tick 路径只刷 signalTex，不走几何层重算
 		if changedBuilds.size() > 0:
-			var notifyChunkPosArr = getNotifyChunkPosArr(changedBuilds)
-			sw_draw_manager.updataChunks(notifyChunkPosArr)
+			if SWSignalTexture.instance != null:
+				SWSignalTexture.instance.flush()

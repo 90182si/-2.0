@@ -2,6 +2,8 @@
 class_name SWChunkBuildData extends RefCounted
 var builds:Array[SWBuildItemDefine] = []
 var notNullBuilds:Array[SWBuildItemDefine] = []
+# 影子登记：锚点不在本 chunk 但 footprint 覆盖到本 chunk 的大建筑引用
+var shadowBuilds:Array[SWBuildItemDefine] = []
 var chunk_key:String = ""
 var chunk_pos:Vector2i
 

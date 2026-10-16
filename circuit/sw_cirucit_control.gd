@@ -4,6 +4,8 @@ class_name SWCircuitControl extends Node
 var buildManager:SWBuildManager = null
 var idling:bool = false
 var circuits:Dictionary[int,SwDefine.SWCircuitData] = {}
+var boolProgram: SWBoolProgram = null
+var useIR: bool = false
 #本轮重建内的邻接缓存：find1 与 createCircuit 共用，避免重复网格查询与临时对象分配
 var _neighborsCache:Dictionary[SWBuildItemDefine,Array] = {}
 
@@ -179,6 +181,17 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 			affectBuilds2.append(affectBuild)
 	createCircuit(affectBuilds2)
 	
+	# --- T2.4: IR 编译 ---
+	var affectedCircuits: Array = []
+	for build in affectBuilds:
+		if build.circuit != null and not affectedCircuits.has(build.circuit):
+			affectedCircuits.append(build.circuit)
+	var loopBuilds := SWBoolCompiler.detect_combinational_loops(affectedCircuits)
+	for lb in loopBuilds:
+		lb.in_loop = true
+	var compiler := SWBoolCompiler.new()
+	boolProgram = compiler.compile(affectedCircuits)
+	
 	return affectBuilds
 	
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
@@ -201,4 +214,22 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 			processed[noticeBuild] = true
 			notifyPosArr.append_array(noticeBuild.getCircuitCompoent().reCalSignals())
 			queue.append(noticeBuild)
+	# T1.5: signalTex 增量更新 — 只写脏 texel，不触发几何层重算
+	if SWSignalTexture.instance != null:
+		var updated_nets: Dictionary = {}
+		for affected_build: SWBuildItemDefine in processed.keys():
+			var comp: SWBuildCompoentCircuit = affected_build.getCircuitCompoent()
+			if comp == null:
+				continue
+			for dir in comp.pinNetMap:
+				var net: SWNet = comp.pinNetMap[dir]
+				if net == null:
+					continue
+				if net.netId in updated_nets:
+					continue
+				updated_nets[net.netId] = true
+				if net.curSignal != net.paintedSignal:
+					var c: Color = SwCommon.get_net_display_color(net)
+					SWSignalTexture.instance.set_net_color(net.netId, c)
+					net.paintedSignal = net.curSignal
 	return notifyPosArr

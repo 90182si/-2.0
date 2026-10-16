@@ -79,9 +79,12 @@ func _refreshChunkContent(chunkPos:Vector2i) -> void:
 	var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
 	
 	if _drawMode == SwDefine.GridDrawMode.ByContent:
-		var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
+		var chunkBuilds = sw_build_manager.getRenderBuildsByChunkPos(chunkPos)
 		if chunkBuilds.size() == 0:
-			# 没有建筑了，走正常卸载流程
+			# 没有锚点建筑了，清影子并走正常卸载流程
+			var buildChunk = sw_build_manager.getChunkOrCreate(chunkPos)
+			if buildChunk:
+				buildChunk.shadowBuilds.clear()
 			chunkIns.status = SwDefine.ChunkStatus.UNLOADING
 			return
 		# 直接在已有实例上触发重绘，旧buffer继续显示
@@ -165,7 +168,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 			continue
 		var chunkMapDataArray = originalMapDataArray
 		if _drawMode == SwDefine.GridDrawMode.ByContent:
-			var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
+			var chunkBuilds = sw_build_manager.getRenderBuildsByChunkPos(chunkPos)
 			if chunkBuilds.size() == 0:
 				tasks.erase(chunkPos)
 				continue
@@ -236,6 +239,11 @@ func process_unload_chunk() -> void:
 	for chunkIns:SwDefine.SWDrawChunkData in _chunkInstance.values():
 		if chunkIns.status != SwDefine.ChunkStatus.UNLOADING:
 			continue
+		# 影子 chunk 卸载：仅清 shadowBuilds 数组，不回收建筑
+		if sw_build_manager:
+			var buildChunk = sw_build_manager.getChunkOrCreate(chunkIns.chunk_pos)
+			if buildChunk:
+				buildChunk.shadowBuilds.clear()
 		chunkIns.status = SwDefine.ChunkStatus.UNLOADED
 		chunkIns.status = SwDefine.ChunkStatus.UNVISIBLE
 		chunkIns.mesh_instance.set_process(false)

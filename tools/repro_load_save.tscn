@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://crerepro1loadsave"]
+
+[ext_resource type="Script" path="res://tools/repro_load_save.gd" id="1_repro"]
+
+[node name="ReproLoadSave" type="Node"]
+script = ExtResource("1_repro")

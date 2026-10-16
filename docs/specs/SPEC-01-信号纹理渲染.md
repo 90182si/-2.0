@@ -69,13 +69,14 @@ func get_style_id(r:Rect2) -> int       # 已登记则返回既有 id
 ```gdscript
 class_name SWSignalTexture extends RefCounted
 const MAX_NETS := 65536           # 超限 push_error（float 精度 2^24 上限，65536 留足余量）
-var image:Image                   # FORMAT_RGBA32F, width=MAX_NETS, height=1
+const TEX_COLS := 4096            # net_id 按 4096 列 × 16 行 2D 网格排布，规避 16384 边长上限 GPU
+var image:Image                   # FORMAT_RGBA32F, width=TEX_COLS, height=MAX_NETS/TEX_COLS
 var texture:ImageTexture
 var netCount:int = 0              # 由 T2.2 的 registeredNetMax 同步
 
 func init(nets:int) -> void        # 分配 image/texture，全 texel 置透明
 func set_net_color(netId:int, c:Color) -> void:
-    image.set_pixel(netId, 0, c)
+    image.set_pixel(netId % TEX_COLS, netId / TEX_COLS, c)  # 2D 网格坐标，与 shader 换算一致
     texture.update(image)          # 每次 update 全图上传——MAX_NETS=65536*16B=1MB/次。
                                    # 优化（本任务内做）：脏区间标记，本帧多次 set 合并为一次 update；
                                    # 或用 Image.update 区块？Godot 无局部 update API → 用"每帧批量提交"：
@@ -98,12 +99,13 @@ func get_texture() -> ImageTexture
 ### `render/sw_grid_draw.gdshader` 新 uniform 与逻辑
 ```glsl
 uniform sampler2D styleTex;    // texel[styleId] = (x, y, w, h)
-uniform sampler2D signalTex;   // texel[netId]   = rgba 颜色
+uniform sampler2D signalTex;   // signalTex[texel(netId)] = rgba 颜色（TEX_COLS×TEX_ROWS 网格）
+uniform int signalCols;        // = SWSignalTexture.TEX_COLS，由脚本 set_shader_parameter 注入
 ```
 fragment 流程（保持像素输出不变）：
 1. `sid = int(custom_data.x + 0.5)`；`rect = texelFetch(styleTex, ivec2(sid, 0), 0)`；用 rect.x/y/z/w 替代原 custom_data 四分量参与 UV 计算（pad 逻辑原样）。
 2. `nid = int(custom_data.y + 0.5)`；
-   - `nid >= 0`：`color = texelFetch(signalTex, ivec2(nid,0), 0) * COLOR;`（信号色 × 烘焙 tint，mask/选中叠加走 COLOR）
+   - `nid >= 0`：`color = texelFetch(signalTex, ivec2(nid % signalCols, nid / signalCols), 0) * COLOR;`（信号色 × 烘焙 tint，mask/选中叠加走 COLOR）
    - `nid < 0`：`color = COLOR;`（非信号部件回退）
 3. 乘法混色与 alpha 合并公式**逐字保留**原实现。
 

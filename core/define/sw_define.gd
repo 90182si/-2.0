@@ -80,6 +80,9 @@ enum CircuitComponentType{
 	ONE_BIT_REGISTER#1bit寄存器
 }
 
+# 电路求值操作码（用于 EvalStruct 静态分派）
+enum CircuitOp { OP_AND, OP_NAND, OP_PASS, OP_NOT, OP_LEAF }
+
 #建筑物状态
 enum BuildState{
 	IDLE,
@@ -139,6 +142,7 @@ class SWCircuitStruct extends RefCounted:
 	var values:Array = []
 	var cachedValue:int = -1
 	var cachedEpoch:int = -1
+	var op:int = -1
 
 #视口偏移与缩放
 class SWTransformData extends RefCounted:
@@ -227,6 +231,10 @@ static func dir_to_vec(dir:int) -> Vector2i:
 		2: return Vector2i(0, 1)
 		3: return Vector2i(-1, 0)
 		_: return Vector2i.ZERO
+
+## 判断方向是否为侧向（LEFT/RIGHT），用于 m×n 建筑旋转时 w/h 互换
+static func isSideways(dir:SW_Dir) -> bool:
+	return dir == SW_Dir.LEFT or dir == SW_Dir.RIGHT
 
 static func getAntiDir(dir:SW_Dir) -> SW_Dir:
 	match dir:

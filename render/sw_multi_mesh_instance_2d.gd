@@ -1,5 +1,8 @@
 class_name SWMultiMeshInstance2D extends MultiMeshInstance2D
 
+# ========== 性能计数器（static，不持久化） ==========
+static var s_draw_map_call_count: int = 0
+
 var _swTransform:SwDefine.SWTransformData
 var _gridSize:Vector2 = SwDefine.GRID_SIZE
 var _drawMode:SwDefine.GridDrawMode=SwDefine.GridDrawMode.Tiling
@@ -48,10 +51,26 @@ func _enter_tree() -> void:
 		thread.start(calBuffer)
 	
 func _ready() -> void:
-	# 运行前从全局配置 SwAtlas 取当前图集，覆盖 shader 采样用的 srcImg
+	_resetShaderUniforms()
+
+# 抽取 uniform 设置逻辑，供 _ready() 和 reUse() 共用
+func _resetShaderUniforms() -> void:
 	var mat := material as ShaderMaterial
-	if mat and SwAtlas.current:
+	if not mat:
+		return
+	if SwAtlas.current:
 		mat.set_shader_parameter("srcImg", SwAtlas.current)
+	else:
+		push_warning("SWMultiMeshInstance2D: SwAtlas.current is null, srcImg not set")
+	if SWStyleTexture.instance:
+		mat.set_shader_parameter("styleTex", SWStyleTexture.instance.texture)
+	else:
+		push_warning("SWMultiMeshInstance2D: SWStyleTexture.instance is null, styleTex not set")
+	if SWSignalTexture.instance:
+		mat.set_shader_parameter("signalTex", SWSignalTexture.instance.texture)
+		mat.set_shader_parameter("signalCols", SWSignalTexture.TEX_COLS)
+	else:
+		push_warning("SWMultiMeshInstance2D: SWSignalTexture.instance is null, signalTex not set")
 		
 func setDrawMode(mode:SwDefine.GridDrawMode) -> void:
 	_drawMode = mode
@@ -93,12 +112,21 @@ func get_use_color() -> bool:
 	return multimesh.use_colors if multimesh else false
 	
 func reUse() -> void:
-	while planIsRunning:
-		pass
-	#buffer.clear()
+	if planIsRunning:
+		push_warning("reUse() called while calBuffer still running, forcing wait...")
+		# 线程在 _exit_tree 时会 join，正常流程此处应为 false
+		# 防御性等待：最多等几帧让 deferred 调用完成
+		var wait_frames := 0
+		while planIsRunning and wait_frames < 10:
+			await get_tree().process_frame
+			wait_frames += 1
+		if planIsRunning:
+			push_error("reUse(): planIsRunning still true after 10 frames, force reset")
+			planIsRunning = false
+	# 池化复用：重新设置 shader uniform（_ready 不会再次触发）
+	_resetShaderUniforms()
 	_hadDraw = false
 	curMapData = []
-	#bufferSize=0
 	mapDataIns=null
 	
 var mapDataIns:SWBuildItemDefine = null
@@ -107,6 +135,7 @@ var bufferSize = 0
 var curMapData:Array[SWBuildItemDefine]
 
 func drawMap(mapData:Array[SWBuildItemDefine], _flashDrawRegion:bool = false) -> void:
+	SWMultiMeshInstance2D.s_draw_map_call_count += 1
 	if _hadDraw:
 		return
 	_gridSizeTmp = _gridSize * _swTransform.scale
@@ -151,6 +180,8 @@ func calBuffer() -> void:
 				continue
 			var localMapDataIns:SWBuildItemDefine
 			localMapDataIns = curMapData[0]
+			var tiling_draw_rect: Rect2 = localMapDataIns.getRenderableCompoent().drawRect
+			var tiling_style_id: int = SWStyleTexture.instance.get_style_id(tiling_draw_rect) if SWStyleTexture.instance else -1
 			for i in range(e.x):
 				for j in range(e.y):
 					var gridPos = Vector2i(_gridSizeTmp.x * i, _gridSizeTmp.y * j)
@@ -160,7 +191,7 @@ func calBuffer() -> void:
 						Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
 								gridPos.y + _gridSizeTmp.y / 2.0))
 					var buffer_index = index * buffer_size_per_instance
-					_fill_instance(newBuffer,buffer_index,t,color,localMapDataIns.getRenderableCompoent().drawRect,use_colors)
+					_fill_instance(newBuffer,buffer_index,t,color,tiling_style_id,-1,0,use_colors)
 					index += 1
 			showCount = e.x*e.y
 		else:
@@ -177,6 +208,7 @@ func calBuffer() -> void:
 				var color = _get_instance_color(mapData, gridPos.x / _gridSizeTmp.x, gridPos.y / _gridSizeTmp.y)
 				var render_able = mapData.getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable
 				var parts = render_able.getRenderParts()
+				SWBuildCompoentRenderable.s_get_render_parts_call_count += 1
 				for part in parts:
 					if index >= max_instances:
 						break
@@ -187,11 +219,14 @@ func calBuffer() -> void:
 								gridPos.y + _gridSizeTmp.y * (offset.y + 0.5)))
 					var buffer_index = index * buffer_size_per_instance
 					var use_color = part["use_color"]
+					var p_style_id: int = part["style_id"]
+					var p_net_id: int = part["net_id"]
+					var p_flags: int = part["flags"]
 					if use_color:
 						var mix_color = color * part["color"]
-						_fill_instance(newBuffer,buffer_index,t,mix_color,part["rect"],use_colors)
+						_fill_instance(newBuffer,buffer_index,t,mix_color,p_style_id,p_net_id,p_flags,use_colors)
 					else:
-						_fill_instance(newBuffer,buffer_index,t,color,part["rect"],use_colors)
+						_fill_instance(newBuffer,buffer_index,t,color,p_style_id,p_net_id,p_flags,use_colors)
 					index += 1
 			showCount = index
 		# 使用 call_deferred 传递数据，但 n 通过参数传递
@@ -210,7 +245,7 @@ func bufferCalFinish(newBuffer:PackedFloat32Array, localN:int) -> void:
 	multimesh.visible_instance_count = localN
 	multimesh.emit_changed()
 
-func _fill_instance(newBuffer:PackedFloat32Array, buffer_index:int, t:Transform2D, color:Color, rect:Rect2, use_colors:bool) -> void:
+func _fill_instance(newBuffer:PackedFloat32Array, buffer_index:int, t:Transform2D, color:Color, style_id:int, net_id:int, flags:int, use_colors:bool) -> void:
 	newBuffer[buffer_index + 0] = t.x.x
 	newBuffer[buffer_index + 1] = t.y.x
 	newBuffer[buffer_index + 2] = 0
@@ -224,12 +259,12 @@ func _fill_instance(newBuffer:PackedFloat32Array, buffer_index:int, t:Transform2
 		newBuffer[buffer_index + 9] = color.g
 		newBuffer[buffer_index + 10] = color.b
 		newBuffer[buffer_index + 11] = color.a
-		newBuffer[buffer_index + 12] = float(rect.position.x)
-		newBuffer[buffer_index + 13] = float(rect.position.y)
-		newBuffer[buffer_index + 14] = float(rect.size.x)
-		newBuffer[buffer_index + 15] = float(rect.size.y)
+		newBuffer[buffer_index + 12] = float(style_id)
+		newBuffer[buffer_index + 13] = float(net_id)
+		newBuffer[buffer_index + 14] = float(flags)
+		newBuffer[buffer_index + 15] = 0.0
 	else:
-		newBuffer[buffer_index + 8] = float(rect.position.x)
-		newBuffer[buffer_index + 9] = float(rect.position.y)
-		newBuffer[buffer_index + 10] = float(rect.size.x)
-		newBuffer[buffer_index + 11] = float(rect.size.y)
+		newBuffer[buffer_index + 8] = float(style_id)
+		newBuffer[buffer_index + 9] = float(net_id)
+		newBuffer[buffer_index + 10] = float(flags)
+		newBuffer[buffer_index + 11] = 0.0

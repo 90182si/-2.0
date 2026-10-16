@@ -1,6 +1,8 @@
 class_name SWNet extends RefCounted
 
 var curSignal:SwDefine.CircuitSignal
+var netId:int = -1
+var paintedSignal: int = -999  # 上次写入纹理的电平，-999=未画
 #输入
 var wireGroup:SwDefine.SWWireGroup = null
 #{SWBuildItemDefine,SwDefine.SW_Dir}

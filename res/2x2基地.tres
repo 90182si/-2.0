@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://d2x2base001abc"]
+
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_2x2base"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_script2x2"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin_define.gd" id="2_pin2x2"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2x2off"]
+atlas = ExtResource("1_2x2base")
+region = Rect2(0, 0, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2x2on"]
+atlas = ExtResource("1_2x2base")
+region = Rect2(0, 256, 256, 256)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_script2x2")
+atlasTextureOn = SubResource("AtlasTexture_2x2on")
+atlasTextureOff = SubResource("AtlasTexture_2x2off")
+buildName = "2x2基地"
+size = Vector2i(2, 2)
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

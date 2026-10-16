@@ -12,6 +12,9 @@ var pinValueBit:int = 0
 
 var linkedPort:int = 0
 
+# m×n 多格建筑引脚边缘探测开关（为 false 时所有建筑走旧路径）
+var allowMulticell:bool = true
+
 var pinNetMap:Dictionary[SwDefine.SW_Dir,SWNet] = {}
 var pinExprMap:Dictionary[SwDefine.SW_Dir,SwDefine.SWCircuitStruct] = {}
 #表达式构建中标记（防环），由具体电路组件的 getBuildExpr 维护
@@ -26,6 +29,19 @@ func _init() -> void:
 
 func getBuildIOConnectBuildArr(swBuildManager:SWBuildManager) -> Array:
 	var linkedBuilds:Array = []
+	# m×n 多格路径：从引脚格出发查找邻居
+	if allowMulticell and _isMultiCell() and not SwCommon.IsWireBuild(buildRef):
+		for pinIndex:int in range(3,-1,-1):
+			if not isPort(pinIndex):
+				continue
+			var pin:SWBuildPinDefine = _getPinByWorldDir(pinIndex)
+			if pin == null:
+				continue
+			var nextBuild:SWBuildItemDefine = _getDirBuildFromPin(swBuildManager, pin)
+			if nextBuild:
+				linkedBuilds.append({"build":nextBuild,"dir":pinIndex})
+		return linkedBuilds
+	# 旧路径（1×1 建筑或电线或 allowMulticell=false）
 	for pinIndex:int in range(3,-1,-1):
 		if not isPort(pinIndex):
 			continue
@@ -55,6 +71,30 @@ func getDirBuild(swBuildManager:SWBuildManager,rot:SwDefine.SW_Dir) -> SWBuildIt
 func getNet(swBuildManager:SWBuildManager) -> Array:
 	if buildRef.bIsToBeRemoved():
 		return []
+	# m×n 多格路径
+	if allowMulticell and _isMultiCell() and not SwCommon.IsWireBuild(buildRef):
+		for pinIndex:int in range(3,-1,-1):
+			if not isPort(pinIndex):
+				continue
+			if isLinkedPort(pinIndex):
+				continue
+			if portIsInput(pinIndex):
+				continue
+			var pin:SWBuildPinDefine = _getPinByWorldDir(pinIndex)
+			if pin == null:
+				continue
+			var nextBuild:SWBuildItemDefine = _getDirBuildFromPin(swBuildManager, pin)
+			if nextBuild == null:
+				continue
+			var nextBuildCircuitCom:SWBuildCompoentCircuit = nextBuild.getCircuitCompoent()
+			if nextBuildCircuitCom == null:
+				continue
+			var antiDir:SwDefine.SW_Dir = SwDefine.getAntiDir(pinIndex)
+			setLinkedPort(pinIndex)
+			nextBuildCircuitCom.setLinkedPort(antiDir)
+			nextBuildCircuitCom.setDriverOrLoader([{"build":buildRef,"pinDir":pinIndex}],[{"build":nextBuildCircuitCom.buildRef,"pinDir":antiDir}])
+		return []
+	# 旧路径
 	for pinIndex:int in range(3,-1,-1):
 		if not isPort(pinIndex):
 			continue
@@ -226,3 +266,58 @@ func reCalSignals() -> Array[SWBuildItemDefine]:
 
 func initPortState(swBuildManager:SWBuildManager) -> void:
 	pass
+
+# ─── m×n 多格建筑引脚边缘探测辅助函数 ───
+
+## 判断当前建筑是否为多格建筑（size 非 1×1）
+func _isMultiCell() -> bool:
+	return buildRef.buildDefine.size.x > 1 or buildRef.buildDefine.size.y > 1
+
+## 按世界方向查找引脚定义（遍历 build_pin，O(pins)）
+func _getPinByWorldDir(worldDir:SwDefine.SW_Dir) -> SWBuildPinDefine:
+	for pin:SWBuildPinDefine in buildRef.buildDefine.build_pin:
+		var wdir:int = posmod(pin.pin_dir + buildRef.rotation, 4)
+		if wdir == worldDir:
+			return pin
+	return null
+
+## 从引脚格出发查找邻居建筑（m×n 专用）
+func _getDirBuildFromPin(swBuildManager:SWBuildManager, pin:SWBuildPinDefine) -> SWBuildItemDefine:
+	var rotatedOffset:Vector2i = buildRef.getRotatedCellOffset(pin)
+	var pinCell:Vector2i = buildRef.buildAxisPos + rotatedOffset * SwDefine.GRID_SIZE
+	var worldDir:int = posmod(pin.pin_dir + buildRef.rotation, 4)
+	var neighborPos:Vector2i = pinCell + SwDefine.dir_to_vec(worldDir) * SwDefine.GRID_SIZE
+	var nextBuild:SWBuildItemDefine = swBuildManager.getBuild(neighborPos)
+	if nextBuild == null or nextBuild.bIsToBeRemoved():
+		return null
+	var nextCircuitCom:SWBuildCompoentCircuit = nextBuild.getCircuitCompoent()
+	if nextCircuitCom == null:
+		return null
+	var antiDir:SwDefine.SW_Dir = SwDefine.getAntiDir(worldDir)
+	# 邻居是 m×n 建筑时，需确认对方在该格有对应方向的引脚
+	if nextBuild.buildDefine.size.x > 1 or nextBuild.buildDefine.size.y > 1:
+		if not nextBuild.hasPinAt(neighborPos, antiDir):
+			return null
+	if not nextCircuitCom.isPort(antiDir):
+		return null
+	# 电线走特殊规则（电线始终 1×1，无需多格判定）
+	if SwCommon.IsWireBuild(buildRef) or SwCommon.IsWireBuild(nextBuild):
+		return nextBuild
+	if portIsOutput(worldDir) and nextCircuitCom.portIsInput(antiDir):
+		return nextBuild
+	if portIsInput(worldDir) and nextCircuitCom.portIsOutput(antiDir):
+		return nextBuild
+	return null
+
+## 查询该建筑在指定世界格是否有引脚且方向为 worldDir
+## 用于 m×n 邻居连接判定
+func hasPinAt(worldCell:Vector2i, worldDir:SwDefine.SW_Dir) -> bool:
+	for pin:SWBuildPinDefine in buildRef.buildDefine.build_pin:
+		var rotatedOffset:Vector2i = buildRef.getRotatedCellOffset(pin)
+		var pinWorldCell:Vector2i = buildRef.buildAxisPos + rotatedOffset * SwDefine.GRID_SIZE
+		if pinWorldCell != worldCell:
+			continue
+		var pinWorldDir:int = posmod(pin.pin_dir + buildRef.rotation, 4)
+		if pinWorldDir == worldDir:
+			return true
+	return false

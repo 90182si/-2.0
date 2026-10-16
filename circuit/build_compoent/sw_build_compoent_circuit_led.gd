@@ -12,26 +12,41 @@ func setPortFlag(_buildDef:SWBuildDefine) -> void:
 
 func getBuildExpr() -> void:
 	for dir in range(3,-1,-1):
-		#如果已经存在了就不计算
 		if pinExprMap.has(dir):
 			continue
-		#如果不是输入口
 		if not portIsInput(dir):
 			continue
 		var net:SWNet = pinNetMap.get(dir,null)
 		if not net:
 			continue
-		#该部件的函数是需要线与and
-		pinExprMap[dir] = SwDefine.SWCircuitStruct.new()
-		pinExprMap[dir].optFunc = SwCommon.AndValues
-		pinExprMap[dir].optFuncName = "SwCommon.AndValues"
-		#把每个条件加到args里面
-		#获取net的驱动端口们（穿越寄存器的反馈不判环）
-		#appendDriverExprs(pinExprMap[dir], net)
+		var expr_struct = SwDefine.SWCircuitStruct.new()
+		expr_struct.optFunc = SwCommon.AndValues
+		expr_struct.optFuncName = "SwCommon.AndValues"
 		var drivers = net.getDrivers()
 		for driver:Dictionary in drivers:
 			var build = driver["build"]
 			var pDir = driver["pinDir"]
+			# 电线桥接
+			if SwCommon.IsWireBuild(build):
+				var seen_nets:Dictionary = {}
+				for wire_net:SWNet in build.getCircuitCompoent().pinNetMap.values():
+					if wire_net == null or seen_nets.has(wire_net):
+						continue
+					seen_nets[wire_net] = true
+					for wire_driver:Dictionary in wire_net.getDrivers():
+						var wb = wire_driver["build"]
+						var wpDir = wire_driver["pinDir"]
+						if wb == null:
+							continue
+						wb.getCircuitCompoent().getBuildExpr()
+						if wb.getCircuitCompoent()._buildingExpr:
+							wb.in_loop = true
+							buildRef.in_loop = true
+							continue
+						var wexpr = wb.getCircuitCompoent().getExpr(wpDir)
+						if wexpr:
+							expr_struct.args.append(wexpr)
+				continue
 			build.getCircuitCompoent().getBuildExpr()
 			if build.getCircuitCompoent()._buildingExpr:
 				build.in_loop = true
@@ -39,7 +54,11 @@ func getBuildExpr() -> void:
 				continue
 			var expr = build.getCircuitCompoent().getExpr(pDir)
 			if expr:
-				pinExprMap[dir].args.append(expr)
+				expr_struct.args.append(expr)
+		# 无驱动源时不创建表达式（浮空=低电平）
+		if expr_struct.args.size() > 0:
+			expr_struct.op = SwDefine.CircuitOp.OP_AND
+			pinExprMap[dir] = expr_struct
 
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	var value = super.getValue(dir)

@@ -97,5 +97,35 @@ func bIsToBeRemoved() -> bool:
 func on_idled(swBuildManager:SWBuildManager) -> void:
 	pass
 
+## 获取旋转后的实际占地尺寸
+func getFootprint() -> Vector2i:
+	if SwDefine.isSideways(rotation):
+		return Vector2i(buildDefine.size.y, buildDefine.size.x)
+	return buildDefine.size
+
+## 获取 footprint 覆盖的所有世界格坐标（GRID_SIZE 对齐的 axisPos）
+func getCoveredCells() -> Array:
+	var result: Array = []
+	var fp := getFootprint()
+	var anchorGrid := buildAxisPos  # 已经是格对齐坐标
+	for j in range(fp.y):
+		for i in range(fp.x):
+			result.append(Vector2i(anchorGrid.x + i * SwDefine.GRID_SIZE.x, anchorGrid.y + j * SwDefine.GRID_SIZE.y))
+	return result
+
+## 获取旋转后的 cell_offset（90° CW 递推公式）
+## rotation=0: (x, y)
+## rotation=1: (y, s.x-1-x)
+## rotation=2: (s.x-1-x, s.y-1-y)
+## rotation=3: (s.y-1-y, x)
+func getRotatedCellOffset(pin:SWBuildPinDefine) -> Vector2i:
+	var off := pin.cell_offset
+	match rotation:
+		0: return off
+		1: return Vector2i(off.y, buildDefine.size.x - 1 - off.x)
+		2: return Vector2i(buildDefine.size.x - 1 - off.x, buildDefine.size.y - 1 - off.y)
+		3: return Vector2i(buildDefine.size.y - 1 - off.y, off.x)
+		_: return off
+
 func on_deleted(swBuildManager:SWBuildManager) -> void:
 	pass
