@@ -1,11 +1,17 @@
 class_name SWCircuitControl extends Node
 
+# T2.5：组件求值后端无场景树访问路径，用静态当前实例交接（单一事实 owner 仍在本类）
+static var current: SWCircuitControl = null
 
 var buildManager:SWBuildManager = null
 var idling:bool = false
 var circuits:Dictionary[int,SwDefine.SWCircuitData] = {}
 var boolProgram: SWBoolProgram = null
 var useIR: bool = false
+# T2.5：编译器实例跨批次复用（slot/指令全局递增），失活段靠 segments 剪除
+var _compiler: SWBoolCompiler = null
+# T2.5：getValue 切 slot 的查询表（key = build.id*4+dir → slot），直接引用编译器内部表
+var slotMap: Dictionary = {}
 #本轮重建内的邻接缓存：find1 与 createCircuit 共用，避免重复网格查询与临时对象分配
 var _neighborsCache:Dictionary[SWBuildItemDefine,Array] = {}
 #T2.2 netId 稳定分配：单调递增计数器，只在 clearAllBuilds / 加载存档时归零
@@ -201,8 +207,18 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 		lb.in_loop = true
 	#IR 编译仅在 useIR 开启时执行；关闭时结果无人消费，跳过以免大存档/加载时白白浪费性能
 	if useIR:
-		var compiler := SWBoolCompiler.new()
-		boolProgram = compiler.compile(affectedCircuits)
+		if _compiler == null:
+			_compiler = SWBoolCompiler.new()
+			slotMap = _compiler.slotMap
+		boolProgram = _compiler.compile(affectedCircuits, circuits)
+		# T2.5 初始化：编译后立即全量求值一遍，使 slot/输出 net 与当前世界状态一致；
+		# 再走一次 push 把 OP_OUT 写回的 net 传播到电线视觉（与后续事件路径同源）
+		boolProgram.evaluate()
+		var pushBuilds: Array = []
+		for cir: SwDefine.SWCircuitData in affectedCircuits:
+			for b: SWBuildItemDefine in cir.buildArr:
+				pushBuilds.append(b)
+		_pushDriverNets(pushBuilds)
 	
 	return affectBuilds
 
@@ -236,6 +252,57 @@ func _assignNetIds(builds: Array[SWBuildItemDefine]) -> void:
 func resetNetIdCounter() -> void:
 	_netIdCounter = 0
 
+#T2.5：全量清理/加载时重置 IR 后端（程序/编译器/slotMap 一起作废，重建）
+func resetIR() -> void:
+	boolProgram = null
+	_compiler = null
+	slotMap = {}
+
+# T2.5 push 核心：对每个处理过的建筑，取其作为驱动者的 net，
+# 用驱动器 slot 新值与 net.curSignal 比较，变化时写回 net 并对 wireGroup 电线调 setValue（视觉传播）。
+# 这取代了原 NOT/LED/源类组件 getValue 内的副作用传播（树路径 useIR=false 时仍保留旧行为）。
+# 段重复求值幂等：同一电路多个处理建筑命中同一段时，重复 evaluate 结果不变。
+func _pushDriverNets(builds: Array) -> void:
+	if boolProgram == null:
+		return
+	# 收集本轮触及的 net（去重），逐 net 写回：
+	# wired-AND 多驱动 net 的 curSignal 复刻树语义——最后一个注册驱动者的 getValue 最后写回者胜，
+	# 即取 net.getDrivers() 中最后一个带 slot 的驱动者的 slot 值（树里各驱动者都写同一 net，末位覆盖前者）
+	var touched: Dictionary = {}
+	for b: SWBuildItemDefine in builds:
+		if b == null or SwCommon.IsWireBuild(b):
+			continue
+		var comp: SWBuildCompoentCircuit = b.getCircuitCompoent()
+		if comp == null:
+			continue
+		for dir in comp.pinNetMap:
+			var net0: SWNet = comp.pinNetMap[dir]
+			if net0 != null and not touched.has(net0):
+				touched[net0] = true
+	for net: SWNet in touched:
+		var drivers: Array = net.getDrivers()
+		var slot: int = -1
+		# 从末位驱动者向前回溯，取第一个能命中 slot 的驱动者（末位者胜，与树一致）
+		for i in range(drivers.size() - 1, -1, -1):
+			var db = drivers[i]["build"]
+			if db == null:
+				continue
+			slot = slotMap.get(db.id * 4 + int(drivers[i]["pinDir"]), -1)
+			if slot >= 0:
+				break
+		if slot < 0:
+			continue
+		var v: int = boolProgram.get_slot_value(slot)
+		if v < 0:
+			continue
+		var sig = SwDefine.CircuitSignal.HIGH if v == 1 else SwDefine.CircuitSignal.LOW
+		# OP_OUT 在 evaluate_range 阶段已把驱动值写回 net.curSignal（跨段 OP_INPUT 反馈依赖需此副作用），
+		# 使旧的 `net.curSignal != sig` 守卫恒为假而跳过电线传播——事件路径不跑 createCircuit 树 pass，
+		# 电线视觉会陈旧。故此处无条件写回（末位驱动者胜，复刻树语义）并每轮刷新电线。
+		net.curSignal = sig
+		for load: SWBuildItemDefine in net.wireGroup.wireBuilds:
+			load.getCircuitCompoent().setValue(0, sig)
+
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 	SwCommon.NextEvalEpoch()
 	var notifyPosArr:Array[SWBuildItemDefine] = []
@@ -246,25 +313,55 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 	#每个建筑本轮只处理一次，配合EvalStruct缓存总代价为O(下游规模)
 	var queue:Array[SWBuildItemDefine] = [build]
 	var processed:Dictionary[SWBuildItemDefine,bool] = {build:true}
+	#T2.5：保序快照（Dictionary.keys() 每次调用会新建数组，循环内缓存复用避免热路径分配）
+	var processedList:Array[SWBuildItemDefine] = [build]
 	var head:int = 0
+	# Pass A：纯结构 BFS（仅靠 noticeMap 展开，不调用 reCalSignals）
+	# 把 reCalSignals 推迟到段求值之后（Pass B），确保 IR 模式下 getValue/reCalSignals 读到的是本轮刷新后的 slot，
+	# 而非上一次事件的陈旧 slot；遍历顺序与 processedList 一致，notifyPosArr 语义不变
 	while head < queue.size():
 		var src:SWBuildItemDefine = queue[head]
 		head += 1
 		for noticeBuild:SWBuildItemDefine in cir.noticeMap.get(src,[]):
-			if noticeBuild.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.LED and noticeBuild.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.ONE_BIT_REGISTER:
+			# T2.5：NOT 也须入 BFS——IR 路径靠它触发输出 net 的 push 重算；
+			# 树路径下多处理一次 NOT 的 pull 求值幂等，语义不变（memo 命中）
+			if noticeBuild.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.LED and noticeBuild.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.ONE_BIT_REGISTER and noticeBuild.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.NOT_GATE:
 				continue
 			if processed.has(noticeBuild):
 				continue
 			processed[noticeBuild] = true
-			notifyPosArr.append_array(noticeBuild.getCircuitCompoent().reCalSignals())
+			processedList.append(noticeBuild)
 			queue.append(noticeBuild)
+	# T2.5 主路径：IR 段重算 + push 写 net（getValue 已切 slot 查表，无 pull 递归/副作用）
+	# 先求值受影响电路段刷新 slot，再跑 Pass B 的 reCalSignals（读新 slot）
+	var evaluatedSegs: Dictionary = {}
+	if useIR and boolProgram != null:
+		# 只重算受影响电路的指令段（段=电路全部指令，拓扑序保证输入先更新）；
+		# 同电路多处理建筑只评一次（本轮事件序列内求值幂等，去重省常数开销）
+		for srcBuild: SWBuildItemDefine in processedList:
+			var srcCirc = srcBuild.circuit
+			if srcCirc == null:
+				continue
+			if evaluatedSegs.has(srcCirc.circuitID):
+				continue
+			var seg: Dictionary = boolProgram.segments.get(srcCirc.circuitID, {})
+			if seg.is_empty():
+				continue
+			evaluatedSegs[srcCirc.circuitID] = true
+			boolProgram.evaluate_range(seg["start"], seg["end"])
+	# Pass B：按发现顺序对每个下游建筑调 reCalSignals（IR 模式下 slot 已刷新；树模式与旧路径逐拍等价）
+	for idx in range(1, processedList.size()):
+		notifyPosArr.append_array(processedList[idx].getCircuitCompoent().reCalSignals())
+	if useIR and boolProgram != null:
+		# push：把驱动器建筑输出 slot 的新电平写回 net 并传播电线视觉（替代原 getValue 内副作用）
+		_pushDriverNets(processedList)
 	# T1.5: signalTex 增量更新 — 只写脏 texel，不触发几何层重算
 	# T2.2: 用 netId 去重（每个 SWNet 唯一），避免同一 net 被多个引脚重复写入；
 	#       netId 非法（<0 或 >=MAX_NETS）时直接跳过，绝不推进 paintedSignal，防止状态漂移。
 	if SWSignalTexture.instance != null:
 		var updated_nets: Dictionary = {}
 		var max_nets: int = SWSignalTexture.MAX_NETS
-		for affected_build: SWBuildItemDefine in processed.keys():
+		for affected_build: SWBuildItemDefine in processedList:
 			var comp: SWBuildCompoentCircuit = affected_build.getCircuitCompoent()
 			if comp == null:
 				continue

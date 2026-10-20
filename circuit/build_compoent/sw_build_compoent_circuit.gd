@@ -176,6 +176,14 @@ func setDriverOrLoader(drivers:Array,loaders:Array) -> void:
 		net.setNet(drivers,loaders)
 	
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
+	# T2.5：useIR 且编译产物覆盖该引脚时直接读 slot（无 pull 递归/无副作用）
+	var sv := _getIrSlotValue(dir)
+	if sv != -1:
+		return SwDefine.CircuitSignal.HIGH if sv == 1 else SwDefine.CircuitSignal.LOW
+	return _getValueTree(dir)
+
+## 树求值（无副作用版）：原 EvalStruct pull 路径，useIR=false 回退与子类副作用分支复用
+func _getValueTree(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	var sig:SwDefine.CircuitSignal = SwDefine.CircuitSignal.NONE
 	if not pinExprMap.has(dir):
 		return sig
@@ -186,6 +194,21 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	else:
 		sig = SwDefine.CircuitSignal.LOW
 	return sig
+
+## T2.5：查 IR slot 值；未命中（useIR 关/无程序/无 slot/越界）返回 -1
+func _getIrSlotValue(dir:SwDefine.SW_Dir) -> int:
+	var control := SWCircuitControl.current
+	if control == null or not control.useIR or control.boolProgram == null:
+		return -1
+	var slot: int = control.slotMap.get(buildRef.id * 4 + dir, -1)
+	if slot < 0:
+		return -1
+	return control.boolProgram.get_slot_value(slot)
+
+## T2.5：状态驱动叶的运行时直读入口（按钮/开关/时钟/寄存器 Q 重写）；
+## 返回 0/1 表示状态驱动，-1 表示非状态驱动（IR 编译器据此区分 OP_READ 与 OP_INPUT 叶）
+func getPinReadState(_dir:SwDefine.SW_Dir) -> int:
+	return -1
 
 func ff(cirStruct:SwDefine.SWCircuitStruct,visited:Dictionary = {}) -> Array:
 	var result:Array = []

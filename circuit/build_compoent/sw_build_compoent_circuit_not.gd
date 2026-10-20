@@ -36,8 +36,13 @@ func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	#表达式挂在输入方向键上，基类通过 NAND 已算出取反结果，不可二次取反
 	var inDir = SwDefine.getAntiDir(buildRef.rotation)
-	var value = super.getValue(inDir)
-	#rotation 为输出方向，结果写入输出侧 net 并向下游电线传播
+	# T2.5：IR slot 命中时直读查表（NOT 输出值在 slotMap 同时登记输入/输出两个 key），
+	# net 写回与电线传播改由 SWCircuitControl 的 push 阶段统一处理
+	var sv := _getIrSlotValue(inDir)
+	if sv != -1:
+		return SwDefine.CircuitSignal.HIGH if sv == 1 else SwDefine.CircuitSignal.LOW
+	var value = _getValueTree(inDir)
+	#rotation 为输出方向，结果写入输出侧 net 并向下游电线传播（仅树路径保留副作用）
 	var net:SWNet = pinNetMap.get(buildRef.rotation,null)
 	if net:
 		net.curSignal = value

@@ -51,9 +51,14 @@ func getBuildExpr() -> void:
 			pinExprMap[dir] = expr_struct
 
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	var value = super.getValue(dir)
+	# T2.5：IR slot 命中时直读查表，输入 net 电平由驱动者的 push 写回，
+	# 本组件不再向 net 写入（避免覆盖驱动源状态）
+	var sv := _getIrSlotValue(dir)
+	if sv != -1:
+		return SwDefine.CircuitSignal.HIGH if sv == 1 else SwDefine.CircuitSignal.LOW
+	var value = _getValueTree(dir)
 	var net:SWNet = pinNetMap.get(dir,null)
-	#仅在有效电平时写入，避免 NONE 覆盖驱动源已写入的正确信号
+	#仅在有效电平时写入，避免 NONE 覆盖驱动源已写入的正确信号（仅树路径保留副作用）
 	if net and value != SwDefine.CircuitSignal.NONE:
 		net.curSignal = value
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:

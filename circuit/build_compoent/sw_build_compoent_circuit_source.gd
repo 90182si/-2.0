@@ -24,13 +24,26 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	if dir != buildRef.rotation:
 		return SwDefine.CircuitSignal.NONE
 	var value = SwDefine.CircuitSignal.HIGH if btn.pressed else SwDefine.CircuitSignal.LOW
-	#信号源主动刷新输出 net 的 curSignal，并向下游电线传播（浮空输出时也能刷新）
+	# T2.5：IR 模式下 net 写回与电线传播由 SWCircuitControl 的 push 阶段统一处理
+	var control := SWCircuitControl.current
+	if control != null and control.useIR:
+		return value
+	#树路径：信号源主动刷新输出 net 的 curSignal，并向下游电线传播（浮空输出时也能刷新）
 	var net:SWNet = pinNetMap.get(buildRef.rotation, null)
 	if net:
 		net.curSignal = value
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
 			load.getCircuitCompoent().setValue(buildRef.rotation, value)
 	return value
+
+## T2.5：按钮/开关为状态驱动叶，IR 编译器生成 OP_READ 经此入口直读 pressed
+func getPinReadState(dir:SwDefine.SW_Dir) -> int:
+	if dir != buildRef.rotation:
+		return -1
+	var btn := buildRef as SWBuildButton
+	if btn == null:
+		return -1
+	return 1 if btn.pressed else 0
 
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()

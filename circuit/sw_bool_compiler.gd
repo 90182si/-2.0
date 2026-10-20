@@ -1,54 +1,69 @@
 class_name SWBoolCompiler extends RefCounted
 
-# ── 编译状态 ──
+# ── 编译状态（T2.5：实例由 SWCircuitControl 持有并跨批次复用，slot/指令全局递增）──
 var _prog: SWBoolProgram = null
 var _next_slot: int = 0
-# 扇出去重：表达式节点引用 → slot 索引
+# 扇出去重：表达式节点引用 → slot 索引（跨批次保留：未重建的电路仍引用旧节点）
 var _node_slot: Dictionary = {}
+# 引脚值映射：key = build.id*4 + dir → slot（getValue 切 slot 的查询表，含 LED/寄存器输入侧内部 slot）
+var slotMap: Dictionary = {}
 
 # ── 公开入口 ──
 
-## 将一批电路的 pinExprMap 编译为扁平 IR 程序
-func compile(circuits: Array) -> SWBoolProgram:
-	_prog = SWBoolProgram.new()
-	_next_slot = 0
-	_node_slot.clear()
-	# OP_OUT 目标 net 去重：多个引脚表达式可能写回同一个 net，只发一条输出指令
-	var out_net_seen: Dictionary = {}
+## 将一批电路的 pinExprMap 编译为扁平 IR 指令段（追加到持久程序尾部，旧失活段不再被调度）
+## liveCircuitIDs：当前存活的全部电路 id，用于剪除已消失电路的段元数据（防长期泄漏）
+func compile(circuits: Array, liveCircuitIDs: Dictionary = {}) -> SWBoolProgram:
+	if _prog == null:
+		_prog = SWBoolProgram.new()
+	# 剪除已消失电路的段元数据（指令本体保留但永不被调度，避免段字典无限增长）
+	if not liveCircuitIDs.is_empty():
+		for sid in _prog.segments.keys():
+			if not liveCircuitIDs.has(sid):
+				_prog.segments.erase(sid)
 
 	for cir: SwDefine.SWCircuitData in circuits:
+		var seg_start: int = _prog.op_arr.size()
+		var seg_builds: Array = []
+		# OP_OUT 目标 net 去重：同一批次内多个引脚表达式可能写回同一个 net
+		var out_net_seen: Dictionary = {}
+
 		for build: SWBuildItemDefine in cir.buildArr:
 			if SwCommon.IsWireBuild(build):
 				continue
 			var comp: SWBuildCompoentCircuit = build.getCircuitCompoent()
 			if comp == null:
 				continue
+			seg_builds.append(build)
 			for dir in comp.pinExprMap.keys():
 				var expr: SwDefine.SWCircuitStruct = comp.pinExprMap[dir]
 				if expr == null:
 					continue
+				var src_slot := _compile_expr(expr, build, dir)
+				# 全部 pinExprMap 方向（含 LED/寄存器输入侧内部 slot）都进 slotMap，供 getValue 切 slot
+				slotMap[build.id * 4 + dir] = src_slot
 				# pinExprMap 的 key 不总是输出方向：
 				# NOT 门表达式挂在输入侧（antiDir(rotation)），结果要写回 rotation 方向的输出 net；
-				# LED/寄存器输入侧表达式只算内部状态，没有输出 net，跳过不发 OP_OUT
+				# LED/寄存器输入侧表达式只算内部状态，没有输出 net，不发 OP_OUT
 				var out_dir := _expr_output_dir(comp, dir)
-				if out_dir < 0:
-					continue
-				var net: SWNet = comp.pinNetMap.get(out_dir, null)
-				if net == null or out_net_seen.has(net):
-					continue
-				var src_slot := _compile_expr(expr, build, dir)
-				out_net_seen[net] = true
-				# 输出写回 net：dst 用 slot 索引（与 OP_AND 等指令 dst 语义一致，
-				# 同时作为 output_meta 的下标，和 OP_INPUT 用 dst 索引 input_meta 对称），
-				# 不再用指令索引，避免 _ensure_slots 按指令数量过度扩容 _slots
-				var out_slot := _alloc_slot()
-				_prog.op_arr.append(SWBoolProgram.OP_OUT)
-				_prog.dst_arr.append(out_slot)
-				_prog.a_arr.append(src_slot)
-				_prog.b_arr.append(0)
-				while _prog.output_meta.size() <= out_slot:
-					_prog.output_meta.append({})
-				_prog.output_meta[out_slot] = {"net": net}
+				if out_dir >= 0:
+					# NOT 门：输出方向的 getValue 也要能查到同一 slot
+					slotMap[build.id * 4 + out_dir] = src_slot
+					var net: SWNet = comp.pinNetMap.get(out_dir, null)
+					if net != null and not out_net_seen.has(net):
+						out_net_seen[net] = true
+						# 输出写回 net：dst 用 slot 索引（与 OP_AND 等指令 dst 语义一致，
+						# 同时作为 output_meta 的下标，和 OP_INPUT 用 dst 索引 input_meta 对称），
+						# 不再用指令索引，避免 _ensure_slots 按指令数量过度扩容 _slots
+						var out_slot := _alloc_slot()
+						_prog.op_arr.append(SWBoolProgram.OP_OUT)
+						_prog.dst_arr.append(out_slot)
+						_prog.a_arr.append(src_slot)
+						_prog.b_arr.append(0)
+						while _prog.output_meta.size() <= out_slot:
+							_prog.output_meta.append({})
+						_prog.output_meta[out_slot] = {"net": net}
+
+		_prog.segments[cir.circuitID] = {"start": seg_start, "end": _prog.op_arr.size(), "builds": seg_builds}
 
 	return _prog
 
@@ -108,7 +123,8 @@ func _emit_node(node: SwDefine.SWCircuitStruct, owner_build: SWBuildItemDefine, 
 			return s
 		SwDefine.CircuitOp.OP_NOT:
 			if node.args.size() == 0:
-				return _emit_const(0)
+				# 与树 EvalStruct 对齐：NOT 无入 = 1 - EvalArg(0)=1-0 = 1
+				return _emit_const(1)
 			var a := _resolve_arg(node, 0, owner_build, owner_dir)
 			var s := _alloc_slot()
 			_prog.op_arr.append(SWBoolProgram.OP_NOT)
@@ -122,7 +138,9 @@ func _emit_node(node: SwDefine.SWCircuitStruct, owner_build: SWBuildItemDefine, 
 			return _emit_nary(node, SWBoolProgram.OP_AND, owner_build, owner_dir)
 		SwDefine.CircuitOp.OP_NAND:
 			if node.args.size() == 0:
-				return _emit_const(0)
+				# 与树 EvalStruct 对齐：NAND 无入 = 1 - EvalArgsAnd(0)=1-0 = 1
+				# （NOT 门输入 net 的驱动全部被防环/in_loop 剔除时会出现空 args NAND）
+				return _emit_const(1)
 			return _emit_nary(node, SWBoolProgram.OP_NAND, owner_build, owner_dir)
 		_:
 			# 兜底：尝试旧路径 optFuncName
@@ -144,11 +162,20 @@ func _emit_nary(node: SwDefine.SWCircuitStruct, ir_op: int, owner_build: SWBuild
 	for i in range(1, node.args.size()):
 		var b := _resolve_arg(node, i, owner_build, owner_dir)
 		var s := _alloc_slot()
-		_prog.op_arr.append(ir_op)
+		# 多输入归约恒用 OP_AND 链（结合律成立）；NAND 不能在链上级联 OP_NAND，
+		# 否则 NAND(NAND(a,b),c)=(a&b)|~c ≠ NOT(a&b&c)，会在纹波进位链中级联污染布尔函数
+		_prog.op_arr.append(SWBoolProgram.OP_AND)
 		_prog.dst_arr.append(s)
 		_prog.a_arr.append(acc)
 		_prog.b_arr.append(b)
 		acc = s
+	if ir_op == SWBoolProgram.OP_NAND:
+		var ns := _alloc_slot()
+		_prog.op_arr.append(SWBoolProgram.OP_NOT)
+		_prog.dst_arr.append(ns)
+		_prog.a_arr.append(acc)
+		_prog.b_arr.append(0)
+		acc = ns
 	return acc
 
 func _resolve_arg(node: SwDefine.SWCircuitStruct, idx: int, owner_build: SWBuildItemDefine, owner_dir: int) -> int:
@@ -173,17 +200,31 @@ func _emit_leaf(leaf, owner_build: SWBuildItemDefine, owner_dir: int) -> int:
 	if leaf is SwDefine.SWBuildPinStruct:
 		var build: SWBuildItemDefine = leaf.build
 		var dir: int = leaf.dir
-		# 寄存器 Q 输出 → OP_LATCH（时序屏障）
+		# 寄存器 Q → OP_LATCH（时序屏障）：直读组件 qState，无论自引用还是跨建筑引用
 		if _is_register_q(build, dir):
 			var s := _alloc_slot()
 			_prog.op_arr.append(SWBoolProgram.OP_LATCH)
 			_prog.dst_arr.append(s)
 			_prog.a_arr.append(0)
 			_prog.b_arr.append(0)
-			_prog.register_latch(s)
+			while _prog.latch_meta.size() <= s:
+				_prog.latch_meta.append({})
+			_prog.latch_meta[s] = {"build": build, "dir": dir}
+			return s
+		# 状态驱动的叶（按钮/开关/时钟自引用，跨建筑引用同理）→ OP_READ 直读运行时状态；
+		# 不能走 OP_INPUT：push 化后 net.curSignal 由本程序 OP_OUT 写回，读 net 会形成自我依赖
+		var comp: SWBuildCompoentCircuit = build.getCircuitCompoent()
+		if comp.getPinReadState(dir) != -1:
+			var s := _alloc_slot()
+			_prog.op_arr.append(SWBoolProgram.OP_READ)
+			_prog.dst_arr.append(s)
+			_prog.a_arr.append(0)
+			_prog.b_arr.append(0)
+			while _prog.read_meta.size() <= s:
+				_prog.read_meta.append({})
+			_prog.read_meta[s] = {"build": build, "dir": dir}
 			return s
 		# 普通输入：从 net 读取当前信号
-		var comp: SWBuildCompoentCircuit = build.getCircuitCompoent()
 		var net: SWNet = comp.pinNetMap.get(dir, null)
 		if net == null:
 			# 无 net 连接，视为常量 0

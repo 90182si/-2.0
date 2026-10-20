@@ -27,6 +27,8 @@ func _ready() -> void:
 	#sw_circuit_analyzer.signal_changed.connect(_on_circuit_signal_changed)
 	add_child(sw_circuit_control)
 	sw_circuit_control.setBuildManager(sw_build_manager)
+	# T2.5：登记当前电路控制实例，供组件求值后端（getValue 切 slot）访问
+	SWCircuitControl.current = sw_circuit_control
 	
 	#var build:SWBuildItemDefine = SwDefine.SWBuildCreator(Vector2i(0,0),load("res://res/按钮.tres") as SWBuildDefine)
 	#var build2:SWBuildItemDefine = SwDefine.SWBuildCreator(Vector2i(0,0),load("res://res/开关.tres") as SWBuildDefine)
@@ -39,6 +41,11 @@ func _ready() -> void:
 			#holdIdleBuilds([build2],[Vector2i(x,y)])
 			#holdIdleBuilds([build3],[Vector2i(x,y)-chunkPos])
 	#sw_circuit_analyzer.end_batch()
+
+func _exit_tree() -> void:
+	# T2.5：释放当前实例登记，避免测试多轮 boot/shutdown 后残留野引用
+	if SWCircuitControl.current == sw_circuit_control:
+		SWCircuitControl.current = null
 
 func _on_circuit_signal_changed() -> void:
 	var all_builds = sw_build_manager.getAllBuilds()
@@ -68,6 +75,8 @@ func clear_all_builds() -> void:
 	#T2.2：全量清理后归零 netId 计数器，保证下一次 updateBuildCircuit 从 0 开始分配
 	if sw_circuit_control:
 		sw_circuit_control.resetNetIdCounter()
+		#T2.5：全量清理/加载（本函数开头即调 clear_all_builds）时作废 IR 后端，避免残留旧建筑 slot
+		sw_circuit_control.resetIR()
 	flush_and_update_all_chunks()
 
 func load_save_data(data: Dictionary) -> void:

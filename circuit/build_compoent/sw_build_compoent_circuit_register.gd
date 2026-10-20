@@ -90,21 +90,31 @@ var curClk:SwDefine.CircuitSignal = SwDefine.CircuitSignal.NONE
 var curD:SwDefine.CircuitSignal = SwDefine.CircuitSignal.NONE
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	if dir == _worldDir(Q_REF):
-		var clkDir = _worldDir(CLK_REF)
-		var dDir = _worldDir(D_REF)
-		var qDir = _worldDir(Q_REF)
+		# 边沿检测两种模式下都执行：qState 是寄存器时序的唯一真相（IR 的 OP_LATCH 也直读它）；
+		# 保持原顺序：先用上一拍的 curClk/curD 判沿，再刷新采样值
 		if lastClk == SwDefine.CircuitSignal.LOW and curClk == SwDefine.CircuitSignal.HIGH:
 			qState = curD
 		lastClk = curClk
 		return qState
-	var value = super.getValue(dir)
+	# T2.5：IR slot 命中时直读查表（CLK/D 输入 slot 由段求值刷新）
+	var sv := _getIrSlotValue(dir)
+	if sv != -1:
+		return SwDefine.CircuitSignal.HIGH if sv == 1 else SwDefine.CircuitSignal.LOW
+	var value = _getValueTree(dir)
 	if portIsInput(dir):
+		# 仅树路径保留副作用：把输入方向 expr 的 pull 结果写回 net 传播电线
 		var net:SWNet = pinNetMap.get(dir,null)
 		if net:
 			net.curSignal = value
 			for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
 				load.getCircuitCompoent().setValue(dir,value)
 	return value
+
+## T2.5：Q 方向为状态驱动叶，IR 编译器生成 OP_LATCH 经此入口直读 qState
+func getPinReadState(dir:SwDefine.SW_Dir) -> int:
+	if dir == _worldDir(Q_REF):
+		return 1 if qState == SwDefine.CircuitSignal.HIGH else 0
+	return -1
 
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	var retArr:Array[SWBuildItemDefine] = [buildRef]

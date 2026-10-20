@@ -12,6 +12,21 @@ const _OP_NOT    := 4
 const _OP_PASS   := 5
 const _OP_CONST  := 6
 const _OP_OUT    := 7
+const _OP_READ   := 8
+
+# T2.5 后 SWBoolProgram 为持久增量程序（含失活段），导出只遍历存活段内的指令
+func _live_indices(program: SWBoolProgram) -> Array:
+	var result: Array = []
+	if program.segments.is_empty():
+		for i in range(program.op_arr.size()):
+			result.append(i)
+		return result
+	var sorted_segs: Array = program.segments.values()
+	sorted_segs.sort_custom(func(x, y): return x["start"] < y["start"])
+	for seg: Dictionary in sorted_segs:
+		for i in range(seg["start"], seg["end"]):
+			result.append(i)
+	return result
 
 # CircuitComponentType 枚举值（只读引用，避免依赖整数序列化）
 const _COMP_BUTTON  := "BUTTON"
@@ -106,8 +121,22 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 	var slot_name: Dictionary = {}   # slot_idx → String
 	var slot_driven: Dictionary = {} # slot_idx → true（多驱动检测）
 
+	# OP_READ → 源类端口名（T2.5：状态驱动叶不再经 net 反查，直接由 meta 拿建筑）
+	for i in _live_indices(program):
+		if program.op_arr[i] != _OP_READ:
+			continue
+		var dst_slot: int = program.dst_arr[i]
+		if dst_slot < 0 or dst_slot >= program.read_meta.size():
+			continue
+		var rbuild: SWBuildItemDefine = program.read_meta[dst_slot]["build"]
+		var rtype := _get_comp_type_str(rbuild)
+		if rtype == _COMP_CLOCK:
+			slot_name[dst_slot] = "clk"
+		else:
+			slot_name[dst_slot] = "sw_%d" % rbuild.id
+
 	# OP_INPUT → 对应 input 端口名
-	for i in range(program.op_arr.size()):
+	for i in _live_indices(program):
 		if program.op_arr[i] != _OP_INPUT:
 			continue
 		var dst_slot: int = program.dst_arr[i]
@@ -127,7 +156,7 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 			slot_name[dst_slot] = "n_%d" % dst_slot
 
 	# OP_LATCH → q_<reg_id>
-	for i in range(program.op_arr.size()):
+	for i in _live_indices(program):
 		if program.op_arr[i] != _OP_LATCH:
 			continue
 		var dst_slot: int = program.dst_arr[i]
@@ -153,7 +182,7 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 			continue
 		# 找到 q_net 对应的 OP_OUT 或 OP_LATCH slot
 		# OP_LATCH 的 dst slot 对应 Q 输出
-		for i in range(program.op_arr.size()):
+		for i in _live_indices(program):
 			if program.op_arr[i] != _OP_LATCH:
 				continue
 			var dst_slot: int = program.dst_arr[i]
@@ -165,7 +194,7 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 
 	# 其余非 OP_INPUT/OP_LATCH/OP_OUT 的 slot → wire n_<slotIdx>
 	var max_slot := 0
-	for i in range(program.op_arr.size()):
+	for i in _live_indices(program):
 		if program.dst_arr[i] > max_slot:
 			max_slot = program.dst_arr[i]
 	for s in range(max_slot + 1):
@@ -173,11 +202,11 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 			slot_name[s] = "n_%d" % s
 
 	# ── 4. 多驱动检测 ─────────────────────────────────────────────
-	for i in range(program.op_arr.size()):
+	for i in _live_indices(program):
 		var op := program.op_arr[i]
 		var dst_slot: int = program.dst_arr[i]
-		# OP_INPUT 和 OP_LATCH 不产生组合 assign，跳过
-		if op == _OP_INPUT or op == _OP_LATCH or op == _OP_OUT:
+		# OP_INPUT/OP_READ 和 OP_LATCH 不产生组合 assign，跳过
+		if op == _OP_INPUT or op == _OP_READ or op == _OP_LATCH or op == _OP_OUT:
 			continue
 		if slot_driven.has(dst_slot):
 			push_error("SWVerilogEmitter.emit: 多驱动检测 — slot %d 被多条指令写入" % dst_slot)
@@ -259,7 +288,7 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 
 	# 悬空输入默认低电平
 	lines.append("// Gate assignments")
-	for i in range(program.op_arr.size()):
+	for i in _live_indices(program):
 		var op := program.op_arr[i]
 		if op != _OP_INPUT:
 			continue
@@ -270,7 +299,7 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 			lines.append("assign %s = 1'b0; // 悬空输入，默认低电平" % sname)
 
 	# 门指令
-	for i in range(program.op_arr.size()):
+	for i in _live_indices(program):
 		var op := program.op_arr[i]
 		var dst_slot: int = program.dst_arr[i]
 		var a_slot: int = program.a_arr[i]
@@ -287,6 +316,9 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 				lines.append("assign %s = ~%s;" % [dst_name, a_name])
 			_OP_PASS:
 				lines.append("assign %s = %s;" % [dst_name, a_name])
+			_OP_READ:
+				# 状态驱动叶的包装 slot（如寄存器 Q 的 PASS 自源叶子）：直通到端口名
+				lines.append("assign %s = %s;" % [dst_name, a_name])
 			_OP_CONST:
 				var val: int = a_slot  # a_arr[i] 为常量值
 				lines.append("assign %s = 1'b%d;" % [dst_name, val])
@@ -299,9 +331,10 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 					if led_build != null:
 						var led_name := "led_%d" % led_build.id
 						lines.append("assign %s = %s;" % [led_name, a_name])
-					else:
-						push_error("SWVerilogEmitter.emit: OP_OUT slot %d 找不到对应 LED" % dst_slot)
-						return ""
+					# else：内部 net（驱动其它门/寄存器，而非 LED）的 OP_OUT。
+					# T2.5 push 化后编译器为每个门输出 net 都发 OP_OUT（写回 net.curSignal 供跨段 OP_INPUT 读），
+					# 但结构导出的信号值已由 a_name（门计算结果线 n_x）表达，下游逻辑据此重连，
+					# 该 OP_OUT 对 Verilog 冗余 → 跳过（不报错）。
 				else:
 					push_error("SWVerilogEmitter.emit: OP_OUT slot %d output_meta 越界" % dst_slot)
 					return ""
@@ -322,7 +355,7 @@ func emit(program: SWBoolProgram, builds: Array) -> String:
 			var d_net: SWNet = reg_com.pinNetMap.get(d_world_dir, null)
 			# 找到 D net 对应的 slot（通过 input_meta 反查）
 			var d_slot_name := "1'b0"
-			for i in range(program.op_arr.size()):
+			for i in _live_indices(program):
 				if program.op_arr[i] != _OP_INPUT:
 					continue
 				var meta_idx: int = program.dst_arr[i]

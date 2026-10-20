@@ -92,12 +92,15 @@ static func get_all_text_in_brackets(input: String) -> Array[String]:
 
 #求值轮次：每次电路重建或信号变化时自增，表达式节点缓存按轮次失效
 static var evalEpoch:int = 0
+# T2.5 验收计数器：树路径 pull 求值调用次数（useIR 主路径下应不再增长）
+static var evalStructCallCount:int = 0
 static func NextEvalEpoch() -> int:
 	evalEpoch += 1
 	return evalEpoch
 
 #求值一个表达式节点；同一轮次内共享子树只计算一次，避免重复递归导致的指数级耗时
 static func EvalStruct(cirStruct:SwDefine.SWCircuitStruct) -> int:
+	evalStructCallCount += 1
 	if cirStruct == null:
 		return 0
 	if cirStruct.cachedEpoch == evalEpoch:
