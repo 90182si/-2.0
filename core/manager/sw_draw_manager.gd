@@ -60,20 +60,21 @@ func updataAllChunks() -> void:
 		if _chunkInstance.has(chunkPos):
 			_chunkInstance[chunkPos].status = SwDefine.ChunkStatus.UNLOADING
 		_pending_tasks[0][chunkPos] = false
-func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
+func updataChunks(chunkPosArr:Array[Vector2i], patchMap: Dictionary = {}) -> void:
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
 	for chunkPos in chunkPosArr:
 		if _chunkInstance.has(chunkPos):
 			# 已有区块：直接刷新内容，不走"卸载→重加载"流程，避免闪烁
-			_refreshChunkContent(chunkPos)
+			_refreshChunkContent(chunkPos, patchMap.get(chunkPos, []))
 		else:
 			# 新区块：加入待加载任务
 			_pending_tasks[0][chunkPos] = false
 	pass
 
 # 直接刷新已有区块的绘制内容（不卸载、不隐藏，旧内容继续显示直到新buffer就绪）
-func _refreshChunkContent(chunkPos:Vector2i) -> void:
+# patchBuilds 非空时走 R3.1 增量补丁：只覆写这些建筑的实例行，块内其余保持原样
+func _refreshChunkContent(chunkPos:Vector2i, patchBuilds:Array = []) -> void:
 	if not _chunkInstance.has(chunkPos):
 		return
 	var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
@@ -89,7 +90,7 @@ func _refreshChunkContent(chunkPos:Vector2i) -> void:
 			return
 		# 直接在已有实例上触发重绘，旧buffer继续显示
 		# 线程计算完成后通过 call_deferred 原子替换，不会出现空白帧
-		chunkIns.mesh_instance.drawMap(chunkBuilds)
+		chunkIns.mesh_instance.drawMap(chunkBuilds, false, patchBuilds)
 	else:
 		# Tiling等其他模式：保持原有卸载→重加载逻辑
 		chunkIns.status = SwDefine.ChunkStatus.UNLOADING

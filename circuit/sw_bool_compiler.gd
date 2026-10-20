@@ -27,7 +27,18 @@ func compile(circuits: Array, liveCircuitIDs: Dictionary = {}) -> SWBoolProgram:
 		# OP_OUT 目标 net 去重：同一批次内多个引脚表达式可能写回同一个 net
 		var out_net_seen: Dictionary = {}
 
-		for build: SWBuildItemDefine in cir.buildArr:
+		# T2.6：拓扑排序——纯组合电路按 noticeMap 依赖顺序发射指令，
+		# 使运行时可用单趟求值收敛（跳过 MAX_SETTLE 迭代）；
+		# 只要电路内任一 build 被 in_loop 标记（Kosaraju SCC>=2 检出组合环），
+		# 就退回到迭代不动点路径保证语义等价。
+		var has_loop: bool = false
+		for b: SWBuildItemDefine in cir.buildArr:
+			if b.in_loop:
+				has_loop = true
+				break
+		var emit_order: Array = _topo_sort_builds(cir) if not has_loop else cir.buildArr
+
+		for build: SWBuildItemDefine in emit_order:
 			if SwCommon.IsWireBuild(build):
 				continue
 			var comp: SWBuildCompoentCircuit = build.getCircuitCompoent()
@@ -41,6 +52,8 @@ func compile(circuits: Array, liveCircuitIDs: Dictionary = {}) -> SWBoolProgram:
 				var src_slot := _compile_expr(expr, build, dir)
 				# 全部 pinExprMap 方向（含 LED/寄存器输入侧内部 slot）都进 slotMap，供 getValue 切 slot
 				slotMap[build.id * 4 + dir] = src_slot
+				# T2.7：登记 slot 归属建筑，事件路径据此把「重跑 reCalSignals」缩小到值变化的建筑
+				_prog.add_slot_owner(src_slot, build)
 				# pinExprMap 的 key 不总是输出方向：
 				# NOT 门表达式挂在输入侧（antiDir(rotation)），结果要写回 rotation 方向的输出 net；
 				# LED/寄存器输入侧表达式只算内部状态，没有输出 net，不发 OP_OUT
@@ -63,9 +76,82 @@ func compile(circuits: Array, liveCircuitIDs: Dictionary = {}) -> SWBoolProgram:
 							_prog.output_meta.append({})
 						_prog.output_meta[out_slot] = {"net": net}
 
-		_prog.segments[cir.circuitID] = {"start": seg_start, "end": _prog.op_arr.size(), "builds": seg_builds}
+		_prog.segments[cir.circuitID] = {
+			"start": seg_start,
+			"end": _prog.op_arr.size(),
+			"builds": seg_builds,
+			# T2.6：无组合环的段按拓扑序发射，运行时单趟即收敛；
+			# 有组合环时保留 MAX_SETTLE 迭代路径以匹配旧树 pull 语义
+			"iters": 1 if not has_loop else SWBoolProgram.MAX_SETTLE
+		}
 
+	# Phase 2：指令数组本轮可能追加/重排，索引表统一在编译结束时重建一次
+	_prog.build_indices()
 	return _prog
+
+## T2.6：基于 noticeMap 的 Kahn 拓扑排序，返回非电线 build 的发射顺序
+## 依赖关系：noticeMap[src] = [dst1, dst2, ...] 表示 src 驱动 dst（src 必须先求值）
+## 时序屏障：与 detect_combinational_loops 对齐，isSequential 建筑的出边（如寄存器 Q → 下游）
+## 不计入组合依赖图，避免计数器"Q→adder→D→Q"这类合法时序反馈把整段踢出拓扑路径。
+## 未访问到的剩余节点（组合环或不可达）按原顺序追加，交由外层 has_loop 判定退回迭代。
+static func _topo_sort_builds(cir: SwDefine.SWCircuitData) -> Array:
+	var builds: Array = []
+	var build_set: Dictionary = {}
+	for b: SWBuildItemDefine in cir.buildArr:
+		if SwCommon.IsWireBuild(b):
+			continue
+		builds.append(b)
+		build_set[b] = true
+
+	# 过滤邻接表：跳过时序元件出边
+	var adj: Dictionary = {}
+	for src in cir.noticeMap.keys():
+		if not build_set.has(src):
+			continue
+		var src_comp: SWBuildCompoentCircuit = src.getCircuitCompoent()
+		if src_comp != null and src_comp.isSequential():
+			continue
+		var filtered: Array = []
+		for dst in cir.noticeMap[src]:
+			if build_set.has(dst):
+				filtered.append(dst)
+		adj[src] = filtered
+
+	var in_deg: Dictionary = {}
+	for b in builds:
+		in_deg[b] = 0
+	for src in adj.keys():
+		for dst in adj[src]:
+			in_deg[dst] = in_deg.get(dst, 0) + 1
+
+	var queue: Array = []
+	var head := 0
+	for b in builds:
+		if in_deg[b] == 0:
+			queue.append(b)
+
+	var result: Array = []
+	var visited: Dictionary = {}
+	while head < queue.size():
+		var u = queue[head]
+		head += 1
+		if visited.has(u):
+			continue
+		visited[u] = true
+		result.append(u)
+		for v in adj.get(u, []):
+			if visited.has(v):
+				continue
+			in_deg[v] -= 1
+			if in_deg[v] == 0:
+				queue.append(v)
+
+	# 有环/不可达节点：按原顺序补齐，保证所有 build 仍被编译发射
+	for b in builds:
+		if not visited.has(b):
+			result.append(b)
+
+	return result
 
 ## 求表达式 key 对应的输出方向；无输出（LED / 寄存器 CLK·D 输入侧）返回 -1
 func _expr_output_dir(comp: SWBuildCompoentCircuit, dir: int) -> int:

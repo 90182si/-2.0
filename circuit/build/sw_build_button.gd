@@ -21,9 +21,9 @@ func onPressed(_pressed:bool) -> void:
 	else:
 		renderable.drawRect = buildDefine.atlasTextureOff.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
-	#仅当主体贴图 region 真正切换时才失效渲染缓存，供点击路径按需重建几何层
+	#仅当主体贴图 region 真正切换时失效渲染缓存，供点击路径按需重建几何层（R3.2：只覆写主体 part）
 	if renderable.drawRect != oldRect:
-		markRenderPartsDirty()
+		markBodyRectDirty()
 
 func resetBuildState() -> void:
 	in_loop = false

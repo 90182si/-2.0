@@ -174,8 +174,24 @@ func _refreshDirtyBuildChunks(builds:Array) -> void:
 			dirtyBuilds.append(b)
 	if dirtyBuilds.size() == 0:
 		return
-	var notifyChunkPosArr = getNotifyChunkPosArr(dirtyBuilds)
-	sw_draw_manager.updataChunks(notifyChunkPosArr)
+	# R3.1：信号变化只改了少数建筑的部件（非门/LED 换贴图），按 chunk 分组下发增量补丁，
+	# 不再让一个建筑的变化牵动整块所有建筑重填实例
+	var notifyChunkPosArr:Array[Vector2i] = []
+	var patchMap:Dictionary[Vector2i,Array] = {}
+	for b in dirtyBuilds:
+		# 补丁条目一律是 [建筑, parts 快照, style 补丁]，全部在主线程准备好，工作线程只读：
+		# - style 补丁非空：本次只换了主体贴图，条目形如 [b, [], [style_id, bodyStart, bodyCount]]，
+		#   不必复制 parts 数组，工作线程只覆写主体那几行的 style 浮点（R3.4）；
+		# - style 补丁为空：结构变了，下发 [b, parts 快照, []]，由工作线程整行重写
+		var comp: SWBuildCompoentRenderable = b.getRenderableCompoent()
+		var stylePatch: Array = comp.getStylePatch()
+		var entry: Array = [b, [], stylePatch] if not stylePatch.is_empty() else [b, comp.getRenderParts(), []]
+		var chunkPos = SwCommon.GetChunkPos(b.buildAxisPos)
+		if not patchMap.has(chunkPos):
+			patchMap[chunkPos] = []
+			notifyChunkPosArr.append(chunkPos)
+		patchMap[chunkPos].append(entry)
+	sw_draw_manager.updataChunks(notifyChunkPosArr, patchMap)
 
 func flush_signal_tex() -> void:
 	if SWSignalTexture.instance == null:
@@ -331,12 +347,17 @@ func _do_cut() -> void:
 		builds.append(build)
 	var center = _getSelectedBuildCenter()
 	holdLayerRef.setHeldBuilds(builds, center)
-	var poss:Array[Vector2i] = []
-	for build in builds:
-		poss.append(build.buildAxisPos)
-	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
+	var notifyBuilds = builds.duplicate()
 	sw_build_manager.delBuilds(builds)
-	flush_and_update_chunks(notifyChunkPosArr)
+	# 与擦除路径同构：删除必须触发电路重建，否则旧电路/IR 段里仍留着被剪切的建筑；
+	# 只 flush 被剪区块会让渲染与电路状态分叉（R3.1 补丁会去给已不在 chunk 里的建筑刷格子）
+	if sw_circuit_control:
+		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(builds))
+	flush_and_update_chunks(getNotifyChunkPosArr(notifyBuilds))
+	# 剪切的建筑进入暂存层待重放，本拍必须先注销时钟；重放放置时 onPlaceDragEnded 会重新登记
+	for build in builds:
+		if build is SWBuildClockSiggen:
+			delClockBuild(build)
 	selectedBuilds.clear()
 	#if sw_circuit_analyzer and not sw_circuit_analyzer.is_in_batch():
 		#sw_circuit_analyzer.analyze()
@@ -347,14 +368,20 @@ func _do_delete_selected() -> void:
 	var builds:Array[SWBuildItemDefine] = []
 	for build in selectedBuilds:
 		builds.append(build)
-	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
 	selectedBuilds.clear()
+	var notifyBuilds = builds.duplicate()
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.begin_batch()
 	sw_build_manager.delBuilds(builds)
+	if sw_circuit_control:
+		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(builds))
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.end_batch()
-	flush_and_update_chunks(notifyChunkPosArr)
+	flush_and_update_chunks(getNotifyChunkPosArr(notifyBuilds))
+	# 漏注销会让已删除的时钟留在 clockBuildArr 里逐拍驱动旧电路（删除后计数器仍在跳的根因）
+	for build in builds:
+		if build is SWBuildClockSiggen:
+			delClockBuild(build)
 
 func _do_copy() -> void:
 	if selectedBuilds.size() == 0:
@@ -463,12 +490,15 @@ func _process(delta: float) -> void:
 	var changedBuilds:Array[SWBuildItemDefine] = []
 	if curTimeGap > CLOCK_GAP_TIME*2:
 		curTimeGap = 0
+		# T2.8：本拍所有时钟事件共用下游 net，signalTex 上色合并到拍尾去重
+		sw_circuit_control.beginTick()
 		for build in clockBuildArr.keys():
 			build.onPressed(true)
 		#sw_circuit_control.updateBuildCircuit(clockBuildArr.keys())
 			var newBuilds = sw_circuit_control.buildSignalChanged(build)
 			changedBuilds.append_array(newBuilds)
 			changedBuilds.append(build)
+		sw_circuit_control.endTick()
 		# T1.5: 时钟 tick 路径增量刷 signalTex；Fix-3A: 仅当 LED/NOT/寄存器等主体贴图真变化时才重建对应 chunk
 		if changedBuilds.size() > 0:
 			if SWSignalTexture.instance != null:

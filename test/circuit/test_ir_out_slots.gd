@@ -1,6 +1,7 @@
 extends GutTest
 # Task#5 回归测试：
-# Fix-4A —— useIR=false（默认）时 updateBuildCircuit 不再编译 IR（boolProgram 保持 null）
+# Fix-4A —— useIR=false 时 updateBuildCircuit 不编译 IR（boolProgram 保持 null）。
+#   注意：useIR 现默认 true（性能优化后 IR 为主路径），故本用例先显式关闭再加载存档。
 # Fix-4B —— OP_OUT 的 dst 使用 slot 索引（不再是指令索引），且目标 net 为输出方向的 net
 #   * NOT 门表达式挂在输入侧 key 上，OP_OUT 必须写回 rotation 方向的输出 net
 #   * LED / 寄存器输入侧表达式没有输出 net，不应产生 OP_OUT
@@ -27,8 +28,10 @@ func test_ir_disabled_by_default_and_out_slot_semantics() -> void:
 		return
 	var bm: SWBuildManager = harness.build_layer.sw_build_manager
 
-	# ── Fix-4A：默认 useIR=false，加载存档触发 updateBuildCircuit 后不编译 IR ──
-	assert_false(control.useIR, "useIR 默认应为 false")
+	# ── Fix-4A：useIR=false 时加载存档触发 updateBuildCircuit 后不编译 IR ──
+	assert_true(control.useIR, "useIR 默认应为 true（IR 为主求值路径）")
+	control.useIR = false
+	control.boolProgram = null
 	var data: Dictionary = await harness.load_save(SAVE_NAME)
 	if data.is_empty():
 		pending("存档不存在，跳过: " + SAVE_NAME)

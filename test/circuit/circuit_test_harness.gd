@@ -98,11 +98,12 @@ func set_switch(grid_pos: Vector2i, on: bool) -> bool:
 
 # 读取某位置建筑物当前的信号状态（CircuitSignal）。
 # 对灯泡(SWBuildLed)而言，signal_state 即其亮灭：HIGH=亮，LOW=灭。
+# 电线不存状态（R4.1 起 IR 事件路径不再逐帧回写），getDisplaySignal 会按其 net 现取。
 func get_signal_state(grid_pos: Vector2i) -> SwDefine.CircuitSignal:
 	var build := get_build(grid_pos)
 	if build == null:
 		return SwDefine.CircuitSignal.NONE
-	return build.signal_state as SwDefine.CircuitSignal
+	return build.getDisplaySignal()
 
 func _notify_signal_changed(build: SWBuildItemDefine) -> void:
 	var affected = build_layer.sw_circuit_control.buildSignalChanged(build)

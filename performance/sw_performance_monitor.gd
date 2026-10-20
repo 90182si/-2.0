@@ -227,7 +227,7 @@ func _format_build_info(build: SWBuildItemDefine) -> String:
 	lines.append("位置: (%d, %d)" % [build.buildAxisPos.x, build.buildAxisPos.y])
 	lines.append("朝向: %s" % _dir_to_text(build.rotation))
 	lines.append("类型: %s" % _comp_type_to_text(build.buildDefine.circuit_component_type))
-	lines.append("信号: %s" % _signal_to_text(build.signal_state))
+	lines.append("信号: %s" % _signal_to_text(build.getDisplaySignal()))
 	lines.append("电路: %s" % _circuit_to_text(build.circuit))
 	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
 		var wireBuild:SWBuildWire = build as SWBuildWire

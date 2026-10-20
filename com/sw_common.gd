@@ -194,15 +194,19 @@ static func EqualValues(args: Array) -> int:
 		return EvalStruct(arg)
 	return 0
 
+# 线色表按 wireName 缓存复用：调用方只读 [0]/[1]，不修改返回数组
+static var _wireColorCache: Dictionary = {}
+
 static func GetWireColor(wireName:String) -> Array[Color]:
+	if _wireColorCache.has(wireName):
+		return _wireColorCache[wireName]
 	var retArr:Array[Color] = []
 	match wireName:
-		"电线A":
-			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
 		"电线B":
 			retArr = [Color(0.335, 0.231, 0.737, 1.0),Color(0.721, 0.713, 0.977, 1.0)]
 		_:
 			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
+	_wireColorCache[wireName] = retArr
 	return retArr
 
 # 根据 net 的当前信号和电线名称，返回显示颜色

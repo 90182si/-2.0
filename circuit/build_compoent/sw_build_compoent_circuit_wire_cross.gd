@@ -64,7 +64,7 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 			wBuild.getCircuitCompoent().setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
 
-#交叉电线不自行求值，视觉由传播时的 setValue 驱动；仅返回自身
+#交叉电线不自行求值，视觉由 signalTex 按 netId 上色驱动；仅返回自身
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	return [buildRef]
 
@@ -84,6 +84,13 @@ func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	buildRef.buildStateChanged(value)
 	pass
+
+## R4.1：交叉电线有两条 net，显示/存档取纵向 net（无则取横向）——
+## 旧行为是「最后写回者胜」，本就不是确定值
+func getWireLevel() -> int:
+	if v_net != null:
+		return int(v_net.curSignal)
+	return int(h_net.curSignal) if h_net != null else SwDefine.CircuitSignal.NONE
 
 func initPortState(swBuildManager:SWBuildManager) -> void:
 	connectWireGroup(swBuildManager)

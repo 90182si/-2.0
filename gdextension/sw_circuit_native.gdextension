@@ -1,0 +1,8 @@
+[configuration]
+
+entry_symbol = "sw_circuit_native_init"
+compatibility_minimum = "4.1"
+
+[libraries]
+
+windows.debug.x86_64 = "res://gdextension/bin/libsw_circuit_native.windows.debug.x86_64.dll"

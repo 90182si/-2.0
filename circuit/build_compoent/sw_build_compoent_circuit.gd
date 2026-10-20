@@ -311,15 +311,17 @@ func getWireGroupBuilds(swBuildManager:SWBuildManager,wireBuild:SWBuildItemDefin
 			wireGroup.append({"build":neiBuild,"dir":neiDir})
 	return wireGroup
 
+## R4.1：不再把输入 net 的电线建筑塞进通知列表。电线的显示由 signalTex 按 netId 上色（GPU 侧），
+## 其引脚部件只随拓扑（连/断）变化，而拓扑变化由编辑路径自行标脏；把它们列进来只会让
+## _refreshDirtyBuildChunks 每帧多跑上千次必然落空的 isRenderPartsDirty 检查。
 func reCalSignals() -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = [buildRef]
-	for dir in 4:
-		if not portIsInput(dir):
-			continue
-		var net:SWNet = pinNetMap.get(dir,null)
-		if net:
-			retArr.append_array(net.wireGroup.wireBuilds.keys())
-	return retArr
+	return [buildRef]
+
+## R4.1：电线类组件的电平就是所在 net 的 curSignal——IR 事件路径不再逐帧回写电线 signal_state，
+## 显示与存档改经 SWBuildItemDefine.getDisplaySignal() 现取。返回 -1 表示「不是电线，
+## 请回落到 signal_state」。
+func getWireLevel() -> int:
+	return -1
 
 func initPortState(swBuildManager:SWBuildManager) -> void:
 	pass

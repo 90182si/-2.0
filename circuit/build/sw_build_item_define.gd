@@ -36,6 +36,11 @@ func markRenderPartsDirty() -> void:
 	if _renderableCompoent:
 		_renderableCompoent.markRenderPartsDirty()
 
+## R3.2：主体贴图切换的轻量失效（只覆写 body part）
+func markBodyRectDirty() -> void:
+	if _renderableCompoent:
+		_renderableCompoent.markBodyRectDirty()
+
 #查询渲染缓存是否已失效；组件尚未创建时视为无需重建（返回 false，避免懒创建误判为 dirty）
 func isRenderPartsDirty() -> bool:
 	if _renderableCompoent:
@@ -49,7 +54,14 @@ var signal_state:int = SwDefine.CircuitSignal.NONE
 var circuit_on:bool = false
 #var tunnel_pair_id:int = -1
 #var tunnel_extra_data:int = 0
-var in_loop:bool = false
+var in_loop:bool = false:
+	set(new_value):
+		if in_loop == new_value:
+			return
+		in_loop = new_value
+		#环路警示红写在引脚/底座部件的颜色里，翻转后必须整份重建（视觉补丁覆盖不到）
+		if _renderableCompoent:
+			_renderableCompoent.markRenderPartsDirty()
 var circuit:SwDefine.SWCircuitData = null
 
 
@@ -89,9 +101,20 @@ func resetBuildState() -> void:
 	in_loop = false
 	getCircuitCompoent().resetPortState()
 	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
+	# 引脚 net 归属与主体贴图都被重置，视觉补丁不足以表达，须整份重建
+	markRenderPartsDirty()
 
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	signal_state = signalValue
+
+## R4.1：显示/存档用的电平。电线不再被逐帧回写 signal_state（IR 事件路径省掉整条写回链），
+## 其电平按所在 net 现取；其余建筑仍读自身 signal_state。
+func getDisplaySignal() -> SwDefine.CircuitSignal:
+	if _circuitCompoent != null:
+		var lvl: int = _circuitCompoent.getWireLevel()
+		if lvl >= 0:
+			return lvl as SwDefine.CircuitSignal
+	return signal_state
 
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	pass

@@ -78,7 +78,7 @@ static func save_builds(name: String, builds: Array, viewport: Viewport, karnaug
 		b["rot"] = build.rotation
 		b["comp_type"] = build.buildDefine.circuit_component_type
 		b["circuit_on"] = build.circuit_on
-		b["signal_state"] = build.signal_state
+		b["signal_state"] = build.getDisplaySignal()
 		# Fix-3B: 持久化隧道配对 id（SWBuildWireTunnel.pairId），加载时回填以跳过空间搜索配对
 		b["tunnel_pair_id"] = (build as SWBuildWireTunnel).pairId if build is SWBuildWireTunnel else -1
 		b["in_loop"] = build.in_loop

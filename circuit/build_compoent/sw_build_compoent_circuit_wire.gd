@@ -64,7 +64,7 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 			wBuild.getCircuitCompoent().setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
 
-#电线不自行求值，视觉由传播时的 setValue 驱动；仅返回自身
+#电线不自行求值，视觉由 signalTex 按 netId 上色驱动；仅返回自身
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	return [buildRef]
 
@@ -81,6 +81,10 @@ func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	buildRef.buildStateChanged(value)
 	pass
+
+## R4.1：电线电平即所在 net 的电平（未连网时视为无信号）
+func getWireLevel() -> int:
+	return int(net.curSignal) if net != null else SwDefine.CircuitSignal.NONE
 
 func initPortState(swBuildManager:SWBuildManager) -> void:
 	connectWireGroup(swBuildManager)

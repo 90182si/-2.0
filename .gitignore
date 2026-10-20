@@ -22,3 +22,7 @@ desktop.ini
 
 #测试产物
 test/*.xml
+
+# --- GDExtension 本地产物：cmake 多配置构建目录与 MSVC 调试符号（可再生产物，不入库）---
+gdextension/build/
+*.pdb

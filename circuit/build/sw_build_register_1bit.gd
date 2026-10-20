@@ -19,6 +19,6 @@ func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 		renderable.drawRect = buildDefine.atlasTextureOn.region
 	else:
 		renderable.drawRect = buildDefine.atlasTextureOff.region
-	#仅当主体贴图 region 真正切换时才失效渲染缓存
+	#仅当主体贴图 region 真正切换时失效渲染缓存（R3.2：只覆写主体 part）
 	if renderable.drawRect != oldRect:
-		markRenderPartsDirty()
+		markBodyRectDirty()

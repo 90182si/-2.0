@@ -9,15 +9,19 @@ static var instance: SWStyleTexture = null
 var image: Image          # FORMAT_RGBAF, width=styleCount, height=1
 var texture: ImageTexture
 var styleCount: int = 0
-var _rect_to_id: Dictionary = {}  # "x,y,w,h" → styleId
+var _rect_to_id: Dictionary = {}  # Rect2（整数化 region）→ styleId
 
 # ──────────────────────────────────────────────
 #  去重登记
 # ──────────────────────────────────────────────
 
+## region 键归一化：图集 region 实际都是整数矩形，浮点尾差不应分裂成两个 styleId
+static func _norm_key(r: Rect2) -> Rect2:
+	return Rect2(float(int(r.position.x)), float(int(r.position.y)), float(int(r.size.x)), float(int(r.size.y)))
+
 ## 去重登记 region，返回 styleId。已存在则返回既有 id
 func register_rect(r: Rect2) -> int:
-	var key := "%d,%d,%d,%d" % [int(r.position.x), int(r.position.y), int(r.size.x), int(r.size.y)]
+	var key := _norm_key(r)
 	if _rect_to_id.has(key):
 		return _rect_to_id[key]
 	var id := styleCount
@@ -27,8 +31,7 @@ func register_rect(r: Rect2) -> int:
 
 ## 查询已登记 rect 的 styleId，未登记返回 -1
 func get_style_id(r: Rect2) -> int:
-	var key := "%d,%d,%d,%d" % [int(r.position.x), int(r.position.y), int(r.size.x), int(r.size.y)]
-	return _rect_to_id.get(key, -1)
+	return _rect_to_id.get(_norm_key(r), -1)
 
 # ──────────────────────────────────────────────
 #  构建纹理
@@ -40,8 +43,7 @@ func build_texture() -> void:
 		return
 	image = Image.create(styleCount, 1, false, Image.FORMAT_RGBAF)
 	for key in _rect_to_id:
-		var parts = key.split(",")
-		var rect := Rect2(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]))
+		var rect: Rect2 = key
 		var id: int = _rect_to_id[key]
 		image.set_pixel(id, 0, Color(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
 	texture = ImageTexture.create_from_image(image)

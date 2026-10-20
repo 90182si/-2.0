@@ -18,9 +18,9 @@ func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 		renderable.drawRect = buildDefine.atlasTextureOff.region
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
 		renderable.drawRect = buildDefine.atlasTextureOn.region
-	#仅当主体贴图 region 真正切换时才失效渲染缓存，避免每次信号重算都触发几何层重建
+	#仅当主体贴图 region 真正切换时失效渲染缓存；R3.2 下这只覆写主体 part，不重建整份部件列表
 	if renderable.drawRect != oldRect:
-		markRenderPartsDirty()
+		markBodyRectDirty()
 
 func _sub_init() -> void:
 	var renderable = getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable
