@@ -8,7 +8,7 @@ extends GutTest
 const HARNESS_SCRIPT := preload("res://test/circuit/circuit_test_harness.gd")
 const SAVE_NAME := "加法器3"
 
-var harness = null
+var harness:CircuitTestHarness = null
 var iverilog_available: bool = false
 
 func before_each() -> void:
@@ -29,6 +29,9 @@ func after_each() -> void:
 func test_verilog_export() -> void:
 	# 1. 启动游戏并加载存档
 	await harness.boot_game()
+	# Fix-4A 后 useIR 默认关闭、加载时不再编译 IR；
+	# Verilog 导出依赖 boolProgram，测试内显式开启 useIR 再加载存档
+	harness.build_layer.sw_circuit_control.useIR = true
 	var data: Dictionary = await harness.load_save(SAVE_NAME)
 	assert_false(data.is_empty(), "存档不存在或无法加载: " + SAVE_NAME)
 
@@ -72,7 +75,7 @@ func test_verilog_export() -> void:
 		return
 
 	# 收集所有非电线建筑
-	var all_builds := harness.build_layer.sw_build_manager.getAllBuilds()
+	var all_builds:Array[SWBuildItemDefine] = harness.build_layer.sw_build_manager.getAllBuilds()
 	var builds: Array = []
 	for build in all_builds:
 		if not SwCommon.IsWireBuild(build):

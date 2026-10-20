@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://f3j6qofwrdyu"]
+
+[ext_resource type="Script" uid="uid://cxdaxujqxvqre" path="res://tools/repro_loop_check.gd" id="1_repro"]
+
+[node name="ReproLoopCheck" type="Node" unique_id=1692997587]
+script = ExtResource("1_repro")

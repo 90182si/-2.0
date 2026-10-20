@@ -36,6 +36,12 @@ func markRenderPartsDirty() -> void:
 	if _renderableCompoent:
 		_renderableCompoent.markRenderPartsDirty()
 
+#查询渲染缓存是否已失效；组件尚未创建时视为无需重建（返回 false，避免懒创建误判为 dirty）
+func isRenderPartsDirty() -> bool:
+	if _renderableCompoent:
+		return _renderableCompoent.isRenderPartsDirty()
+	return false
+
 func rotOnce() -> void:
 	rotation += 1
 	

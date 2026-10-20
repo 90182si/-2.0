@@ -33,26 +33,16 @@ func getBuildExpr() -> void:
 					if wire_net == null or seen_nets.has(wire_net):
 						continue
 					seen_nets[wire_net] = true
-					for wire_driver:Dictionary in wire_net.getDrivers():
-						var wb = wire_driver["build"]
-						var wpDir = wire_driver["pinDir"]
-						if wb == null:
-							continue
-						wb.getCircuitCompoent().getBuildExpr()
-						if wb.getCircuitCompoent()._buildingExpr:
-							wb.in_loop = true
-							buildRef.in_loop = true
-							continue
-						var wexpr = wb.getCircuitCompoent().getExpr(wpDir)
-						if wexpr:
-							expr_struct.args.append(wexpr)
+					appendDriverExprs(expr_struct, wire_net)
 				continue
-			build.getCircuitCompoent().getBuildExpr()
-			if build.getCircuitCompoent()._buildingExpr:
+			var drvComp:SWBuildCompoentCircuit = build.getCircuitCompoent()
+			drvComp.getBuildExpr()
+			# 时序屏障：驱动是寄存器时不判环，直接取其 Q 侧状态叶子
+			if drvComp._buildingExpr and not drvComp.isSequential():
 				build.in_loop = true
 				buildRef.in_loop = true
 				continue
-			var expr = build.getCircuitCompoent().getExpr(pDir)
+			var expr = drvComp.getExpr(pDir)
 			if expr:
 				expr_struct.args.append(expr)
 		# 无驱动源时不创建表达式（浮空=低电平）
@@ -63,14 +53,15 @@ func getBuildExpr() -> void:
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	var value = super.getValue(dir)
 	var net:SWNet = pinNetMap.get(dir,null)
-	if net:
+	#仅在有效电平时写入，避免 NONE 覆盖驱动源已写入的正确信号
+	if net and value != SwDefine.CircuitSignal.NONE:
 		net.curSignal = value
 		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
 			load.getCircuitCompoent().setValue(dir,value)
 	return value
 	
 func reCalSignals() -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
+	var retArr:Array[SWBuildItemDefine] = [buildRef]#super.reCalSignals()
 	var v1 = getValue(SwDefine.SW_Dir.UP) == SwDefine.CircuitSignal.HIGH
 	var v2 = getValue(SwDefine.SW_Dir.RIGHT) == SwDefine.CircuitSignal.HIGH
 	var v3 = getValue(SwDefine.SW_Dir.DOWN) == SwDefine.CircuitSignal.HIGH

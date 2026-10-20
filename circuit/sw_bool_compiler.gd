@@ -13,6 +13,8 @@ func compile(circuits: Array) -> SWBoolProgram:
 	_prog = SWBoolProgram.new()
 	_next_slot = 0
 	_node_slot.clear()
+	# OP_OUT 目标 net 去重：多个引脚表达式可能写回同一个 net，只发一条输出指令
+	var out_net_seen: Dictionary = {}
 
 	for cir: SwDefine.SWCircuitData in circuits:
 		for build: SWBuildItemDefine in cir.buildArr:
@@ -25,21 +27,40 @@ func compile(circuits: Array) -> SWBoolProgram:
 				var expr: SwDefine.SWCircuitStruct = comp.pinExprMap[dir]
 				if expr == null:
 					continue
-				var src_slot := _compile_expr(expr, build, dir)
-				# 输出写回 net
-				var net: SWNet = comp.pinNetMap.get(dir, null)
-				if net == null:
+				# pinExprMap 的 key 不总是输出方向：
+				# NOT 门表达式挂在输入侧（antiDir(rotation)），结果要写回 rotation 方向的输出 net；
+				# LED/寄存器输入侧表达式只算内部状态，没有输出 net，跳过不发 OP_OUT
+				var out_dir := _expr_output_dir(comp, dir)
+				if out_dir < 0:
 					continue
-				var out_idx := _prog.op_arr.size()
+				var net: SWNet = comp.pinNetMap.get(out_dir, null)
+				if net == null or out_net_seen.has(net):
+					continue
+				var src_slot := _compile_expr(expr, build, dir)
+				out_net_seen[net] = true
+				# 输出写回 net：dst 用 slot 索引（与 OP_AND 等指令 dst 语义一致，
+				# 同时作为 output_meta 的下标，和 OP_INPUT 用 dst 索引 input_meta 对称），
+				# 不再用指令索引，避免 _ensure_slots 按指令数量过度扩容 _slots
+				var out_slot := _alloc_slot()
 				_prog.op_arr.append(SWBoolProgram.OP_OUT)
-				_prog.dst_arr.append(out_idx)  # 用指令索引作唯一标识
+				_prog.dst_arr.append(out_slot)
 				_prog.a_arr.append(src_slot)
 				_prog.b_arr.append(0)
-				while _prog.output_meta.size() <= out_idx:
+				while _prog.output_meta.size() <= out_slot:
 					_prog.output_meta.append({})
-				_prog.output_meta[out_idx] = {"net": net}
+				_prog.output_meta[out_slot] = {"net": net}
 
 	return _prog
+
+## 求表达式 key 对应的输出方向；无输出（LED / 寄存器 CLK·D 输入侧）返回 -1
+func _expr_output_dir(comp: SWBuildCompoentCircuit, dir: int) -> int:
+	if comp is SWBuildCompoentCircuitNot:
+		# NOT 门：表达式挂在输入侧 key 上，输出方向即机身 rotation
+		return comp.buildRef.rotation
+	if comp.portIsOutput(dir):
+		# SOURCE / CLOCK / 寄存器 Q：key 本身就是输出方向
+		return dir
+	return -1
 
 # ── 表达式树扁平化（两栈迭代后序遍历） ──
 
@@ -253,6 +274,11 @@ static func detect_combinational_loops(circuits: Array) -> Array:
 
 	for cir: SwDefine.SWCircuitData in circuits:
 		for src_build: SWBuildItemDefine in cir.noticeMap.keys():
+			# 时序屏障：寄存器 Q 出边不参与组合环判定
+			var comp = src_build.getCircuitCompoent()
+			if comp and comp.isSequential():
+				all_nodes[src_build] = true
+				continue
 			all_nodes[src_build] = true
 			if not adj.has(src_build):
 				adj[src_build] = []
@@ -301,24 +327,23 @@ static func detect_combinational_loops(circuits: Array) -> Array:
 	return loop_builds
 
 static func _iterative_dfs_forward(start, adj: Dictionary, visited: Dictionary, order: Array) -> void:
-	var stack: Array = [{"node": start, "expanded": false}]
+	if visited.has(start):
+		return
+	var stack: Array = [{"node": start, "idx": 0}]
+	visited[start] = true
 	while stack.size() > 0:
 		var top: Dictionary = stack[stack.size() - 1]
 		var node = top["node"]
-		if top["expanded"]:
-			stack.pop_back()
-			if not visited.has(node):
-				visited[node] = true
-				order.append(node)
-			continue
-		if visited.has(node):
-			stack.pop_back()
-			continue
-		top["expanded"] = true
 		var neighbors: Array = adj.get(node, [])
-		for neighbor in neighbors:
-			if not visited.has(neighbor):
-				stack.append({"node": neighbor, "expanded": false})
+		if top["idx"] < neighbors.size():
+			var nb = neighbors[top["idx"]]
+			top["idx"] += 1
+			if not visited.has(nb):
+				visited[nb] = true
+				stack.append({"node": nb, "idx": 0})
+		else:
+			stack.pop_back()
+			order.append(node)
 
 static func _iterative_dfs_reverse(start, radj: Dictionary, visited: Dictionary, scc_id: Dictionary, scc_idx: int) -> int:
 	var stack: Array = [start]

@@ -13,7 +13,12 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 # Q 输出状态驱动主体贴图亮灭
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
+	var renderable := getRenderableCompoent()
+	var oldRect:Rect2 = renderable.drawRect
 	if signalValue == SwDefine.CircuitSignal.HIGH:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
+		renderable.drawRect = buildDefine.atlasTextureOn.region
 	else:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
+		renderable.drawRect = buildDefine.atlasTextureOff.region
+	#仅当主体贴图 region 真正切换时才失效渲染缓存
+	if renderable.drawRect != oldRect:
+		markRenderPartsDirty()

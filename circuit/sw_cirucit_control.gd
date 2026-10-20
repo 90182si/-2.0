@@ -8,6 +8,8 @@ var boolProgram: SWBoolProgram = null
 var useIR: bool = false
 #本轮重建内的邻接缓存：find1 与 createCircuit 共用，避免重复网格查询与临时对象分配
 var _neighborsCache:Dictionary[SWBuildItemDefine,Array] = {}
+#T2.2 netId 稳定分配：单调递增计数器，只在 clearAllBuilds / 加载存档时归零
+var _netIdCounter: int = 0
 
 #开始放置建筑物
 func beginIdle()->void:
@@ -85,6 +87,11 @@ func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
 	for build:SWBuildItemDefine in builds:
 		build.getCircuitCompoent().getBuildExpr()
+	#时序元件（寄存器）输入侧 CLK/D 表达式在根层级第二遍构建：
+	#若在第一遍 DFS 内连带展开输入锥，从 Q 侧进入的外层组合元件会被反向递归命中，
+	#把合法的时序反馈误判为组合环（in_loop 误标红）
+	for build:SWBuildItemDefine in builds:
+		build.getCircuitCompoent().buildInputExprs()
 
 func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	var buildQueue:Array[SWBuildItemDefine] = []
@@ -171,6 +178,8 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	clearBuildsCircuitState(affectBuilds)
 	#每个建筑物创建net
 	createNets(affectBuilds)
+	#T2.2：为本轮受影响的 net 分配唯一 netId（wireGroup 共享 SWNet，用 net 对象引用去重）
+	_assignNetIds(affectBuilds)
 	#对wire多余的net进行重置
 	resetEmptyWireNet(affectBuilds)
 	#方向构建依赖电路
@@ -181,19 +190,52 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 			affectBuilds2.append(affectBuild)
 	createCircuit(affectBuilds2)
 	
-	# --- T2.4: IR 编译 ---
+	# --- T2.4: 组合环检测 + IR 编译 ---
 	var affectedCircuits: Array = []
 	for build in affectBuilds:
 		if build.circuit != null and not affectedCircuits.has(build.circuit):
 			affectedCircuits.append(build.circuit)
+	#环检测基于 noticeMap（IR 无关），结果用于 in_loop 红点渲染，必须始终执行
 	var loopBuilds := SWBoolCompiler.detect_combinational_loops(affectedCircuits)
 	for lb in loopBuilds:
 		lb.in_loop = true
-	var compiler := SWBoolCompiler.new()
-	boolProgram = compiler.compile(affectedCircuits)
+	#IR 编译仅在 useIR 开启时执行；关闭时结果无人消费，跳过以免大存档/加载时白白浪费性能
+	if useIR:
+		var compiler := SWBoolCompiler.new()
+		boolProgram = compiler.compile(affectedCircuits)
 	
 	return affectBuilds
-	
+
+#T2.2：遍历受影响建筑的 pinNetMap，为其中出现的每个 SWNet 分配递增 netId。
+#- 累积递增，不每次 updateBuildCircuit 重置，避免增量更新时其他 net 编号漂移；
+#- 超过 SWSignalTexture.MAX_NETS 会打警告并保持 -1，防止越界写入信号纹理。
+func _assignNetIds(builds: Array[SWBuildItemDefine]) -> void:
+	var seen: Dictionary = {}
+	var max_nets: int = SWSignalTexture.MAX_NETS
+	var overflow_warned: bool = false
+	for b: SWBuildItemDefine in builds:
+		if b == null:
+			continue
+		var comp: SWBuildCompoentCircuit = b.getCircuitCompoent()
+		if comp == null:
+			continue
+		for net in comp.pinNetMap.values():
+			if net == null or seen.has(net):
+				continue
+			seen[net] = true
+			if _netIdCounter >= max_nets:
+				if not overflow_warned:
+					overflow_warned = true
+					push_warning("[SWCircuitControl] netId 计数已达 SWSignalTexture.MAX_NETS=%d，后续 net 保持 netId=-1（信号纹理不再更新）。请清理建筑或扩容 MAX_NETS。" % max_nets)
+				net.netId = -1
+				continue
+			net.netId = _netIdCounter
+			_netIdCounter += 1
+
+#T2.2：全量清理路径（clearAllBuilds / 加载存档）调用，把计数器归零。
+func resetNetIdCounter() -> void:
+	_netIdCounter = 0
+
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 	SwCommon.NextEvalEpoch()
 	var notifyPosArr:Array[SWBuildItemDefine] = []
@@ -209,14 +251,19 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 		var src:SWBuildItemDefine = queue[head]
 		head += 1
 		for noticeBuild:SWBuildItemDefine in cir.noticeMap.get(src,[]):
+			if noticeBuild.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.LED and noticeBuild.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.ONE_BIT_REGISTER:
+				continue
 			if processed.has(noticeBuild):
 				continue
 			processed[noticeBuild] = true
 			notifyPosArr.append_array(noticeBuild.getCircuitCompoent().reCalSignals())
 			queue.append(noticeBuild)
 	# T1.5: signalTex 增量更新 — 只写脏 texel，不触发几何层重算
+	# T2.2: 用 netId 去重（每个 SWNet 唯一），避免同一 net 被多个引脚重复写入；
+	#       netId 非法（<0 或 >=MAX_NETS）时直接跳过，绝不推进 paintedSignal，防止状态漂移。
 	if SWSignalTexture.instance != null:
 		var updated_nets: Dictionary = {}
+		var max_nets: int = SWSignalTexture.MAX_NETS
 		for affected_build: SWBuildItemDefine in processed.keys():
 			var comp: SWBuildCompoentCircuit = affected_build.getCircuitCompoent()
 			if comp == null:
@@ -225,7 +272,9 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 				var net: SWNet = comp.pinNetMap[dir]
 				if net == null:
 					continue
-				if net.netId in updated_nets:
+				if net.netId < 0 or net.netId >= max_nets:
+					continue
+				if updated_nets.has(net.netId):
 					continue
 				updated_nets[net.netId] = true
 				if net.curSignal != net.paintedSignal:

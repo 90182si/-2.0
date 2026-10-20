@@ -221,6 +221,11 @@ func getRenderBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
 	var chunk = getChunkOrCreate(chunkPos)
 	if not chunk:
 		return []
+	#var retArr:Array[SWBuildItemDefine] = []
+	#for build:SWBuildItemDefine in chunk.notNullBuilds:
+		#if build.getRenderableCompoent().isRenderPartsDirty():
+			#retArr.append(build)
+	#return retArr
 	return chunk.notNullBuilds
 
 ## 获取 chunk 内全部建筑（含影子，用于查询/通知）
@@ -243,5 +248,7 @@ func getAllBuilds() -> Array[SWBuildItemDefine]:
 func clearAllBuilds() -> void:
 	chunkMap.clear()
 	occupancy.clear()
+	#同步清空 id 索引表，避免加载新存档后 getBuildById 返回上一次会话的孤立建筑（尤其隧道 pairId 按 id 查找）
+	buildStoreManager.clear()
 	cacheValid = false
 	build_changed.emit()

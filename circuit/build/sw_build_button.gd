@@ -13,12 +13,17 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 func onPressed(_pressed:bool) -> void:
 	var circuitCompoent := getCircuitCompoent()
 	pressed = _pressed
+	var renderable := getRenderableCompoent()
+	var oldRect:Rect2 = renderable.drawRect
 	if pressed == true:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
+		renderable.drawRect = buildDefine.atlasTextureOn.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.HIGH)
 	else:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
+		renderable.drawRect = buildDefine.atlasTextureOff.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
+	#仅当主体贴图 region 真正切换时才失效渲染缓存，供点击路径按需重建几何层
+	if renderable.drawRect != oldRect:
+		markRenderPartsDirty()
 
 func resetBuildState() -> void:
 	in_loop = false

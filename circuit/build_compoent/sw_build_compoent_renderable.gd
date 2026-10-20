@@ -9,6 +9,8 @@ var buildHasAtlas:bool = false
 var buildAtlasRotable:bool = true
 var drawRect:Rect2
 
+var drawIndex:int = 0
+
 # ========== 渲染部件缓存 ==========
 # 区块重绘时块内所有建筑都会调用 getRenderParts()，但绝大多数建筑本次并未变化。
 # 用脏标记缓存部件列表，只有当该建筑的渲染状态（信号/旋转/环路/连接等）变化时才重建。
@@ -17,6 +19,10 @@ var _renderPartsDirty: bool = true
 
 func markRenderPartsDirty() -> void:
 	_renderPartsDirty = true
+
+#供信号变化路径查询：仅当渲染缓存已失效（drawRect 等视觉状态真变化）时才需要重建几何层
+func isRenderPartsDirty() -> bool:
+	return _renderPartsDirty
 
 func getRenderParts() -> Array:
 	if not _renderPartsDirty:

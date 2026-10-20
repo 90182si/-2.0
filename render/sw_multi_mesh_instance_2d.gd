@@ -169,7 +169,7 @@ func calBuffer() -> void:
 		var buffer_size_per_instance = 12 if not use_colors else 16
 		var needed_size = maxInstances * buffer_size_per_instance
 		# 双缓冲交替：仅当容量或每实例字节数变化时才 resize，正常绘制直接复用，避免每帧分配与清零
-		_pingPongIndex = 1 - _pingPongIndex
+		#_pingPongIndex = 1 - _pingPongIndex
 		if _pingPongBuffers[_pingPongIndex].size() != needed_size:
 			_pingPongBuffers[_pingPongIndex].resize(needed_size)
 		var newBuffer = _pingPongBuffers[_pingPongIndex]
@@ -202,8 +202,8 @@ func calBuffer() -> void:
 				continue
 			var max_instances = maxInstances
 			for mapData:SWBuildItemDefine in curMapData:
-				if index >= max_instances:
-					break
+				#if index >= max_instances:
+					#break
 				var gridPos = mapData.buildAxisPos
 				var color = _get_instance_color(mapData, gridPos.x / _gridSizeTmp.x, gridPos.y / _gridSizeTmp.y)
 				var render_able = mapData.getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable

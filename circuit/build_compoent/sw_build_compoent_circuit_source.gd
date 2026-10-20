@@ -24,11 +24,12 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	if dir != buildRef.rotation:
 		return SwDefine.CircuitSignal.NONE
 	var value = SwDefine.CircuitSignal.HIGH if btn.pressed else SwDefine.CircuitSignal.LOW
-	#var net:SWNet = pinNetMap.get(buildRef.rotation, null)
-	#if net:
-		#net.curSignal = value
-		#for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
-			#load.getCircuitCompoent().setValue(buildRef.rotation, value)
+	#信号源主动刷新输出 net 的 curSignal，并向下游电线传播（浮空输出时也能刷新）
+	var net:SWNet = pinNetMap.get(buildRef.rotation, null)
+	if net:
+		net.curSignal = value
+		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
+			load.getCircuitCompoent().setValue(buildRef.rotation, value)
 	return value
 
 func reCalSignals() -> Array[SWBuildItemDefine]:

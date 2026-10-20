@@ -125,6 +125,40 @@ func getNet(swBuildManager:SWBuildManager) -> Array:
 func getBuildExpr() -> void:
 	pass
 
+## 时序元件输入侧表达式的根层构建入口（寄存器重写）
+## 表达式 DFS 中只允许取时序元件的状态叶子，输入锥必须在根层级单独展开，
+## 否则从 Q 侧进入寄存器的合法时序反馈会被误判为组合环
+func buildInputExprs() -> void:
+	pass
+
+## 时序元件判定（寄存器返回 true），用于组合环检测跳过时序屏障出边
+func isSequential() -> bool:
+	return false
+
+## 收集 net 上所有驱动表达式并入 cirStruct.args（统一的防环/时序屏障入口）
+## - 驱动是时序元件（寄存器）：不判环，直接取其 Q 侧状态叶子作为输入
+## - 驱动是组合元件且构建中：真正的组合回边，标记 in_loop
+func appendDriverExprs(cirStruct:SwDefine.SWCircuitStruct, net:SWNet) -> void:
+	var drivers = net.getDrivers()
+	for driver:Dictionary in drivers:
+		var build = driver["build"]
+		var pDir = driver["pinDir"]
+		if build == null:
+			continue
+		var drvComp:SWBuildCompoentCircuit = build.getCircuitCompoent()
+		if drvComp == null:
+			continue
+		drvComp.getBuildExpr()
+		# 驱动是组合元件且构建中：真正的组合回边，标环；
+		# 驱动是时序元件：不判环，其 Q 状态叶子先于输入锥构建，可直接取用
+		if drvComp._buildingExpr and not drvComp.isSequential():
+			build.in_loop = true
+			buildRef.in_loop = true
+			continue
+		var expr = drvComp.getExpr(pDir)
+		if expr != null:
+			cirStruct.args.append(expr)
+
 func getExpr(_pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	return null
 	

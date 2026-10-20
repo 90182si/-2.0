@@ -8,13 +8,13 @@ func setPortFlag(_buildDef:SWBuildDefine) -> void:
 	setPinDefine(SwDefine.SW_Dir.DOWN,SwDefine.CircuitPinType.INPUT)
 
 func getBuildExpr() -> void:
-	#if _buildingExpr:
-		#return
-	#_buildingExpr = true
+	if _buildingExpr:
+		return
+	_buildingExpr = true
 	var dir = SwDefine.getAntiDir(buildRef.rotation)
 	var net:SWNet = pinNetMap.get(dir,null)
 	if not net:
-		#_buildingExpr = false
+		_buildingExpr = false
 		return
 	#该部件的函数是需要线与and
 	if not pinExprMap.has(dir):
@@ -22,22 +22,9 @@ func getBuildExpr() -> void:
 		pinExprMap[dir].optFunc = SwCommon.NotAndValues
 		pinExprMap[dir].optFuncName = "SwCommon.NotAndValues"
 		#把每个条件加到args里面（穿越寄存器的反馈不判环）
-		#appendDriverExprs(pinExprMap[dir], net)
-		#把每个条件加到args里面
-		var drivers = net.getDrivers()
-		for driver:Dictionary in drivers:
-			var build = driver["build"]
-			var pDir = driver["pinDir"]
-			build.getCircuitCompoent().getBuildExpr()
-			if build.getCircuitCompoent()._buildingExpr:
-				build.in_loop = true
-				buildRef.in_loop = true
-				continue
-			var expr = build.getCircuitCompoent().getExpr(pDir)
-			if expr != null:
-				pinExprMap[dir].args.append(expr)
-		_buildingExpr = false
+		appendDriverExprs(pinExprMap[dir], net)
 		pinExprMap[dir].op = SwDefine.CircuitOp.OP_NAND
+	_buildingExpr = false
 
 func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 	#如果这个端口是输出口，返回antiDir方向的表达式
@@ -46,23 +33,20 @@ func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 		return pinExprMap.get(antiDir,null)
 	return null
 
-func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	var value = super.getValue(dir)
-	var wireValue = SwDefine.CircuitSignal.NONE
-	if value == SwDefine.CircuitSignal.HIGH:
-		wireValue = SwDefine.CircuitSignal.LOW
-	elif value == SwDefine.CircuitSignal.LOW:
-		wireValue = SwDefine.CircuitSignal.HIGH
-	if portIsInput(dir):
-		var net:SWNet = pinNetMap.get(dir,null)
-		if net:
-			net.curSignal = wireValue
-			for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
-				load.getCircuitCompoent().setValue(dir,wireValue)
-	return wireValue
+func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
+	#表达式挂在输入方向键上，基类通过 NAND 已算出取反结果，不可二次取反
+	var inDir = SwDefine.getAntiDir(buildRef.rotation)
+	var value = super.getValue(inDir)
+	#rotation 为输出方向，结果写入输出侧 net 并向下游电线传播
+	var net:SWNet = pinNetMap.get(buildRef.rotation,null)
+	if net:
+		net.curSignal = value
+		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
+			load.getCircuitCompoent().setValue(buildRef.rotation,value)
+	return value
 
 func reCalSignals() -> Array[SWBuildItemDefine]:
 	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
-	var downDir = SwDefine.getAntiDir(buildRef.rotation)
-	buildRef.buildStateChanged(getValue(downDir))
+	#buildStateChanged 使用输出方向的值（getValue 返回的就是 NOT 输出）
+	buildRef.buildStateChanged(getValue(buildRef.rotation))
 	return retArr

@@ -9,7 +9,12 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
+	var renderable := getRenderableCompoent()
+	var oldRect:Rect2 = renderable.drawRect
 	if signalValue == SwDefine.CircuitSignal.LOW:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
+		renderable.drawRect = buildDefine.atlasTextureOff.region
 	elif signalValue == SwDefine.CircuitSignal.HIGH:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
+		renderable.drawRect = buildDefine.atlasTextureOn.region
+	#仅当主体贴图 region 真正切换时才失效渲染缓存
+	if renderable.drawRect != oldRect:
+		markRenderPartsDirty()

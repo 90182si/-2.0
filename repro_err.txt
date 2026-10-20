@@ -1,0 +1,96 @@
+ERROR: Parameter "mem" is null.
+   at: realloc_static (core/os/memory.cpp:161)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem_new" is null.
+   at: _realloc_exact (./core/templates/cowdata.h:494)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem" is null.
+   at: realloc_static (core/os/memory.cpp:161)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem_new" is null.
+   at: _realloc_exact (./core/templates/cowdata.h:494)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem" is null.
+   at: realloc_static (core/os/memory.cpp:161)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem_new" is null.
+   at: _realloc_exact (./core/templates/cowdata.h:494)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem" is null.
+   at: realloc_static (core/os/memory.cpp:161)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem_new" is null.
+   at: _realloc_exact (./core/templates/cowdata.h:494)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem" is null.
+   at: realloc_static (core/os/memory.cpp:161)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem_new" is null.
+   at: _realloc_exact (./core/templates/cowdata.h:494)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem" is null.
+   at: realloc_static (core/os/memory.cpp:161)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)
+ERROR: Parameter "mem_new" is null.
+   at: _realloc_exact (./core/templates/cowdata.h:494)
+   GDScript backtrace (most recent call first):
+	   [0] _iterative_dfs_forward (res://circuit/sw_bool_compiler.gd:342)
+	   [1] detect_combinational_loops (res://circuit/sw_bool_compiler.gd:297)
+	   [2] updateBuildCircuit (res://circuit/sw_cirucit_control.gd:194)
+	   [3] load_save_data (res://layers/build/sw_build_layer.gd:126)
+	   [4] _ready (res://tools/repro_load_save.gd:31)

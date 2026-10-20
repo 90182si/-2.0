@@ -59,9 +59,15 @@ func clear_all_builds() -> void:
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.begin_batch()、
 	_pendingRemovedBuilds.clear()
+	_pendingPlacedBuilds.clear()
+	#清空时钟登记表，避免加载新存档后残留上一次会话的时钟引用
+	clockBuildArr.clear()
 	sw_build_manager.clearAllBuilds()
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.end_batch()
+	#T2.2：全量清理后归零 netId 计数器，保证下一次 updateBuildCircuit 从 0 开始分配
+	if sw_circuit_control:
+		sw_circuit_control.resetNetIdCounter()
 	flush_and_update_all_chunks()
 
 func load_save_data(data: Dictionary) -> void:
@@ -71,6 +77,7 @@ func load_save_data(data: Dictionary) -> void:
 		return
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.begin_batch()
+	var maxRestoredId:int = 0
 	for b in builds_arr:
 		var pos_dict = b.get("pos", {})
 		var def_name = b.get("def", "")
@@ -80,6 +87,7 @@ func load_save_data(data: Dictionary) -> void:
 		var signal_state = b.get("signal_state", 0)
 		var tunnel_pair_id = b.get("tunnel_pair_id", -1)
 		var in_loop = b.get("in_loop", false)
+		var saved_id = b.get("id", -1)
 		var w = b.get("w", 1)
 		var h = b.get("h", 1)
 		var pos = Vector2i(pos_dict.get("x", 0), pos_dict.get("y", 0))
@@ -90,11 +98,26 @@ func load_save_data(data: Dictionary) -> void:
 		# m×n 多格建筑：size 随 .tres 资源，w/h 字段仅用于向前兼容校验
 		# 旧档缺省 1×1，行为完全兼容
 		var build = SwDefine.SWBuildCreator(pos, build_def, rot)
+		# Fix-3B: 恢复存档中的建筑 id。隧道 pairId 引用的是配对建筑的 id，
+		#          只有 id 一致才能让加载后的 pairId 有效，从而 on_idled 跳过空间搜索
+		#          （空间搜索按加载顺序逐个 addBuild 触发，配对建筑可能尚未加入导致配对丢失）
+		if saved_id != null and int(saved_id) > 0:
+			build.id = int(saved_id)
+			if int(saved_id) > maxRestoredId:
+				maxRestoredId = int(saved_id)
 		build.circuit_on = circuit_on
 		build.signal_state = signal_state
-		#build.tunnel_pair_id = tunnel_pair_id
+		# Fix-3B: 回填隧道配对 id（存档字段 tunnel_pair_id 对应 SWBuildWireTunnel.pairId）
+		if build is SWBuildWireTunnel:
+			(build as SWBuildWireTunnel).pairId = int(tunnel_pair_id)
 		build.in_loop = in_loop
 		sw_build_manager.addBuild(build)
+		# Fix-3C: 时钟类建筑重新登记到 clockBuildArr，否则加载后 _process 无法驱动时钟 tick
+		if build is SWBuildClockSiggen:
+			addClockBuild(build)
+	# Fix-3B: 抬高全局 id 计数器，避免后续新建建筑 id 与存档恢复的 id 冲突
+	if maxRestoredId > 0:
+		SwCommon.EnsureBuildIdCounterAtLeast(maxRestoredId)
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.end_batch()
 	# 加载卡诺图数据（用于后续独立电路单元提取）
@@ -102,7 +125,8 @@ func load_save_data(data: Dictionary) -> void:
 		#sw_circuit_analyzer.load_karnaugh_map_data(kmap_data)
 	sw_circuit_control.updateBuildCircuit(sw_build_manager.getAllBuilds())
 	flush_and_update_all_chunks()
-	sw_draw_manager.on_view_rect_changed()
+	# Fix-3D: 删除无参 on_view_rect_changed()——它用当前(尚未恢复)的 color_rect 计算视口会出错；
+	#          紧随其后的 SWSaveManager.apply_viewport 会经 camera.view_rect_changed() 触发正确的有参回调
 
 func on_view_rect_changed(viewRect:Rect2,speedVec:Vector2) -> void:
 	sw_draw_manager.on_view_rect_changed(viewRect,speedVec)
@@ -126,6 +150,23 @@ func flush_and_update_chunks(chunk_pos_arr: Array[Vector2i]) -> void:
 func flush_and_update_all_chunks() -> void:
 	flush_signal_tex()
 	sw_draw_manager.updataAllChunks()
+
+# Fix-3A: 从信号变化影响的建筑里挑出"渲染缓存已失效"（drawRect 等视觉状态真变化）的建筑，
+#         只重建它们所在 chunk 的几何层。signalTex 已由调用方增量刷新，此处不再全量 flush，
+#         从而在恢复 LED/按钮/非门/寄存器贴图切换的同时，保持时钟 tick 路径的增量性能。
+func _refreshDirtyBuildChunks(builds:Array) -> void:
+	var changedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
+	var dirtyBuilds:Array[SWBuildItemDefine] = []
+	for b in builds:
+		if b:
+			changedBuilds[b] = true
+	for b in changedBuilds.keys():
+		if b.isRenderPartsDirty():
+			dirtyBuilds.append(b)
+	if dirtyBuilds.size() == 0:
+		return
+	var notifyChunkPosArr = getNotifyChunkPosArr(dirtyBuilds)
+	sw_draw_manager.updataChunks(notifyChunkPosArr)
 
 func flush_signal_tex() -> void:
 	if SWSignalTexture.instance == null:
@@ -324,6 +365,12 @@ func _do_copy() -> void:
 
 var _pressed_button_pos:Vector2i = Vector2i(-9999, -9999)
 
+func reorderRenderIndex(builds:Array[SWBuildItemDefine]) -> void:
+	var drawIndex = 0
+	for build:SWBuildItemDefine in builds:
+		build.getRenderableCompoent().drawIndex = drawIndex
+		drawIndex+=1
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.is_pressed():
 		if event.keycode == KEY_DELETE:
@@ -355,9 +402,11 @@ func _unhandled_input(event: InputEvent) -> void:
 						build.onPressed(!build.pressed)
 					var newBuilds = sw_circuit_control.buildSignalChanged(build)
 					newBuilds.append(build)
-					# T1.5: 点击路径只刷 signalTex，不走几何层重算
+					# T1.5: 点击路径增量刷 signalTex；Fix-3A: 再按需重建主体贴图真变化的建筑所在 chunk
 					if SWSignalTexture.instance != null:
 						SWSignalTexture.instance.flush()
+					reorderRenderIndex(newBuilds)
+					_refreshDirtyBuildChunks(newBuilds)
 					if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON:
 						_pressed_button_pos = grid_pos
 					get_viewport().set_input_as_handled()
@@ -375,9 +424,11 @@ func _unhandled_input(event: InputEvent) -> void:
 							pass
 						var newBuilds = sw_circuit_control.buildSignalChanged(build)
 						newBuilds.append(build)
-						# T1.5: 点击释放路径只刷 signalTex，不走几何层重算
+						# T1.5: 点击释放路径增量刷 signalTex；Fix-3A: 再按需重建主体贴图真变化的建筑所在 chunk
 						if SWSignalTexture.instance != null:
 							SWSignalTexture.instance.flush()
+						reorderRenderIndex(newBuilds)
+						_refreshDirtyBuildChunks(newBuilds)
 					_pressed_button_pos = Vector2i(-9999, -9999)
 
 	#if event.is_action_pressed("TEST_PERFORMANCE"):
@@ -408,7 +459,9 @@ func _process(delta: float) -> void:
 		#sw_circuit_control.updateBuildCircuit(clockBuildArr.keys())
 			var newBuilds = sw_circuit_control.buildSignalChanged(build)
 			changedBuilds.append_array(newBuilds)
-		# T1.5: 时钟 tick 路径只刷 signalTex，不走几何层重算
+			changedBuilds.append(build)
+		# T1.5: 时钟 tick 路径增量刷 signalTex；Fix-3A: 仅当 LED/NOT/寄存器等主体贴图真变化时才重建对应 chunk
 		if changedBuilds.size() > 0:
 			if SWSignalTexture.instance != null:
 				SWSignalTexture.instance.flush()
+			_refreshDirtyBuildChunks(changedBuilds)

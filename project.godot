@@ -89,7 +89,3 @@ TEST_PERFORMANCE={
 
 common/physics_ticks_per_second=144
 3d/physics_engine="Jolt Physics"
-
-[rendering]
-
-rendering_device/driver.windows="vulkan"

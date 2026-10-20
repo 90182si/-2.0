@@ -1,0 +1,3 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+[REPRO] 开始加载: 计数器2 builds=2556

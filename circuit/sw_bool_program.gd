@@ -14,13 +14,14 @@ var dst_arr: PackedInt32Array = PackedInt32Array()
 var a_arr: PackedInt32Array = PackedInt32Array()
 var b_arr: PackedInt32Array = PackedInt32Array()
 
-var input_meta: Array = []   # input_meta[idx] = {"net": SWNet}
-var output_meta: Array = []  # output_meta[idx] = {"net": SWNet}
+var input_meta: Array = []   # input_meta[slot] = {"net": SWNet}，由 OP_INPUT 的 dst 索引
+var output_meta: Array = []  # output_meta[slot] = {"net": SWNet}，由 OP_OUT 的 dst 索引
 
 var _slots: PackedInt32Array = PackedInt32Array()
 var _latch_prev: PackedInt32Array = PackedInt32Array()
 var _latch_indices: Array = []
 
+# 所有指令（含 OP_OUT）的 dst 统一为 slot 索引，按 dst 最大值扩容即为实际需要的 slot 数
 func _ensure_slots(max_slot: int) -> void:
 	if _slots.size() < max_slot + 1:
 		_slots.resize(max_slot + 1)
@@ -56,6 +57,9 @@ func evaluate() -> void:
 			OP_CONST:
 				_slots[d] = a_arr[i]
 			OP_OUT:
+				# dst 是 slot 索引（兼作 output_meta 下标），值从 a 槽读出写回 net，不写 _slots[d]
+				if d < 0 or d >= output_meta.size():
+					continue
 				var net: SWNet = output_meta[d].net
 				var sig = SwDefine.CircuitSignal.HIGH if _slots[a_arr[i]] == 1 else SwDefine.CircuitSignal.LOW
 				if net.curSignal != sig:

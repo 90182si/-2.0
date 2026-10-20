@@ -4,6 +4,11 @@ static var id = 0
 static func GenNextBuildId() -> int:
 	id += 1
 	return id
+
+#抬高全局建筑 id 计数器至不低于 minId；加载存档恢复 id 后调用，避免后续新建建筑 id 冲突
+static func EnsureBuildIdCounterAtLeast(minId:int) -> void:
+	if id < minId:
+		id = minId
 	
 static func GetAngleBySWDir(dir:SwDefine.SW_Dir) -> int:
 	match dir:
