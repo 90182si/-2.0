@@ -202,10 +202,12 @@ static func GetWireColor(wireName:String) -> Array[Color]:
 		return _wireColorCache[wireName]
 	var retArr:Array[Color] = []
 	match wireName:
+		#"电线A":
+			#retArr = [Color(0.796, 0.809, 1.0, 1.0),Color(0.718, 0.731, 1.0, 1.0)]
 		"电线B":
-			retArr = [Color(0.335, 0.231, 0.737, 1.0),Color(0.721, 0.713, 0.977, 1.0)]
+			retArr = [Color(0.066, 0.26, 0.0, 1.0),Color(0.264, 0.769, 0.0, 1.0)]
 		_:
-			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
+			retArr = [Color(0.0, 0.0, 0.0, 1.0),Color(0.856, 0.554, 0.735, 1.0)]
 	_wireColorCache[wireName] = retArr
 	return retArr
 

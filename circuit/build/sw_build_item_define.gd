@@ -96,6 +96,20 @@ func onPressed(_pressed:bool) -> void:
 	pass
 
 
+## 存档用：元件自持状态（开关按下、时钟相位、寄存器锁存值等）。
+## 组合元件（门/电线/灯泡）无自持状态，回空字典即可。
+## 注意 signal_state 只是显示电平快照，求值时会被元件真实状态覆盖，
+## 想让加载后电路停在存档那一刻，必须靠这里显式存下来的状态。
+func getStateData() -> Dictionary:
+	return {}
+
+## 加载用：把 getStateData 存下的状态写回元件。
+## 必须在 addBuild/updateBuildCircuit 之前调用——首趟求值就要读到恢复后的状态。
+## data 为空即旧存档缺该字段，保持默认值（等价于改造前的行为）
+func restoreStateData(_data: Dictionary) -> void:
+	pass
+
+
 	
 func resetBuildState() -> void:
 	in_loop = false

@@ -87,9 +87,18 @@ func load_save_data(data: Dictionary) -> void:
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.begin_batch()
 	var maxRestoredId:int = 0
+	#同一种建筑会被反复 load()：按名字缓存定义资源，40k 建筑的存档能省下几万次字符串拼接与资源查找
+	var defCache:Dictionary[String,SWBuildDefine] = {}
 	for b in builds_arr:
 		var pos_dict = b.get("pos", {})
 		var def_name = b.get("def", "")
+		var build_def: SWBuildDefine = defCache.get(def_name, null)
+		if build_def == null:
+			build_def = load("res://res/" + str(def_name) + ".tres") as SWBuildDefine
+			if build_def != null:
+				defCache[def_name] = build_def
+		if not build_def:
+			continue
 		var rot = b.get("rot", 0)
 		var comp_type = b.get("comp_type", 0)
 		var circuit_on = b.get("circuit_on", false)
@@ -99,11 +108,8 @@ func load_save_data(data: Dictionary) -> void:
 		var saved_id = b.get("id", -1)
 		var w = b.get("w", 1)
 		var h = b.get("h", 1)
+		var state_data = b.get("state", {})
 		var pos = Vector2i(pos_dict.get("x", 0), pos_dict.get("y", 0))
-		var def_path = "res://res/" + def_name + ".tres"
-		var build_def = load(def_path) as SWBuildDefine
-		if not build_def:
-			continue
 		# m×n 多格建筑：size 随 .tres 资源，w/h 字段仅用于向前兼容校验
 		# 旧档缺省 1×1，行为完全兼容
 		var build = SwDefine.SWBuildCreator(pos, build_def, rot)
@@ -120,6 +126,10 @@ func load_save_data(data: Dictionary) -> void:
 		if build is SWBuildWireTunnel:
 			(build as SWBuildWireTunnel).pairId = int(tunnel_pair_id)
 		build.in_loop = in_loop
+		# 元件状态必须在 addBuild/updateBuildCircuit 之前恢复：
+		# 开关/时钟的 pressed、寄存器 qState 都是求值入口直读的叶值，晚一步首趟就按默认电平算完
+		if state_data is Dictionary:
+			build.restoreStateData(state_data)
 		sw_build_manager.addBuild(build)
 		# Fix-3C: 时钟类建筑重新登记到 clockBuildArr，否则加载后 _process 无法驱动时钟 tick
 		if build is SWBuildClockSiggen:
@@ -348,6 +358,11 @@ func _do_cut() -> void:
 	var center = _getSelectedBuildCenter()
 	holdLayerRef.setHeldBuilds(builds, center)
 	var notifyBuilds = builds.duplicate()
+	# 与擦除路径（holdRemoveBuilds）同构：必须先标 TO_BE_REMOVED 再删。
+	# updateBuildCircuit 的 find1/getNet 都靠该状态把已删建筑排除在重建集合外；
+	# 不标记时被删电线会按旧格位继续查邻格，把开关和灯泡重新桥到同一条 net 上，
+	# 下游元件删了电线仍收得到信号
+	sw_build_manager.setBuildsState(builds, SwDefine.BuildState.TO_BE_REMOVED)
 	sw_build_manager.delBuilds(builds)
 	# 与擦除路径同构：删除必须触发电路重建，否则旧电路/IR 段里仍留着被剪切的建筑；
 	# 只 flush 被剪区块会让渲染与电路状态分叉（R3.1 补丁会去给已不在 chunk 里的建筑刷格子）
@@ -372,6 +387,9 @@ func _do_delete_selected() -> void:
 	var notifyBuilds = builds.duplicate()
 	#if sw_circuit_analyzer:
 		#sw_circuit_analyzer.begin_batch()
+	# 同 _do_cut：删除前必须标 TO_BE_REMOVED，否则被删电线会参与重建并桥接旧邻格，
+	# 下游元件删了电线仍收得到信号
+	sw_build_manager.setBuildsState(builds, SwDefine.BuildState.TO_BE_REMOVED)
 	sw_build_manager.delBuilds(builds)
 	if sw_circuit_control:
 		notifyBuilds.append_array(sw_circuit_control.updateBuildCircuit(builds))

@@ -52,7 +52,7 @@ static func BG_PANEL() -> Color: return _editor_color("dark_color_1")
 static func BG_CARD() -> Color: return _editor_color("base_color")
 static func BG_INPUT() -> Color: return _editor_color("base_color")
 static func BG_HOVER() -> Color:
-	return BG_CARD().lerp(Color.WHITE if _editor_dark() else Color(0.1, 0.1, 0.1), 0.10)
+	return BG_CARD().lerp(Color.WHITE if _editor_dark() else Color(0.1, 0.1, 0.1, 1.0), 0.10)
 
 static func BORDER() -> Color: return _editor_color("contrast_color_2")
 static func BORDER_SOFT() -> Color: return _editor_color("separator_color")

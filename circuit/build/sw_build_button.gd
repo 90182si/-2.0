@@ -28,3 +28,12 @@ func onPressed(_pressed:bool) -> void:
 func resetBuildState() -> void:
 	in_loop = false
 	getCircuitCompoent().resetPortState()
+
+func getStateData() -> Dictionary:
+	return {"pressed": pressed}
+
+func restoreStateData(data: Dictionary) -> void:
+	if data.is_empty():
+		return
+	# 走 onPressed：一次搞定引脚电平、开关贴图与渲染脏标记
+	onPressed(bool(data.get("pressed", false)))

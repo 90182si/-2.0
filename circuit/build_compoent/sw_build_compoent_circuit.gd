@@ -290,11 +290,18 @@ func getWireGroupBuilds(swBuildManager:SWBuildManager,wireBuild:SWBuildItemDefin
 	var wireBuildQueue:Array = [{"build":wireBuild,"dir":srcDir}]
 	wireGroup.append({"build":wireBuild,"dir":srcDir})
 	visited[wireBuild.buildAxisPos] = true
+	var control := SWCircuitControl.current
 	while wireBuildQueue.size() > 0:
 		var wireBuildItem = wireBuildQueue.pop_back()
 		var wBuild:SWBuildItemDefine = wireBuildItem["build"]
 		var dir = wireBuildItem["dir"]
-		var neiBuilds = wBuild.getCircuitCompoent().getBuildIOConnectBuildArr(swBuildManager)
+		# 邻接表按求值轮缓存：同一轮里 find1/createCircuit 已经算过的建筑直接复用，
+		# 免得整条电线网络每根电线都重做一遍四方向查找（大存档加载实测占 1s 以上）
+		var neiBuilds: Array
+		if control != null:
+			neiBuilds = control.getNeighborsCached(wBuild)
+		else:
+			neiBuilds = wBuild.getCircuitCompoent().getBuildIOConnectBuildArr(swBuildManager)
 		for neiBuildItem:Dictionary in neiBuilds:
 			var neiBuild = neiBuildItem["build"]
 			var neiDir = neiBuildItem["dir"]

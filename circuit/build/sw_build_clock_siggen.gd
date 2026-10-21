@@ -22,13 +22,14 @@ func onPressed(_pressed:bool) -> void:
 		#getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,curSig)
 
-##按钮定义
-#func onPressed(_pressed:bool) -> void:
-	#var circuitCompoent := getCircuitCompoent()
-	#pressed = _pressed
-	#if pressed == true:
-		#getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
-		#circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.HIGH)
-	#else:
-		#getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
-		#circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
+func getStateData() -> Dictionary:
+	return {"cur_sig": int(curSig)}
+
+## 时钟相位也是元件状态：onPressed 是「翻转」不是「设定」，
+## 不恢复 curSig 的话加载后第一拍会整拍错开，计数器跟着跳错
+func restoreStateData(data: Dictionary) -> void:
+	if data.is_empty():
+		return
+	var sig:SwDefine.CircuitSignal = int(data.get("cur_sig", SwDefine.CircuitSignal.LOW))
+	curSig = sig
+	getCircuitCompoent().setPinValue(SwDefine.SW_Dir.UP, curSig)

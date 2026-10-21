@@ -491,3 +491,87 @@ Phase 2 把每次事件的指令数降到 O(影响面)，但乘数仍是 GDScrip
 | IR 变更定向 + 原生 | 11.0 | **0.0300ms**（1.8×） | 0.1733ms |
 
 变更定向从 3 条（不算）涨到 11 条（真在数）后仍是整段重跑的 1/45，整条事件耗时几乎没变（0.198 → 0.173ms，本轮量测噪声内）；比值口径下整段 + 原生仍有 13.2×。
+
+---
+
+## 改造八：存档带上元件状态
+
+用户报「加载存档后开关全灭、计数器回到起点」。存档其实写了每个建筑的 `signal_state`，但那只是**显示快照**：求值入口读的是元件自持状态，加载时没人把它们写回去，于是首趟求值就把快照覆盖成默认电平。
+
+- 新增 `SWBuildItemDefine.getStateData()` / `restoreStateData(data)` 一对虚函数，存进 `builds[].state` 字段；组合元件（门/电线/灯泡）无自持状态，回空字典即可。
+- 三个有状态的元件各自实现：开关/按钮存 `pressed`；时钟存 `curSig`（相位不存，加载后第一拍整拍错开）；1bit 寄存器存 `qState` + `lastClk/curClk/curD`——只存 `qState` 不够，沿检测历史一丢，加载后第一次采样要么漏沿要么误锁存。
+- 恢复点必须落在 `addBuild`/`updateBuildCircuit` **之前**：首趟求值就要读到恢复后的状态。
+- 版本仍为 `SAVE_VERSION = 1`，`state` 字段缺失即按默认值走，老存档照旧能读（只是仍然回到起点）。
+
+### 顺带修掉的显示滞后
+
+`updateBuildCircuit` 里那次全量 `reCalSignals`（`createCircuit` 内）跑在 **IR 编译之前**：加载时程序已被 `resetIR` 清空，它走的是树路径，编译后的 slot 算出来没人再刷显示，于是 LED/门的显示比逻辑滞后一次重算。探针实测：存前活体 `led=…101100001…`，同状态重算并补一次 Pass B 后变成 `…110111110…`，20/80 位对不上。修复是在 `boolProgram.evaluate()` + `_pushDriverNets` 之后，对受影响的非时序元件补一次 `reCalSignals`（时序元件排除：多跑一次会重复消费在路上的那个上升沿）。这条 Pass B 与 `qState` 无关，实测对拍用例的指令数口径不变。
+
+### 验收结果（GUT headless）
+
+| 用例 | 结果 |
+|------|------|
+| 默认门禁（新增 `test_save_state`） | PASS：6 scripts / 12 tests / 891 asserts / 39.9s |
+| `ir_parity_test` | PASS：7 scripts / 22 tests / 958 asserts / 167.4s |
+| `verilog_parity_test` | PASS：7 scripts / 13 tests / 907 asserts / 41.7s |
+
+`test_save_state` 把快照取在「结算过在路上的上升沿」的不动点（先跑一次与加载路径同款的 `updateBuildCircuit`），否则存前是未结算态、载后是已结算态，凭空差半拍。断言四份状态串（开关/时钟/寄存器/LED）按建筑 id 归一后逐位相等，并要求载后继续打拍仍能让 `qState` 前进——「显示对了但状态机断了」也要能抓住。
+
+---
+
+## 改造九：存档加载路径提速（复用按轮邻接表 + 定义资源缓存）
+
+用户报「加载存档非常慢」。先确认不是改造八带回的：40896 建筑的存档里，本轮新增的状态恢复与补绘只占 ~30ms，8.2s 是**改造前就存在**的全量重建成本，且随建筑数线性增长。
+
+### 三项改动
+
+- **电线组邻接表复用**（`getWireGroupBuilds`）：BFS 每根电线都重做一遍四方向空间查询，而同一求值轮里 `find1` 已经查过；改走 `SWCircuitControl.current.getNeighborsCached()`，`control == null` 时回落原路径。
+- **`resetEmptyWireNet` 复用同一份缓存**：电线四向都是端口，缓存的邻接表方向集合与「逐方向查邻格 + 判断对方端口」等价，改成位掩码判定（零分配）。
+- **`SWBuildCompoentCircuitWire.getNet` 复用邻接表**：净网阶段同样逐方向查网格，改为遍历缓存邻接表；原循环 `range(3,-1,-1)` 与 `getBuildIOConnectBuildArr` 的收表顺序一致，遍历顺序逐位相同。
+- **建筑定义资源按名缓存**（`SWBuildLayer.load_save_data`）：同一种建筑反复 `load("res://xxx.tres")`，40k 建筑省下几万次路径拼接与资源查找。
+
+### 行为中立证明
+
+`tools/repro_load_save.gd` 加了快照：加载后按建筑 id 归一，逐建筑记 `id:getDisplaySignal():in_loop`。
+
+| 对比 | 结果 |
+|------|------|
+| 改动前 vs 改动后（16x计数器 + 计数器2 + 加法器，共 44471 建筑） | 463705 字节逐字节相同（`cmp` IDENTICAL） |
+| 再加 `getNet` 复用后 | 仍逐字节相同 |
+| 最终态 vs 基线（3 个存档） | 前 463705 字节相同，仅多出本次追加的 `38译码器` 一段 |
+
+### 实测（headless，`load_save_data` 整段）
+
+| 存档 | 建筑数 | 改动前 | 改动后 | 省下 |
+|------|--------|--------|--------|------|
+| 16x计数器 | 40896 | 8390ms | 5911 / 5996ms | −29% |
+| 4x计数器 | 10224 | — | 1447ms | — |
+| 计数器2 | 2556 | 715ms | 422ms | −41% |
+| 加法器 | 1019 | 494ms | 188ms | −62% |
+| 38译码器 | 434 | — | 101ms | — |
+
+探针口径（`updateBuildCircuit` 内部，40896 建筑）：`find1=1314 clearState=728 nets+ids=608 resetEmptyWire=140 getCircuit=163 split+createCircuit=517 dedupe=40 loops=100 compile=199 evaluate=4 push=83 repaint=30`，合计 3956ms；改动前 `nets+ids` 是 1164ms。建壳+恢复 1869ms、刷块 142ms。
+
+> 探针本身不是零成本：headless 下每条 `print` 走 Windows 管道实测 50~100ms，`load_save_data` 里两条就吃掉 ~200ms——小存档的绝对值要等探针摘掉后再看（上表已是摘除后的数）。
+
+### 窗口态（真实渲染）
+
+`16x计数器`：同步加载 5207ms，紧接着**第 1 帧 2891ms**（视口 9 个区块任务一次做完，约 320ms/区块），之后稳态 16~18ms/帧。用户感知的冻结 ≈ 5.2s + 2.9s。
+
+### 放弃的路子：加载走「冷启动」快路径
+
+`updateBuildCircuit` 在加载场景下 `find1` 是纯浪费（输入已经是全量建筑），跳过它能再省 1.3s。实测对拍失败：`冷==全=false`，计数器2 里 12/2556 个建筑的显示电平不同（寄存器 0 个差异），差异集中在挂在 LED 输入端、没有驱动源的悬空电线上。根因不是逻辑分歧而是**顺序**：`find1` 把结果重排成字典插入序，而悬空 net 的最终电平取决于求值顺序。已回退，留下一个语义问题待定：无驱动源的电线该显示什么。
+
+### 验收结果（GUT headless，改动后）
+
+| 用例 | 结果 |
+|------|------|
+| 默认门禁 | PASS：6 scripts / 12 tests / 891 asserts / 32.2s |
+| `ir_parity_test` + `verilog_parity_test` | PASS：23 tests / 974 asserts / 132.6s |
+
+### 剩余开销排序（16x计数器）
+
+1. 视口首帧区块几何重建 2.9s（与正常平移同一条路径，密集建筑下单区块 ~320ms）
+2. `find1` 1.3s（加载场景可省，但要先解决悬空 net 的顺序语义）
+3. 建壳+恢复 1.87s（每建筑 ~45µs：`CreateCompoent` 无池化，建筑 + 状态 + 组件各一次 `new()`）
+4. `clearState` 728ms、`split+createCircuit` 517ms

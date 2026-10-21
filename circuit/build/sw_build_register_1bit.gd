@@ -10,6 +10,28 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 		_circuitCompoent.setBuildRef(self)
 	return _circuitCompoent
 
+func getStateData() -> Dictionary:
+	var comp := getCircuitCompoent() as SWBuildCompoentCircuitRegister
+	if comp == null:
+		return {}
+	return {"q": int(comp.qState), "last_clk": int(comp.lastClk),
+		"cur_clk": int(comp.curClk), "cur_d": int(comp.curD)}
+
+## 恢复锁存值与沿检测历史：只存 qState 不够，
+## lastClk/curClk 一丢，加载后第一次采样要么漏沿要么误锁存一拍
+func restoreStateData(data: Dictionary) -> void:
+	if data.is_empty():
+		return
+	var comp := getCircuitCompoent() as SWBuildCompoentCircuitRegister
+	if comp == null:
+		return
+	comp.qState = int(data.get("q", SwDefine.CircuitSignal.LOW))
+	comp.lastClk = int(data.get("last_clk", SwDefine.CircuitSignal.LOW))
+	comp.curClk = int(data.get("cur_clk", SwDefine.CircuitSignal.NONE))
+	comp.curD = int(data.get("cur_d", SwDefine.CircuitSignal.NONE))
+	# 贴图与 signal_state 要跟 Q 一致，否则加载瞬间显示的是默认（灭）图
+	buildStateChanged(comp.qState)
+
 # Q 输出状态驱动主体贴图亮灭
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)

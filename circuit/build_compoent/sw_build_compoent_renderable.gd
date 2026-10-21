@@ -127,14 +127,10 @@ func _buildRenderParts() -> Array:
 			if net:
 				useColor = true
 				net_id = net.netId
-				var wireName:String = ""
-				if net.wireGroup == null:
-					pass
-				else:
-					wireName = net.wireGroup.wireName
-				var colorArr = SwCommon.GetWireColor(wireName)
-				# T1.4: 端子 color 改为烘焙 tint（mask 色，即 wireGroup 默认色/LOW 色）
-				color = colorArr[0]
+				# 电线显示色由 signalTex 按 netId 上色驱动，其值即 SwCommon.GetWireColor 的绝对色
+				# （[0]=LOW [1]=HIGH，经 get_net_display_color 写入）。这里烘焙 tint 必须为白色，
+				# 否则 shader 会把 LOW 色乘两遍（signalTex × 实例色），显示颜色与线色表对不上
+				color = Color(1, 1, 1, 1)
 			elif wire == true:
 				continue
 			#处于循环依赖中的元件/电线，引脚统一着红色

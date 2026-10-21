@@ -7,7 +7,7 @@ var buildManager:SWBuildManager = null
 var idling:bool = false
 var circuits:Dictionary[int,SwDefine.SWCircuitData] = {}
 var boolProgram: SWBoolProgram = null
-var useIR: bool = true
+var useIR: bool = false
 # Phase 2：IR 事件路径改为变更定向求值（只跑受影响指令）。关掉即退回「整段重跑 + Pass A BFS」，
 # 两条路径由 test/circuit/ir_parity_test.gd 的 CD-vs-full 对拍共同守护。
 var useChangeDirected: bool = true
@@ -96,6 +96,11 @@ func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
 	var forDelCircuit:Dictionary = {}
 	for build:SWBuildItemDefine in builds:
 		build.resetBuildState()
+		# slotMap 全局递增、永不剪除（失活段只剪 segments）：失去表达式的建筑（如电线被删后
+		# 输入悬空的 LED）若不清入口，getValue 会经 _getIrSlotValue 命中旧 slot 的陈旧电平，
+		# 删了电线下游仍「亮着」。受影响建筑本轮都会重编译重新登记，先清后铺即可自愈
+		for dir in 4:
+			slotMap.erase(build.id * 4 + dir)
 		if build.circuit == null:
 			continue
 		forDelCircuit[build.circuit] = true
@@ -111,13 +116,15 @@ func resetEmptyWireNet(builds:Array[SWBuildItemDefine]) -> void:
 	for build:SWBuildItemDefine in builds:
 		if build.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.WIRE:
 			continue
+		var comp:SWBuildCompoentCircuit = build.getCircuitCompoent()
+		# 电线四向都算端口，缓存的邻接表就是「邻格存在且对方该方向也是端口」的集合，
+		# 与逐方向做空间查询等价；find1 已经为本轮每个建筑算过一遍，直接复用省掉整轮查找
+		var linkedMask:int = 0
+		for neiItem:Dictionary in getNeighborsCached(build):
+			linkedMask |= 1 << int(neiItem["dir"])
 		for dir in 4:
-			var nextBuild = build.getDirBuild(buildManager,dir)
-			if not nextBuild:
-				build.getCircuitCompoent().pinNetMap[dir] = null
-				continue
-			if not nextBuild.getCircuitCompoent().isPort(SwDefine.getAntiDir(dir)):
-				build.getCircuitCompoent().pinNetMap[dir] = null
+			if (linkedMask & (1 << dir)) == 0:
+				comp.pinNetMap[dir] = null
 				
 func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
@@ -250,6 +257,13 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 			for b: SWBuildItemDefine in cir.buildArr:
 				pushBuilds.append(b)
 		_pushDriverNets(pushBuilds)
+		# createCircuit 里那次 Pass B 跑在编译之前，读的是上一份程序（加载时程序已被 reset，
+		# 干脆走树路径），本轮 slot 算出来后没人再刷显示 → 编辑/加载后 LED 滞后一拍。
+		# 这里补一次重绘；时序元件除外，多跑一次 reCalSignals 会重复消费在路上那个上升沿。
+		for b: SWBuildItemDefine in affectBuilds2:
+			var comp: SWBuildCompoentCircuit = b.getCircuitCompoent()
+			if comp != null and not comp.isSequential():
+				comp.reCalSignals()
 	
 	return affectBuilds
 

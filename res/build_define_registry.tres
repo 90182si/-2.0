@@ -19,16 +19,20 @@ _uids_to_string_ids = Dictionary[StringName, StringName]({
 &"uid://bysn6qa4xtydj": &"格子",
 &"uid://c3joxf6qdeus0": &"电线桥梁",
 &"uid://cdimxr0tjor41": &"开关",
+&"uid://cgahjdxeo8yuu": &"1bit寄存器",
 &"uid://csjirldjgwi6y": &"地图",
 &"uid://d4ibjxwj8wp56": &"灯泡",
 &"uid://di1ix4geb5laq": &"电线B",
 &"uid://k5gnnkk8y6t5": &"按钮",
-&"uid://us85u265wmve": &"电线A"
+&"uid://us85u265wmve": &"电线A",
+&"uid://yq74vaesbo45": &"时钟"
 })
 _string_ids_to_uids = Dictionary[StringName, StringName]({
+&"1bit寄存器": &"uid://cgahjdxeo8yuu",
 &"地图": &"uid://csjirldjgwi6y",
 &"开关": &"uid://cdimxr0tjor41",
 &"按钮": &"uid://k5gnnkk8y6t5",
+&"时钟": &"uid://yq74vaesbo45",
 &"格子": &"uid://bysn6qa4xtydj",
 &"灯泡": &"uid://d4ibjxwj8wp56",
 &"电线A": &"uid://us85u265wmve",

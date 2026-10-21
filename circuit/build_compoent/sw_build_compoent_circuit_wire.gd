@@ -33,13 +33,15 @@ func setDriverOrLoader(drivers:Array,loaders:Array) -> void:
 func getNet(swBuildManager:SWBuildManager) -> Array:
 	if buildRef.bIsToBeRemoved():
 		return []
-	for pinIndex:int in range(3,-1,-1):
-		#如果这个方向的端口不可用 或者 是这个建筑物即将被删除 或者 这个端口是输入口
+	# 邻接表按求值轮缓存：find1/initPortState 已为本轮每个建筑查过一遍四方向，
+	# 这里复用同一份，省掉每根电线再查 4 次空间网格（大存档加载 nets+ids 阶段的主要开销）
+	var control := SWCircuitControl.current
+	var neighbors: Array = control.getNeighborsCached(buildRef) if control != null else getBuildIOConnectBuildArr(swBuildManager)
+	for neiItem:Dictionary in neighbors:
+		var pinIndex:int = int(neiItem["dir"])
+		var nextBuild:SWBuildItemDefine = neiItem["build"]
+		#如果这个方向的端口已经被占用
 		if isLinkedPort(pinIndex):
-			continue
-		#获取开关\按钮方向的建筑物
-		var nextBuild:SWBuildItemDefine = getDirBuild(swBuildManager,pinIndex)
-		if nextBuild == null:
 			continue
 		var nextBuildCircuitCom:SWBuildCompoentCircuit = nextBuild.getCircuitCompoent()
 		if nextBuildCircuitCom == null:

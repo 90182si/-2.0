@@ -82,6 +82,9 @@ static func save_builds(name: String, builds: Array, viewport: Viewport, karnaug
 		# Fix-3B: 持久化隧道配对 id（SWBuildWireTunnel.pairId），加载时回填以跳过空间搜索配对
 		b["tunnel_pair_id"] = (build as SWBuildWireTunnel).pairId if build is SWBuildWireTunnel else -1
 		b["in_loop"] = build.in_loop
+		# 元件自持状态（开关按下/时钟相位/寄存器锁存值与沿历史）。
+		# signal_state 只是显示快照，求值时会被元件真实状态覆盖，不单独存这个就无法停在「那一刻」
+		b["state"] = build.getStateData()
 		b["w"] = build.buildDefine.size.x if build.buildDefine else 1
 		b["h"] = build.buildDefine.size.y if build.buildDefine else 1
 		builds_arr.append(b)
