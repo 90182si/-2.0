@@ -1,0 +1,64 @@
+<svg viewBox="0 0 1120 760" width="1120" height="760" xmlns="http://www.w3.org/2000/svg" font-family="'Microsoft YaHei',system-ui,sans-serif">
+  <defs>
+    <marker id="aB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#55606a"/></marker>
+  </defs>
+
+  <text x="20" y="42" font-size="22" font-weight="bold" fill="#26323d">线与逻辑（Wired-AND）· 框架落点</text>
+  <text x="20" y="68" font-size="14.5" fill="#55606a">多驱动 = 合法 · 线值 = AND(全部驱动) · 生成期坍缩成 AND 链，完全绕开三态 · 浮空 = 下拉 0</text>
+
+  <!-- 左：物理语义 -->
+  <rect x="40" y="96" width="520" height="304" rx="10" fill="#e8f1f8" stroke="#1e6f9f" stroke-width="1.5"/>
+  <text x="58" y="122" font-size="16" font-weight="bold" fill="#1e6f9f">物理语义 · 一根线，多个驱动</text>
+
+  <rect x="70" y="140" width="120" height="40" rx="6" fill="#ffffff" stroke="#1e6f9f" stroke-width="1.5"/>
+  <text x="130" y="164" font-size="14" text-anchor="middle" fill="#26323d">驱动1 门输出</text>
+  <rect x="70" y="190" width="120" height="40" rx="6" fill="#ffffff" stroke="#1e6f9f" stroke-width="1.5"/>
+  <text x="130" y="214" font-size="14" text-anchor="middle" fill="#26323d">驱动2 开关</text>
+  <rect x="70" y="240" width="120" height="40" rx="6" fill="#ffffff" stroke="#1e6f9f" stroke-width="1.5"/>
+  <text x="130" y="264" font-size="14" text-anchor="middle" fill="#26323d">驱动3 寄存器</text>
+
+  <line x1="190" y1="160" x2="300" y2="220" stroke="#55606a" stroke-width="2" marker-end="url(#aB)"/>
+  <line x1="190" y1="210" x2="300" y2="220" stroke="#55606a" stroke-width="2" marker-end="url(#aB)"/>
+  <line x1="190" y1="260" x2="300" y2="220" stroke="#55606a" stroke-width="2" marker-end="url(#aB)"/>
+
+  <line x1="300" y1="120" x2="300" y2="360" stroke="#1e6f9f" stroke-width="3"/>
+  <text x="300" y="108" font-size="14" font-weight="bold" text-anchor="middle" fill="#1e6f9f">线网 net</text>
+
+  <rect x="360" y="150" width="120" height="40" rx="6" fill="#ffffff" stroke="#1e6f9f" stroke-width="1.5"/>
+  <text x="420" y="174" font-size="14" text-anchor="middle" fill="#26323d">输入A 读取</text>
+  <rect x="360" y="240" width="120" height="40" rx="6" fill="#ffffff" stroke="#1e6f9f" stroke-width="1.5"/>
+  <text x="420" y="264" font-size="14" text-anchor="middle" fill="#26323d">输入B 读取</text>
+  <line x1="300" y1="170" x2="360" y2="170" stroke="#55606a" stroke-width="2" marker-end="url(#aB)"/>
+  <line x1="300" y1="260" x2="360" y2="260" stroke="#55606a" stroke-width="2" marker-end="url(#aB)"/>
+
+  <text x="70" y="330" font-size="14" fill="#26323d">线值 = AND(全部驱动输出)</text>
+  <text x="70" y="352" font-size="14" fill="#26323d">任意一个为低 → 整线为低；浮空（无驱动）→ 下拉 0</text>
+  <text x="70" y="380" font-size="14" fill="#e67e22">★ 浮空=0 时“常量1”元件必须生成 1 驱动；“常量0”元件可省略（=浮空）</text>
+
+  <!-- 右：生成策略 -->
+  <rect x="580" y="96" width="500" height="304" rx="10" fill="#eaf4ec" stroke="#2e7d32" stroke-width="1.5"/>
+  <text x="598" y="122" font-size="16" font-weight="bold" fill="#2e7d32">生成策略 · 坍缩成 AND 链，无三态</text>
+
+  <rect x="598" y="140" width="464" height="148" rx="8" fill="#ffffff" stroke="#7fb58a" stroke-width="1.5"/>
+  <text x="616" y="172" font-size="14" font-family="Consolas,monospace" fill="#26323d">// 多驱动：一条 AND 链（驱动数任意）</text>
+  <text x="616" y="198" font-size="14" font-family="Consolas,monospace" fill="#26323d">assign n_5 = in_1 &amp; in_2;</text>
+  <text x="616" y="226" font-size="14" font-family="Consolas,monospace" fill="#26323d">// 浮空：直接常量（下拉 0）</text>
+  <text x="616" y="252" font-size="14" font-family="Consolas,monospace" fill="#26323d">wire n_11 = 1'b0;</text>
+  <text x="616" y="278" font-size="14" font-family="Consolas,monospace" fill="#55606a">// 不需要 bufif0 / tri / pullup</text>
+
+  <text x="598" y="312" font-size="14" fill="#26323d">Verilator 两态仿真（无 X）→ 浮空给常量，堵死 X 态</text>
+  <text x="598" y="336" font-size="14" fill="#26323d">寄存器输出可进链：assign 里读 reg 值，时序不受影响</text>
+  <text x="598" y="358" font-size="14" fill="#e67e22">★ 上万驱动的线 = 一条 &amp; 链，Verilator 自动平衡求值树</text>
+  <text x="598" y="382" font-size="14" fill="#55606a">以后做多 bit 总线：同一 &amp; 即按位与，扩展零成本</text>
+
+  <!-- 底：框架改动 -->
+  <rect x="40" y="424" width="1040" height="252" rx="10" fill="#f4f6f8" stroke="#c9d4de" stroke-width="1.5"/>
+  <text x="58" y="452" font-size="16" font-weight="bold" fill="#26323d">对框架的改动（其余全部不变）</text>
+  <text x="58" y="484" font-size="14" fill="#26323d">① 数据模型：Net 拆 drivers / loads，多驱动合法；删除原“单驱动”布线规则</text>
+  <text x="58" y="510" font-size="14" fill="#26323d">② 生成器：每条线网一条 AND 坍缩 assign；无驱动 → 常量（FLOAT_DRIVE = 0）</text>
+  <text x="58" y="536" font-size="14" fill="#26323d">③ 组合环路检测不变：依赖图 = 驱动 → 线网 → 输入，按线网拓扑构建</text>
+  <text x="58" y="562" font-size="14" fill="#26323d">④ 生成器新增校验：悬空线网检测（避免 Verilator dangling net 警告）</text>
+  <text x="58" y="588" font-size="14" fill="#26323d">⑤ 原语/IC 层级/命令/事件总线/运行时接口：零改动</text>
+  <line x1="58" y1="616" x2="1062" y2="616" stroke="#d5dce4" stroke-width="1"/>
+  <text x="58" y="644" font-size="14" fill="#e67e22">已定语义：浮空线默认值 = 下拉 0（FLOAT_DRIVE = 0，用户 2026-10-21 确认）</text>
+</svg>

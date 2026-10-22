@@ -1,0 +1,92 @@
+<svg viewBox="0 0 1120 830" width="1120" height="830" xmlns="http://www.w3.org/2000/svg" font-family="'Microsoft YaHei',system-ui,sans-serif">
+  <defs>
+    <marker id="aD" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#55606a"/></marker>
+  </defs>
+
+  <text x="20" y="42" font-size="22" font-weight="bold" fill="#26323d">SimCore · 分层解耦架构（无限地图）</text>
+  <text x="20" y="68" font-size="14.5" fill="#55606a">仿真不引用表现 · 事件是唯一通信 · 命令是唯一写入口 · 新能力 = 注册</text>
+
+  <!-- 输入层 -->
+  <rect x="40" y="88" width="700" height="118" rx="10" fill="#e8f1f8" stroke="#1e6f9f" stroke-width="1.5"/>
+  <text x="58" y="116" font-size="16" font-weight="bold" fill="#1e6f9f">输入层 Edit · 命令是修改仿真的唯一入口</text>
+  <text x="58" y="144" font-size="14" fill="#26323d">鼠标 / 键盘 / 触屏 → 命令对象（如 PlaceElementCommand）→ EditSystem 排队应用</text>
+  <text x="58" y="170" font-size="14" fill="#e67e22">★ 新动作 = 新增一个命令类；撤销 / 回放 / 多端同步共用同一条命令流</text>
+  <text x="58" y="194" font-size="14" fill="#55606a">命令自带 apply / undo，天然支持撤销栈</text>
+
+  <line x1="390" y1="206" x2="390" y2="234" stroke="#55606a" stroke-width="2" marker-end="url(#aD)"/>
+
+  <!-- 仿真层 -->
+  <rect x="40" y="240" width="700" height="176" rx="10" fill="#eaf4ec" stroke="#2e7d32" stroke-width="1.5"/>
+  <text x="58" y="266" font-size="16" font-weight="bold" fill="#2e7d32">仿真层 Simulation · 固定 60Hz tick · 无 Node · 数据导向存储</text>
+  <rect x="58" y="288" width="190" height="64" rx="8" fill="#ffffff" stroke="#7fb58a" stroke-width="1.5"/>
+  <text x="153" y="314" font-size="15" font-weight="bold" text-anchor="middle" fill="#26323d">ClockSystem</text>
+  <text x="153" y="336" font-size="14" text-anchor="middle" fill="#55606a">时钟发生器 → ClockPulse</text>
+  <rect x="280" y="288" width="190" height="64" rx="8" fill="#ffffff" stroke="#7fb58a" stroke-width="1.5"/>
+  <text x="375" y="314" font-size="15" font-weight="bold" text-anchor="middle" fill="#26323d">Verilog 仿真</text>
+  <text x="375" y="336" font-size="14" text-anchor="middle" fill="#55606a">网表 → Verilog → SimRuntime</text>
+  <rect x="502" y="288" width="190" height="64" rx="8" fill="#ffffff" stroke="#7fb58a" stroke-width="1.5"/>
+  <text x="597" y="314" font-size="15" font-weight="bold" text-anchor="middle" fill="#26323d">NetworkSystem</text>
+  <text x="597" y="336" font-size="14" text-anchor="middle" fill="#55606a">连通分量 → NetworkRebuilt</text>
+  <text x="58" y="382" font-size="14" fill="#e67e22">★ 新元件类型 = 注册求值模板（不改生成器/运行时）</text>
+  <text x="58" y="404" font-size="14" fill="#e67e22">★ 新仿真行为（如电力系统）= 新增一个 System 注册进 Manager</text>
+
+  <line x1="390" y1="416" x2="390" y2="444" stroke="#55606a" stroke-width="2" marker-end="url(#aD)"/>
+
+  <!-- 事件总线 -->
+  <rect x="40" y="450" width="700" height="58" rx="10" fill="#fdf3e0" stroke="#b7791f" stroke-width="1.5"/>
+  <text x="58" y="476" font-size="15" font-weight="bold" fill="#b7791f">事件总线 EventBus · 发布 / 订阅 —— 系统间唯一耦合点</text>
+  <text x="58" y="498" font-size="14" fill="#26323d">事件只“通知结果”（done），不“请求行为”（please do X），下游自行决定是否响应</text>
+
+  <!-- 表现层三卡片 -->
+  <line x1="150" y1="508" x2="150" y2="542" stroke="#55606a" stroke-width="2" marker-end="url(#aD)"/>
+  <line x1="390" y1="508" x2="390" y2="542" stroke="#55606a" stroke-width="2" marker-end="url(#aD)"/>
+  <line x1="630" y1="508" x2="630" y2="542" stroke="#55606a" stroke-width="2" marker-end="url(#aD)"/>
+
+  <rect x="40" y="548" width="200" height="130" rx="8" fill="#e8eef6" stroke="#3a6ea5" stroke-width="1.5"/>
+  <text x="50" y="576" font-size="15" font-weight="bold" fill="#3a6ea5">表现层 Render</text>
+  <text x="50" y="602" font-size="14" fill="#26323d">订阅 ElementChanged</text>
+  <text x="50" y="624" font-size="14" fill="#26323d">MultiMesh / _draw 批量画</text>
+  <text x="50" y="654" font-size="14" fill="#e67e22">★ 订阅事件即可接入</text>
+
+  <rect x="270" y="548" width="200" height="130" rx="8" fill="#e8eef6" stroke="#3a6ea5" stroke-width="1.5"/>
+  <text x="280" y="576" font-size="15" font-weight="bold" fill="#3a6ea5">UI System</text>
+  <text x="280" y="602" font-size="14" fill="#26323d">HUD / 选择 / 提示</text>
+  <text x="280" y="624" font-size="14" fill="#26323d">订阅事件做反馈</text>
+  <text x="280" y="654" font-size="14" fill="#e67e22">★ 发命令不经仿真内部</text>
+
+  <rect x="500" y="548" width="200" height="130" rx="8" fill="#e8eef6" stroke="#3a6ea5" stroke-width="1.5"/>
+  <text x="510" y="576" font-size="15" font-weight="bold" fill="#3a6ea5">存档 / 回放</text>
+  <text x="510" y="602" font-size="14" fill="#26323d">序列化命令流</text>
+  <text x="510" y="624" font-size="14" fill="#26323d">离线重放仿真</text>
+  <text x="510" y="654" font-size="14" fill="#e67e22">★ 可 headless 运行</text>
+
+  <!-- 右侧：解耦规则 -->
+  <rect x="780" y="88" width="300" height="590" rx="10" fill="#f4f6f8" stroke="#c9d4de" stroke-width="1.5"/>
+  <text x="800" y="116" font-size="16" font-weight="bold" fill="#26323d">解耦规则（拓展性来源）</text>
+  <circle cx="810" cy="148" r="11" fill="#1e6f9f"/><text x="810" y="153" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">1</text>
+  <text x="830" y="153" font-size="14" fill="#26323d">仿真不引用表现 / UI 对象</text>
+  <circle cx="810" cy="192" r="11" fill="#1e6f9f"/><text x="810" y="197" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">2</text>
+  <text x="830" y="197" font-size="14" fill="#26323d">事件只通知结果，不请求行为</text>
+  <circle cx="810" cy="236" r="11" fill="#1e6f9f"/><text x="810" y="241" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">3</text>
+  <text x="830" y="241" font-size="14" fill="#26323d">命令是修改仿真的唯一入口</text>
+  <circle cx="810" cy="280" r="11" fill="#1e6f9f"/><text x="810" y="285" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">4</text>
+  <text x="830" y="285" font-size="14" fill="#26323d">依赖只朝下层（Core 最底）</text>
+  <circle cx="810" cy="324" r="11" fill="#1e6f9f"/><text x="810" y="329" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">5</text>
+  <text x="830" y="329" font-size="14" fill="#26323d">新系统 / 新元件 / 新命令 = 注册</text>
+  <circle cx="810" cy="368" r="11" fill="#1e6f9f"/><text x="810" y="373" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">6</text>
+  <text x="830" y="373" font-size="14" fill="#26323d">仿真纯数据 → headless + 单测</text>
+  <line x1="800" y1="400" x2="1060" y2="400" stroke="#d5dce4" stroke-width="1"/>
+  <text x="800" y="428" font-size="14" fill="#55606a">故障隔离：任何系统可</text>
+  <text x="800" y="450" font-size="14" fill="#55606a">单独停用 / 替换 / 测试，</text>
+  <text x="800" y="472" font-size="14" fill="#55606a">不影响其他系统。</text>
+  <text x="800" y="514" font-size="14" fill="#55606a">仿真层无场景树依赖，</text>
+  <text x="800" y="536" font-size="14" fill="#55606a">可放进独立模块被</text>
+  <text x="800" y="558" font-size="14" fill="#55606a">多项目复用。</text>
+  <text x="800" y="620" font-size="14" fill="#e67e22">拓展接口只有两个：</text>
+  <text x="800" y="642" font-size="14" fill="#e67e22">事件契约 · 注册表</text>
+
+  <!-- 底部：事件契约 -->
+  <text x="40" y="722" font-size="16" font-weight="bold" fill="#26323d">事件契约（系统间的公共语言 = 拓展接口）</text>
+  <text x="40" y="752" font-size="14" fill="#26323d">ClockPulse · ElementChanged · ElementsChanged（每 tick 合并）· NetworkRebuilt · EditApplied · SimReset</text>
+  <text x="40" y="776" font-size="14" fill="#55606a">新事件 = 直接在总线上发布 / 订阅，无需改动任何已有系统</text>
+</svg>

@@ -237,6 +237,27 @@ class_name SWBoolCompiler extends RefCounted
 ### 回退
 `useIR=false` 单开关回退到树路径（树路径在 M6 前一直保留并随 GUT 维护）。
 
+### 实际实现回填（T2.5 完成，对 §5 设计的校准）
+以下为实现时相对本节原设计的偏差，均以「对拍零差异优先」为准绳确定：
+
+1. **寄存器时序唯一真相 = `qState` 状态机**（弃用 §5 未提及的 `_latch_prev` 双缓冲）：
+   `OP_LATCH` 经 `latch_meta[slot] = {"build", "dir"}` 直读寄存器组件 `getPinReadState(qDir)`（即 `qState`），不再维护独立锁存旧值。边沿检测仍由 `reCalSignals()` 调 `getValue(qDir)` 驱动，与树路径逐拍语义一致。同时删除了死机制 `register_latch/latch_commit/_latch_indices`。
+2. **段式增量编译**（替代 §5「每次新建 `_next_slot=0`」）：`SWBoolCompiler` 实例由 `SWCircuitControl` 持有并跨批次复用，slot/指令全局递增不重置；compile 按 circuitID 重生成指令段，产出 `segments[circuitID] = {start, end, builds}` 与 `slotMap[build.id*4+dir] -> slot`（含 LED/寄存器输入侧内部 slot）。`SWBoolProgram` 新增 `evaluate_range(start, end)`（`evaluate()` 复用同一区间循环），求值为不动点迭代（`MAX_SETTLE=64`）。全量清理/加载路径经 `resetIR()` 一并置空 `_compiler/slotMap/boolProgram`。
+3. **push 化的 wired-AND 语义**：`_pushDriverNets` 对每个触及 net 从 `getDrivers()` **末位向前**取第一个带 slot 的驱动者写回 `net.curSignal` 并无条件传播电线（`wireGroup.wireBuilds.setValue`）。这复刻了树模型「最后调用 getValue 的驱动者胜」。因 `OP_OUT` 在 `evaluate_range` 阶段已写 `net.curSignal`（跨段 `OP_INPUT` 反馈依赖所需），旧的 `net.curSignal != sig` 守卫恒假会跳过电线刷新致事件后视觉陈旧，故改为无条件写回+传播。
+4. **IR 分支 BFS push 化拆两趟**：`buildSignalChanged` 拆为 Pass A（纯结构 BFS，仅靠 `noticeMap` 展开收集 `processedList`，不调 `reCalSignals`）→ `evaluate_range`（刷新 slot）→ Pass B（按序 `reCalSignals` 读新 slot）→ push。保证寄存器边沿检测读到本轮刷新后的 clock/D slot，而非上次事件的陈旧 slot。
+5. **本期不删树**：§5 第 4 点「删除项（`SWCircuitStruct.args` 树退役）」留待对拍长期稳定后另做任务；本期仅「切换」（`useIR` 分支）不「删除」，`useIR=false` 回退路径与主路径同受 GUT 保护。
+6. **编译器修复（对拍调试期定位的真实 bug）**：
+   - `_emit_nary` 多输入 NAND 级联：原「链内直接 OP_NAND」使 `NAND(NAND(a,b),c)=(a&b)|~c ≠ NOT(a&b&c)`；改为链式恒 `OP_AND` + 末尾追加单个 `OP_NOT`。
+   - 空 args NAND/NOT 常量：树 `EvalStruct` 的 `OP_NAND = 1 - EvalArgsAnd`，空 args 时 `EvalArgsAnd=0 → NAND=1`；编译器原发 `_emit_const(0)`，改为 `_emit_const(1)` 对齐树。此修复后「逐表达式节点 slot 值 == 树 pull 值」差异归零。
+7. **`emit` 接口偏差**：§6 签名 `emit(program, slotMap, builds)` 实现为 `emit(program, builds)`（slotMap 直接引用编译器内部表，无需外部传入）。且 push 化后编译器为**每个门输出 net**（非仅 LED）都发 `OP_OUT`，emitter 对「net 无 LED 消费者」的内部 net `OP_OUT` 跳过而非报错（其信号值已由门计算结果线表达）。
+
+### 对拍门禁口径（快照排除 last-writer 视觉歧义）
+`ir_parity_test` 逐拍对 `useIR=false/true` 双跑快照，比较**可观测功能态**：全部非争议建筑 `signal_state`、寄存器 `qState`、单驱动 net `curSignal`。排除两类「最后写回者胜」的视觉歧义（树 pull 与 IR push 写回次序天然不同，无确定逻辑值）：
+- **wired-AND 多驱争议 net**（`getDrivers().size()>=2`）的原始 `curSignal` 及仅挂其上的电线视觉；
+- **交叉电线 WIRE_BRIDGE**（`SWBuildCompoentCircuitWireCross`，单 `signal_state` 字段却跨 `v_net`/`h_net` 两条独立 net）在两条 net 电平不一致时的着色。
+两条 net 各自的 `curSignal`（单驱时）仍作为独立 token 比对，且消费者经表达式/slot 读到的是确定的 AND 结果（由「expr-node slot==tree-pull」断言保障），功能覆盖不受排除影响。加法器（纯组合、电线密集）与计数器（含寄存器时序）两存档、含开关翻转与 24 拍时钟打点，均**逐拍零差异**（详见 `docs/metrics.md` T2.5 段）。另 `test_ir_tick_bypasses_evalstruct` 静态断言 `useIR=true` 时事件/tick 路径 `SwCommon.EvalStruct` 调用计数归零。
+
+
 ---
 
 ## 6. T2.6 SWVerilogEmitter（M3）
