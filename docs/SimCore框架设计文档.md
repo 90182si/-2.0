@@ -109,11 +109,11 @@ const TICK := 1.0 / 60.0
 var _acc := 0.0
 
 func _process(delta: float) -> void:
-    _acc += delta
-    _acc = minf(_acc, TICK * 3.0)   # 掉帧时最多追 3 拍，防止雪崩
-    while _acc >= TICK:
-        manager.tick(TICK)          # 电路仿真只在这里跑
-        _acc -= TICK
+	_acc += delta
+	_acc = minf(_acc, TICK * 3.0)   # 掉帧时最多追 3 拍，防止雪崩
+	while _acc >= TICK:
+		manager.tick(TICK)          # 电路仿真只在这里跑
+		_acc -= TICK
 ```
 
 ### 3.2 仿真演进：逐元件求值 → Verilog 化
@@ -142,27 +142,27 @@ func _process(delta: float) -> void:
 enum PinDir { IN, OUT, INOUT }
 
 class PinDef:            # 引脚定义（挂在元件/IC 定义上）
-    var name: StringName # → Verilog 端口名
-    var dir: PinDir      # 电气方向：IN / OUT / INOUT
-    var offset: Vector2i # 相对元件原点(左上)的格点偏移
-    var edge: int        # 几何出线方向：0=N 1=S 2=E 3=W
+	var name: StringName # → Verilog 端口名
+	var dir: PinDir      # 电气方向：IN / OUT / INOUT
+	var offset: Vector2i # 相对元件原点(左上)的格点偏移
+	var edge: int        # 几何出线方向：0=N 1=S 2=E 3=W
 
 class DeviceDef:         # 元件定义（原语或自定义 IC，可复用）
-    var id: StringName
-    var size: Vector2i   # 尺寸不固定
-    var pins: Array[PinDef]
+	var id: StringName
+	var size: Vector2i   # 尺寸不固定
+	var pins: Array[PinDef]
 
 class DeviceInstance:    # 地图上的一个实例
-    var uid: int
-    var def_id: StringName
-    var pos: Vector2i    # 元件原点(左上)世界坐标
-    var rotation: int    # 0/90/180/270，引脚 offset 随旋转变换
-    var pin_net := {}    # pin_name -> net_id
+	var uid: int
+	var def_id: StringName
+	var pos: Vector2i    # 元件原点(左上)世界坐标
+	var rotation: int    # 0/90/180/270，引脚 offset 随旋转变换
+	var pin_net := {}    # pin_name -> net_id
 
 class Net:               # 线网：线与逻辑核心 —— 多驱动合法
-    var id: int
-    var drivers := []    # 输出引脚列表（可多条，线与）
-    var loads := []      # 输入引脚列表（可多个读取）
+	var id: int
+	var drivers := []    # 输出引脚列表（可多条，线与）
+	var loads := []      # 输入引脚列表（可多个读取）
 ```
 
 ### 4.1 引脚模型（offset + dir）
@@ -229,20 +229,20 @@ class Net:               # 线网：线与逻辑核心 —— 多驱动合法
 ```
 // 示意：生成器输出（FLOAT_DRIVE = 0）
 module top(
-    input  clk,
-    input  in_1, in_2, in_3,
-    output out_7, out_8, out_9, out_10
+	input  clk,
+	input  in_1, in_2, in_3,
+	output out_7, out_8, out_9, out_10
 );
-    reg   q_6;
-    wire  n_5;                  // 两个开关线与
-    assign n_5 = in_1 & in_2;
-    wire  n_2;
-    assign n_2 = ~in_3;         // 组合门（NOT）
-    wire  n_7;
-    assign n_7 = n_5 & n_2;     // AND 门
-    wire  n_9;
-    assign n_9 = q_6;           // 寄存器输出进链
-    wire  n_11 = 1'b0;          // 浮空 = 下拉 0
+	reg   q_6;
+	wire  n_5;                  // 两个开关线与
+	assign n_5 = in_1 & in_2;
+	wire  n_2;
+	assign n_2 = ~in_3;         // 组合门（NOT）
+	wire  n_7;
+	assign n_7 = n_5 & n_2;     // AND 门
+	wire  n_9;
+	assign n_9 = q_6;           // 寄存器输出进链
+	wire  n_11 = 1'b0;          // 浮空 = 下拉 0
     always @(posedge clk) q_6 <= n_7;   // D 触发器
     assign out_7 = n_5;
     assign out_8 = n_7;

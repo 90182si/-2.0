@@ -1,0 +1,33 @@
+class_name SWLayerSystem extends SWSystem
+
+#A["SWLayerManager (Node, 装配根)"] --> B["SWBuildLayer (View)"]
+#A --> C["SWHoldLayer (View)"]
+#A --> D["SWHudLayer (View)"]
+#B --> E["SWBuildLayerSystem (SWSystem)"]
+#C --> F["SWHoldLayerSystem (SWSystem)"]
+#D --> G["SWHudLayerSystem (SWSystem)"]
+#E --> H["SWSystemManager (60Hz + 逐帧)"]
+#F --> H
+#G --> H
+
+var view:SWLayer = null
+
+#初始化管控的Layer,并在子类函数中进行特例化初始化
+func attach_view(v:SWLayer) -> void:
+	view = v
+	if v != null:
+		v.layer_system = self
+		
+func detach_view() -> void:
+	if view != null and view.layer_system == self:
+		view.layer_system = null
+	view = null
+
+func frame(_delta:float) -> void:
+	pass
+	
+func handle_input(_event:InputEvent) -> bool:
+	return false
+	
+func on_view_rect_changed(_view_rect:Rect2,_speed_vec:Vector2) -> void:
+	pass

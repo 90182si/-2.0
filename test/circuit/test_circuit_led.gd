@@ -13,7 +13,7 @@ extends GutTest
 # 若不确定坐标，可先用 print_builds_around() 打印存档里所有建筑物及其位置来定位。
 
 # ===== TODO 1：填写存档名 =================================================
-const SAVE_NAME := "加法器"   # 例如 "我的存档1"
+const SAVE_NAME := "加法器3"   # 例如 "我的存档1"
 
 # 用 preload 按路径引用测试台，避免依赖 class_name 的全局注册（新脚本需编辑器重扫才可见）。
 const HARNESS_SCRIPT := preload("res://test/circuit/circuit_test_harness.gd")

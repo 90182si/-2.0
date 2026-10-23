@@ -19,7 +19,7 @@ script = ExtResource("1_vpxko")
 [node name="SWLayerManager" type="Node" parent="." unique_id=902654908]
 script = ExtResource("2_s2o6g")
 
-[node name="SWMapLayer" type="Node" parent="SWLayerManager" unique_id=1497280557 groups=["SWLayer"]]
+[node name="SWMapLayer" type="Node" parent="SWLayerManager" unique_id=1497280557]
 script = ExtResource("3_vpxko")
 
 [node name="SWDrawManager" parent="SWLayerManager/SWMapLayer" unique_id=805409719 instance=ExtResource("4_be7jw")]
@@ -27,13 +27,13 @@ useName = "Tiling"
 
 [node name="SWHudCanvasLayer" type="CanvasLayer" parent="SWLayerManager" unique_id=1157091531]
 
-[node name="SWHudLayer" parent="SWLayerManager/SWHudCanvasLayer" unique_id=1512405539 groups=["SWLayer"] instance=ExtResource("5_ouyqx")]
+[node name="SWHudLayer" parent="SWLayerManager/SWHudCanvasLayer" unique_id=1512405539 instance=ExtResource("5_ouyqx")]
 
 [node name="SWBuildLayer" parent="SWLayerManager" unique_id=1243757311 instance=ExtResource("6_4a3ye")]
 
-[node name="SWHoldLayer" type="Node" parent="SWLayerManager" unique_id=2058632708 groups=["SWLayer"]]
+[node name="SWHoldLayer" type="Node" parent="SWLayerManager" unique_id=2058632708]
 script = ExtResource("7_t3rum")
-_hold_shadow_define = ExtResource("8_ukn6h")
+hold_shadow_define = ExtResource("8_ukn6h")
 
 [node name="SWDrawManager2" parent="SWLayerManager/SWHoldLayer" unique_id=875026827 instance=ExtResource("4_be7jw")]
 useName = "Shadow"

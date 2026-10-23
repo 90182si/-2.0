@@ -30,16 +30,6 @@ func _apply_atlas() -> void:
 		if btn == null:
 			continue
 		btn.set_texture_normal(buildDefine.atlasIcon)
-			
-	#if SwAtlas == null or SwAtlas.current == null:
-		#return
-	#for tool in selTools:
-		#var btn := tool as TextureButton
-		#if btn == null:
-			#continue
-		#var atex := btn.texture_normal as AtlasTexture
-		#if atex != null:
-			#atex.atlas = SwAtlas.current
 
 func on_view_rect_changed(_viewRect:Rect2,_speedVec:Vector2) -> void:
 	pass
@@ -57,3 +47,6 @@ func _on_save_pressed() -> void:
 
 func _on_load_pressed() -> void:
 	load_requested.emit()
+
+func create_layer_system() -> SWLayerSystem:
+	return SWHudLayerSystem.new()
