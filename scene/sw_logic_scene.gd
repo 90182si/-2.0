@@ -1,18 +1,19 @@
 class_name SWLogicScene extends Node
-@onready var sw_zoom_com: SWZoomCom = $SWZoomCom
-@onready var sw_move_com: SWMoveCom = $SWMoveCom
 @onready var sw_camera_2d: SWCamera2D = $SWCamera2D
 @onready var sw_layer_manager: SWLayerManager = $SWLayerManager
 
 var system_manager: SWSystemManager = null
+var camera_system:SWCameraSystem = null
 
 func _init() -> void:
 	SWObjectPool.InitSWChunkDataObject()
 	system_manager = SWSystemManager.new(null)
+	camera_system = SWCameraSystem.new()
 
 func _ready() -> void:
-	sw_zoom_com.addZoomFuncCamObject(sw_camera_2d)
-	sw_move_com.addMoveFuncCamObject(sw_camera_2d)
+	camera_system.enable = true
+	camera_system.attach_camera(sw_camera_2d)
+	system_manager.add_system(camera_system)
 	for layer in sw_layer_manager.layers:
 		sw_camera_2d.addLayerNotify(layer)
 		

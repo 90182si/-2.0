@@ -8,20 +8,23 @@ func addLayerNotify(swLayer:SWLayer) -> void:
 func delLayerNotify(swLayer:SWLayer) -> void:
 	_layerObjList.erase(swLayer)
 
-func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2) -> void:
+func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2 = Vector2.ZERO) -> void:
 	if view_scale_level < SwDefine.VIEW_MIN_LEVEL and vec.y < 0:
 		return
 	if view_scale_level > SwDefine.VIEW_MAX_LEVEL and vec.y > 0:
 		return
-	var myScale = Vector2(pow(1.1,view_scale_level),pow(1.1,view_scale_level))
+	var old_zoom := zoom
 	if vec.y > 0:
 		view_scale_level += 1
 	elif vec.y < 0:
 		view_scale_level -= 1
-	myScale = Vector2(pow(1.1,view_scale_level),pow(1.1,view_scale_level))
-	zoom = myScale
-	var mousePos2 = get_global_mouse_position()
-	position-=(mousePos2-centerPos)
+	var new_zoom := Vector2(pow(1.1,view_scale_level),pow(1.1,view_scale_level))
+	zoom = new_zoom
+	# 以鼠标为中心缩放：保持鼠标指向的世界坐标点在缩放前后不变
+	var mouse_screen := get_viewport().get_mouse_position()
+	var viewport_center := get_viewport_rect().position
+	var mouse_offset := mouse_screen - viewport_center
+	position += mouse_offset * (Vector2(1.0,1.0)/old_zoom - Vector2(1.0,1.0)/new_zoom)
 	view_rect_changed()
 	pass
 
@@ -87,3 +90,10 @@ func get_visible_rect() -> Rect2:
 		#visible_rect = Rect2(min_x, min_y, max_x - min_x, max_y - min_y)
 
 	return visible_rect
+
+var _camera_sys:SWCameraSystem = null
+func set_camere_system(cs:SWCameraSystem) -> void:
+	_camera_sys = cs
+func _unhandled_input(event: InputEvent) -> void:
+	if _camera_sys and _camera_sys.enable:
+		_camera_sys.handle_input(event)

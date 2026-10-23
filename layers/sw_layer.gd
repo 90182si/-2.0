@@ -19,7 +19,7 @@ func create_layer_system() -> SWLayerSystem:
 	return null
 	
 func _unhandled_input(event: InputEvent) -> void:
-	if layer_system == null:
+	if layer_system == null or (layer_system != null and layer_system.enable == false):
 		return
 	var handled := layer_system.handle_input(event)
 	if handled:

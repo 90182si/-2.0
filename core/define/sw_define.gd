@@ -8,6 +8,7 @@ const GRID_SIZE = Vector2i(128,128)
 const MAX_RENDER_PARTS:int = 6
 const MAX_TUNNEL_DIS:int = 4
 
+const ORDER_CAMERA = 500-1
 const ORDER_LAYER_MAP = 500
 const ORDER_LAYER_BUILD = 500+1
 const ORDER_LAYER_HUD = 500+2

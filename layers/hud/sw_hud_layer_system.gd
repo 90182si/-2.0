@@ -13,8 +13,11 @@ func attach_view(v:SWLayer) -> void:
 	var hudLayer := v as SWHudLayer
 	if hudLayer:
 		hudLayer.selTool.connect(func(define:SWBuildDefine):
-			tool_selected.emit(define))
+			if enable:
+				tool_selected.emit(define))
 		hudLayer.save_requested.connect(func():
-			self.save_requested.emit())
+			if enable:
+				self.save_requested.emit())
 		hudLayer.load_requested.connect(func():
-			self.load_requested.emit())
+			if enable:
+				self.load_requested.emit())

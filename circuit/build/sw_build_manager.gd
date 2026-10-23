@@ -7,6 +7,8 @@ var chunkMap:Dictionary[Vector2i,SWChunkBuildData] = {}
 var cacheValid:bool = false
 # 建筑变化信号
 signal build_changed()
+# 建筑内容版本号：任何增删都会自增，渲染层据此判断区块 buffer 是否需要重建
+var version: int = 0
 
 ########
 func setBuildState(build:SWBuildItemDefine,state:SwDefine.BuildState) -> void:
@@ -39,6 +41,7 @@ func addBuild(build:SWBuildItemDefine) -> bool:
 	if result:
 		buildStoreManager[build.id] = build
 		build.on_idled(self)
+		version += 1
 		build_changed.emit()
 	return result
 	
@@ -97,6 +100,7 @@ func delBuilds(builds:Array[SWBuildItemDefine]) -> bool:
 				assert("在{},{}删除{}失败".format([build.buildAxisPos.x, build.buildAxisPos.y, build.buildDefine.buildName]))
 	if anyDeleted:
 		cacheValid = false
+		version += 1
 		build_changed.emit()
 	return success
 	
@@ -180,7 +184,15 @@ func getAllBuilds() -> Array[SWBuildItemDefine]:
 			builds.append(build)
 	return builds
 
+#当前世界中的建筑物总数（按区块统计，不构造临时数组）
+func getBuildCount() -> int:
+	var count:int = 0
+	for chunk in chunkMap.values():
+		count += chunk.getAllBuilds().size()
+	return count
+
 func clearAllBuilds() -> void:
 	chunkMap.clear()
 	cacheValid = false
+	version += 1
 	build_changed.emit()

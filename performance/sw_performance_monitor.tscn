@@ -52,6 +52,10 @@ mouse_filter = 1
 layout_mode = 2
 mouse_filter = 1
 
+[node name="BuildCountLabel" type="Label" parent="StatsContainer/StatsDisplay" unique_id=1734826512]
+layout_mode = 2
+mouse_filter = 1
+
 [node name="LogBtn" type="Button" parent="StatsContainer/StatsDisplay" unique_id=536422780]
 layout_mode = 2
 mouse_filter = 1

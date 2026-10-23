@@ -30,7 +30,11 @@ static func GetSWChunkDataObject(drawMode:SwDefine.GridDrawMode) -> SwDefine.SWD
 		used_pool[chunkData] = true
 		return chunkData
 	else:
-		var chunkData:SwDefine.SWDrawChunkData = del_pool.keys().front()
+		# 直接取第一个 key，避免 keys() 每帧复制整个空闲池（池内有上千个对象）
+		var chunkData:SwDefine.SWDrawChunkData = null
+		for k in del_pool:
+			chunkData = k
+			break
 		del_pool.erase(chunkData)
 		used_pool[chunkData] = true
 		# 复用前重置区块与渲染状态，避免残留上一次的 mapData / drawMode 等信息

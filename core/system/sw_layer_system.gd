@@ -10,6 +10,7 @@ class_name SWLayerSystem extends SWSystem
 #F --> H
 #G --> H
 
+#被控组件
 var view:SWLayer = null
 
 #初始化管控的Layer,并在子类函数中进行特例化初始化
@@ -26,6 +27,7 @@ func detach_view() -> void:
 func frame(_delta:float) -> void:
 	pass
 	
+#事件来源，外部调用
 func handle_input(_event:InputEvent) -> bool:
 	return false
 	

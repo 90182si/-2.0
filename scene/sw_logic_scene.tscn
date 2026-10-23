@@ -7,9 +7,6 @@
 [ext_resource type="PackedScene" uid="uid://08awj5donysx" path="res://layers/hud/sw_hud_layer.tscn" id="5_ouyqx"]
 [ext_resource type="PackedScene" uid="uid://d1xlrwg74qhwa" path="res://layers/build/sw_build_layer.tscn" id="6_4a3ye"]
 [ext_resource type="Script" uid="uid://cnart3gf8r4gj" path="res://layers/hold/sw_hold_layer.gd" id="7_t3rum"]
-[ext_resource type="Resource" uid="uid://bysn6qa4xtydj" path="res://res/格子.tres" id="8_ukn6h"]
-[ext_resource type="Script" uid="uid://bpysq7yqoc78j" path="res://camera/sw_zoom_com.gd" id="9_vpxko"]
-[ext_resource type="Script" uid="uid://b5kf4ybljiam8" path="res://camera/sw_move_com.gd" id="10_s2o6g"]
 [ext_resource type="Script" uid="uid://dj2gxthmo4sqc" path="res://camera/sw_camera_2d.gd" id="11_ahrpj"]
 [ext_resource type="PackedScene" uid="uid://d0rsseeae8ejg" path="res://performance/sw_performance_monitor.tscn" id="12_n2bbv"]
 
@@ -33,7 +30,6 @@ useName = "Tiling"
 
 [node name="SWHoldLayer" type="Node" parent="SWLayerManager" unique_id=2058632708]
 script = ExtResource("7_t3rum")
-hold_shadow_define = ExtResource("8_ukn6h")
 
 [node name="SWDrawManager2" parent="SWLayerManager/SWHoldLayer" unique_id=875026827 instance=ExtResource("4_be7jw")]
 useName = "Shadow"
@@ -49,16 +45,6 @@ offset_right = 336.0
 offset_bottom = 86.0
 mouse_filter = 1
 color = Color(0.5568628, 1, 1, 0.29803923)
-
-[node name="SWZoomCom" type="Control" parent="." unique_id=270444491]
-layout_mode = 3
-anchors_preset = 0
-script = ExtResource("9_vpxko")
-
-[node name="SWMoveCom" type="Control" parent="." unique_id=1528870562]
-layout_mode = 3
-anchors_preset = 0
-script = ExtResource("10_s2o6g")
 
 [node name="SWCamera2D" type="Camera2D" parent="." unique_id=891435687]
 anchor_mode = 0

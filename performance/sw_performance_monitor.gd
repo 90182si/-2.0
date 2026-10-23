@@ -5,6 +5,7 @@ class_name SWPerformanceMonitor extends CanvasLayer
 @onready var memory_label: Label = $StatsContainer/StatsDisplay/MemoryLabel
 @onready var object_label: Label = $StatsContainer/StatsDisplay/ObjectLabel
 @onready var draw_label: Label = $StatsContainer/StatsDisplay/DrawLabel
+@onready var build_count_label: Label = $StatsContainer/StatsDisplay/BuildCountLabel
 @onready var log_btn: Button = $StatsContainer/StatsDisplay/LogBtn
 @onready var vsync_check: CheckButton = $StatsContainer/StatsDisplay/VsyncCheck
 @onready var map_switch: CheckButton = $StatsContainer/StatsDisplay/MapSwitch
@@ -69,6 +70,7 @@ func _process(delta: float) -> void:
 		_update_memory_label()
 		_update_object_label()
 		_update_draw_label()
+		_update_build_count_label()
 
 	# 建筑悬停信息按间隔更新，避免每帧查询与重建文本
 	if _tooltip_enabled:
@@ -119,6 +121,15 @@ func _update_draw_label() -> void:
 	draw_label.text = "Draw: %d calls  Objects: %d  Primitives: %s" % [draw_calls, objects_in_frame, _format_integer(primitives)]
 
 
+func _update_build_count_label() -> void:
+	if build_count_label == null:
+		return
+	var build_count: int = 0
+	if _build_layer != null and _build_layer.sw_build_manager != null:
+		build_count = _build_layer.sw_build_manager.getBuildCount()
+	build_count_label.text = "建筑物: %s" % _format_integer(build_count)
+
+
 func _format_memory(bytes: float) -> String:
 	if bytes <= 0:
 		return "0 B"
@@ -132,6 +143,7 @@ func _format_memory(bytes: float) -> String:
 
 
 func _format_integer(value: int) -> String:
+	return str(value)
 	if value < 1000:
 		return str(value)
 	if value < 1_000_000:
@@ -314,6 +326,8 @@ func expandMonitor(expand: bool) -> void:
 	memory_label.visible = expand
 	object_label.visible = expand
 	draw_label.visible = expand
+	if build_count_label != null:
+		build_count_label.visible = expand
 	log_btn.visible = expand
 	if vsync_check != null:
 		vsync_check.visible = expand
