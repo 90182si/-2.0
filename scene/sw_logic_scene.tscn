@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" uid="uid://08awj5donysx" path="res://layers/hud/sw_hud_layer.tscn" id="5_ouyqx"]
 [ext_resource type="PackedScene" uid="uid://d1xlrwg74qhwa" path="res://layers/build/sw_build_layer.tscn" id="6_4a3ye"]
 [ext_resource type="Script" uid="uid://cnart3gf8r4gj" path="res://layers/hold/sw_hold_layer.gd" id="7_t3rum"]
+[ext_resource type="Resource" uid="uid://bysn6qa4xtydj" path="res://res/格子.tres" id="8_kn8ac"]
 [ext_resource type="Script" uid="uid://dj2gxthmo4sqc" path="res://camera/sw_camera_2d.gd" id="11_ahrpj"]
 [ext_resource type="PackedScene" uid="uid://d0rsseeae8ejg" path="res://performance/sw_performance_monitor.tscn" id="12_n2bbv"]
 
@@ -30,6 +31,7 @@ useName = "Tiling"
 
 [node name="SWHoldLayer" type="Node" parent="SWLayerManager" unique_id=2058632708]
 script = ExtResource("7_t3rum")
+hold_shadow_define = ExtResource("8_kn8ac")
 
 [node name="SWDrawManager2" parent="SWLayerManager/SWHoldLayer" unique_id=875026827 instance=ExtResource("4_be7jw")]
 useName = "Shadow"

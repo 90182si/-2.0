@@ -166,6 +166,8 @@ func calBuffer() -> void:
 			if newBuffer.size() != needed_size:
 				newBuffer.resize(needed_size)
 			if curMapData.is_empty():
+				# 没有内容可画：必须复位构建标志，否则该区块永远被当成"仍在构建"，既不会被卸载也会长期占用并发名额
+				planIsRunning = false
 				continue
 			var localMapDataIns:SWBuildItemDefine
 			localMapDataIns = curMapData[0]
@@ -184,7 +186,10 @@ func calBuffer() -> void:
 		else:
 			if curMapData.is_empty():
 				showCount = 0
-				call_deferred("bufferCalFinish", newBuffer, showCount)
+				# 空区块也要提交与容量一致的 buffer：MultiMesh.set_buffer 要求长度严格匹配
+				if newBuffer.size() != needed_size:
+					newBuffer.resize(needed_size)
+				call_deferred("bufferCalFinish", newBuffer.duplicate(), showCount)
 				planIsRunning = false
 				continue
 			var max_instances: int = maxInstances
@@ -236,7 +241,9 @@ func calBuffer() -> void:
 							grid_x, grid_y, color, max_instances)
 			showCount = index_inst
 		# 使用 call_deferred 传递数据，但 n 通过参数传递
-		call_deferred("bufferCalFinish", newBuffer, showCount)
+		# 必须交独立快照：worker 紧接着就会复用同一块 ping-pong 缓冲，直接传引用会让
+		# 主线程读到 worker 正在改写的数组（撕裂读），set_buffer 随即因长度不匹配而报错
+		call_deferred("bufferCalFinish", newBuffer.duplicate(), showCount)
 		planIsRunning = false
 
 # 获取实例颜色的辅助函数
@@ -247,6 +254,14 @@ func _get_instance_color(mapData:SWBuildItemDefine, grid_x:float, grid_y:float) 
 	return color
 
 func bufferCalFinish(newBuffer:PackedFloat32Array, localN:int) -> void:
+	if multimesh == null:
+		return
+	var stride:int = 16 if multimesh.use_colors else 12
+	var need:int = multimesh.instance_count * stride
+	if newBuffer.size() != need:
+		# 兜底：长度不符时引擎会直接报错且不生效，这里补齐并把该区块隐藏，避免把残缺数据上屏
+		newBuffer.resize(need)
+		localN = 0
 	multimesh.set_buffer(newBuffer)
 	multimesh.visible_instance_count = localN
 	multimesh.emit_changed()

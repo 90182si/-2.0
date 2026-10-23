@@ -137,10 +137,11 @@ static func apply_viewport(camera: SWCamera2D, data: Dictionary) -> void:
 	var vp_data: Dictionary = data.get("viewport", {})
 	if vp_data.is_empty():
 		return
-	camera.zoom = Vector2(vp_data.get("zoom_x", 1.0), vp_data.get("zoom_y", 1.0))
-	camera.global_position = Vector2(vp_data.get("pos_x", 0.0), vp_data.get("pos_y", 0.0))
-	camera.view_scale_level = int(vp_data.get("view_scale_level", 0))
-	camera.view_rect_changed()
+	# 统一走 set_view：相机内部有连续逻辑位置，直接改 zoom/position 会让它脱节
+	camera.set_view(
+		Vector2(vp_data.get("pos_x", 0.0), vp_data.get("pos_y", 0.0)),
+		Vector2(vp_data.get("zoom_x", 1.0), vp_data.get("zoom_y", 1.0)),
+		int(vp_data.get("view_scale_level", 0)))
 
 static func get_thumbnail_texture(name: String) -> Texture2D:
 	var path: String = _thumb_file_path(name)

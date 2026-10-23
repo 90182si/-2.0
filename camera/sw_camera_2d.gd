@@ -2,6 +2,15 @@ class_name SWCamera2D extends Camera2D
 
 var view_scale_level = 0
 
+# 亚像素吸附：把渲染位置对齐到整屏幕像素
+# 相机停在亚像素位置时，光栅化会按各图元自己的边界取整（区块格距 128*zoom 不是整数），
+# 同一屏内有的图元跳 1 像素、有的不动，看起来就是整屏在抖。吸附后所有图元同进同退。
+@export var snap_to_pixel: bool = true
+# 连续逻辑位置：位移在这里累加，吸附只影响渲染结果，不会把不足 1 像素的位移丢掉
+var _logic_pos: Vector2 = Vector2.ZERO
+# 最近一次写入的渲染位置：用于发现外部直接改 position 的情况（读档、编辑器等）
+var _applied_pos: Vector2 = Vector2.ZERO
+
 var _layerObjList = []
 func addLayerNotify(swLayer:SWLayer) -> void:
 	_layerObjList.append(swLayer)
@@ -13,6 +22,7 @@ func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2 = Vector2.ZERO) -> void:
 		return
 	if view_scale_level > SwDefine.VIEW_MAX_LEVEL and vec.y > 0:
 		return
+	_sync_logic_from_external()
 	var old_zoom := zoom
 	if vec.y > 0:
 		view_scale_level += 1
@@ -24,19 +34,48 @@ func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2 = Vector2.ZERO) -> void:
 	var mouse_screen := get_viewport().get_mouse_position()
 	var viewport_center := get_viewport_rect().position
 	var mouse_offset := mouse_screen - viewport_center
-	position += mouse_offset * (Vector2(1.0,1.0)/old_zoom - Vector2(1.0,1.0)/new_zoom)
+	_logic_pos += mouse_offset * (Vector2(1.0,1.0)/old_zoom - Vector2(1.0,1.0)/new_zoom)
+	_apply_position()
 	view_rect_changed()
 	pass
 
 func _on_moveCom_move(vec:Vector2) -> void:
-	position += vec/Vector2(pow(1.05,view_scale_level),pow(1.05,view_scale_level))
+	_sync_logic_from_external()
+	_logic_pos += vec/Vector2(pow(1.05,view_scale_level),pow(1.05,view_scale_level))
+	_apply_position()
 	view_rect_changed(vec)
 	pass
 	
 func _on_moveCom_moveByMouse(vec:Vector2) -> void:
-	position += vec/zoom#Vector2(pow(1.05,view_scale_level),pow(1.05,view_scale_level))
+	_sync_logic_from_external()
+	_logic_pos += vec/zoom#Vector2(pow(1.05,view_scale_level),pow(1.05,view_scale_level))
+	_apply_position()
 	view_rect_changed(vec)
 	pass
+
+# 把连续逻辑位置写进渲染位置（按需吸附到整屏幕像素）
+func _apply_position() -> void:
+	if not snap_to_pixel or zoom.x == 0.0 or zoom.y == 0.0:
+		global_position = _logic_pos
+	else:
+		# 屏幕坐标 = 世界坐标 * zoom，吸附到整数后再换回世界坐标
+		global_position = (_logic_pos * zoom).round() / zoom
+	_applied_pos = global_position
+
+# 外部直接改过位置时（超过吸附可能造成的半个像素），把连续位置拉回来，避免下次移动跳回旧值
+func _sync_logic_from_external() -> void:
+	var z := zoom.x if zoom.x != 0.0 else 1.0
+	if (global_position - _applied_pos).length() * z > 1.0:
+		_logic_pos = global_position
+		_applied_pos = global_position
+
+# 外部直接设置视野（读档等）：同步连续位置，避免吸附后与逻辑位置脱节
+func set_view(pos:Vector2, zoom_vec:Vector2, level:int) -> void:
+	zoom = zoom_vec
+	view_scale_level = level
+	_logic_pos = pos
+	_apply_position()
+	view_rect_changed()
 
 func view_rect_changed(speedVec:Vector2=Vector2.ZERO) -> void:
 	var viewRect := get_visible_rect()

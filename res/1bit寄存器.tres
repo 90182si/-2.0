@@ -6,17 +6,17 @@
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_antmo"]
 atlas = ExtResource("1_d076v")
-region = Rect2(768, 256, 128, 128)
+region = Rect2(512, 384, 128, 128)
 filter_clip = true
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_gahbv"]
 atlas = ExtResource("1_d076v")
-region = Rect2(768, 256, 128, 128)
+region = Rect2(512, 384, 128, 128)
 filter_clip = true
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_65sou"]
 atlas = ExtResource("1_d076v")
-region = Rect2(896, 256, 128, 128)
+region = Rect2(640, 384, 128, 128)
 filter_clip = true
 
 [sub_resource type="Resource" id="Resource_antmo"]
