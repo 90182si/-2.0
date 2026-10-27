@@ -47,21 +47,21 @@ func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	var value = super.getValue(dir)
-	var wireValue = SwDefine.CircuitSignal.NONE
 	if value == SwDefine.CircuitSignal.HIGH:
-		wireValue = SwDefine.CircuitSignal.LOW
+		return SwDefine.CircuitSignal.LOW
 	elif value == SwDefine.CircuitSignal.LOW:
-		wireValue = SwDefine.CircuitSignal.HIGH
-	if portIsInput(dir):
-		var net:SWNet = pinNetMap.get(dir,null)
-		if net:
-			net.curSignal = wireValue
-			for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
-				load.getCircuitCompoent().setValue(dir,wireValue)
-	return wireValue
+		return SwDefine.CircuitSignal.HIGH
+	return SwDefine.CircuitSignal.NONE
 
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
-	var downDir = SwDefine.getAntiDir(buildRef.rotation)
-	buildRef.buildStateChanged(getValue(downDir))
-	return retArr
+#非门只有一个输入口（参考坐标 DOWN，世界方向随旋转），输出取反
+#求值与显示只读一次输入 net：输入电平就是贴图色，输出电平是它取反
+func evaluate() -> int:
+	var bit:int = netBit(SwDefine.getAntiDir(buildRef.rotation))
+	buildRef.buildStateChanged(SwDefine.CircuitSignal.HIGH if bit == 1 else SwDefine.CircuitSignal.LOW)
+	return 1 - bit
+
+func evalOutput() -> int:
+	return 1 - netBit(SwDefine.getAntiDir(buildRef.rotation))
+
+func reCalSignals() -> void:
+	evaluate()

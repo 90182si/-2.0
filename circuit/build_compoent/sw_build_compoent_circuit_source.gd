@@ -30,8 +30,11 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 			#load.getCircuitCompoent().setValue(buildRef.rotation, value)
 	return value
 
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
-	#var btn := buildRef as SWBuildButton
-	#var value = SwDefine.CircuitSignal.HIGH if btn.pressed else SwDefine.CircuitSignal.LOW
-	return retArr
+#输出电平只取决于自身按下状态，与上游 net 无关
+func evaluate() -> int:
+	var btn := buildRef as SWBuildButton
+	return 1 if btn != null and btn.pressed else 0
+
+func evalOutput() -> int:
+	return evaluate()
+

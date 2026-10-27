@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://cy6va8i6pjkxk" path="res://core/manager/sw_layer_manager.gd" id="2_s2o6g"]
 [ext_resource type="Script" uid="uid://cq8ob084udlh6" path="res://layers/map/sw_map_layer.gd" id="3_vpxko"]
 [ext_resource type="PackedScene" uid="uid://ds5xu8gs4pgd2" path="res://core/manager/sw_draw_manager.tscn" id="4_be7jw"]
+[ext_resource type="Script" uid="uid://c1mwu6jrj4mud" path="res://render/sw_render_node.gd" id="5_n407i"]
 [ext_resource type="PackedScene" uid="uid://08awj5donysx" path="res://layers/hud/sw_hud_layer.tscn" id="5_ouyqx"]
 [ext_resource type="PackedScene" uid="uid://d1xlrwg74qhwa" path="res://layers/build/sw_build_layer.tscn" id="6_4a3ye"]
 [ext_resource type="Script" uid="uid://cnart3gf8r4gj" path="res://layers/hold/sw_hold_layer.gd" id="7_t3rum"]
@@ -22,6 +23,9 @@ script = ExtResource("3_vpxko")
 
 [node name="SWDrawManager" parent="SWLayerManager/SWMapLayer" unique_id=805409719 instance=ExtResource("4_be7jw")]
 useName = "Tiling"
+
+[node name="SWRenderNode" type="Node" parent="SWLayerManager/SWMapLayer" unique_id=1337216481]
+script = ExtResource("5_n407i")
 
 [node name="SWHudCanvasLayer" type="CanvasLayer" parent="SWLayerManager" unique_id=1157091531]
 

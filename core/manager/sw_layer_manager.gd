@@ -19,8 +19,8 @@ func _ready() -> void:
 	if parent != null:
 		_systemManager = parent.get("system_manager") as SWSystemManager
 		
-	for node in get_tree().get_nodes_in_group("SWLayer"):
-		var view := node as SWLayer
+	for layer:SWLayer in get_tree().get_nodes_in_group("SWLayer"):
+		var view := layer as SWLayer
 		if view == null:
 			continue
 		layers.append(view)
@@ -43,6 +43,13 @@ func _ready() -> void:
 			holdSystem = system
 		elif system is SWBuildLayerSystem:
 			buildSystem = system
+	for render_node:SWRenderNode in get_tree().get_nodes_in_group("SWRender"):
+		var render_system:SWRenderSystem = render_node.create_render_system()
+		if render_system == null:
+			continue
+		render_system.attach_render_node(render_node)
+		if _systemManager != null:
+			_systemManager.add_system(render_system)
 	_wire_systems()
 			
 func _exit_tree() -> void:
@@ -70,10 +77,6 @@ func _wire_systems() -> void:
 			hudSystem.tool_selected.connect(holdSystem.set_hold_tool)
 		hudSystem.save_requested.connect(_on_save_requested)
 		hudSystem.load_requested.connect(_on_load_requested)
-
-func _process(delta: float) -> void:
-	if _systemManager:
-		_systemManager.frame(delta)
 		
 func _on_save_requested() -> void:
 	var dialog = preload("res://ui/sw_save_dialog.tscn").instantiate()

@@ -87,6 +87,8 @@ static func get_all_text_in_brackets(input: String) -> Array[String]:
 
 #求值轮次：每次电路重建或信号变化时自增，表达式节点缓存按轮次失效
 static var evalEpoch:int = 0
+static var dbgEvaluated:int = 0
+static var dbgQueue:int = 0
 static func NextEvalEpoch() -> int:
 	evalEpoch += 1
 	return evalEpoch

@@ -6,53 +6,52 @@ var _gridSize:Vector2 = SwDefine.GRID_SIZE
 var _meshSizeInited:bool = false
 var _drawMode:SwDefine.GridDrawMode=SwDefine.GridDrawMode.Tiling
 
-var thread:Thread = null
+# 地图平铺（Tiling）专用缓冲：整块铺满 CHUNK_SIZE×CHUNK_SIZE 个格子
 var buffer:PackedFloat32Array
 
-# ========== 线程安全变量 ==========
-var _stopThread:int = 0           # 受 mutex 保护
-var _alive:bool = true            # 受 mutex 保护
-var _hadDraw:bool = false         # 受 mutex 保护
-var _gridSizeTmp:Vector2 = Vector2.ZERO  # 受 mutex 保护
-var _visibleCount:int = 0         # 受 mutex 保护，用于 bufferCalFinish
+# 平铺层只构建一次：内容不会变，避免每帧重算
+var _hadDraw:bool = false
+var _gridSizeTmp:Vector2 = Vector2.ZERO
 
-var hasNewPlan = false
 # 上次绘制时的建筑内容版本号：内容未变时可直接复用 MultiMesh 中已有的 buffer
 var builtVersion:int = -1
 var e = Vector2i(SwDefine.CHUNK_SIZE, SwDefine.CHUNK_SIZE)
 var n = e.x*e.y	
 var maxInstances:int = 0   #含部件叠加后的最大实例容量
-var planIsRunning = false
-#var mutex:Mutex
-var semaphore: Semaphore
-var semaphore2: Semaphore
 
-# ========== 双缓冲(ping-pong) ==========
-# 交替使用两块预分配缓冲区，避免每次绘制都重新分配并清零大数组
-var _pingPongBuffers: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
-var _pingPongIndex: int = 0
-# 该块缓冲是否已完成首次容量预留（内容层用整块 append 构造，只需清空长度）
-var _pingPongReady: Array[bool] = [false, false]
+# ========== 内容层持久缓冲 ==========
+# 所有绘制都在主线程完成：没有工作线程，也就没有跨线程共享与 buffer 快照开销。
+# _cpuBuffer 常驻，按实例排布（16 floats/实例）；_slotStart/_slotParts 记录每个建筑
+# 占用的实例区间，信号翻转时只回写这些建筑的 8..15 列（颜色/图集 rect），
+# 不必把整块 256 个建筑的部件与几何重新生成一遍。
+var _cpuBuffer: PackedFloat32Array = PackedFloat32Array()
+var _slotStart: Dictionary = {}   # SWBuildItemDefine -> 起始实例下标
+var _slotParts: Dictionary = {}   # SWBuildItemDefine -> 实例数
+var _usedInstances: int = 0
+var _slotsValid: bool = false
+# ========== 连线色批量索引 ==========
+# 一根 net 翻转时它挂着的所有连线都要换色；上万根线逐建筑补丁会退化成上万次脚本调用。
+# 这里把「net -> 本区块内相关实例的颜色列偏移」预先摊平，翻转时一次算色、
+# 顺序写 4 个分量，把开销压回纯内存写。
+var _netCols: Dictionary = {}     # SWNet -> PackedInt32Array（每项 = 实例下标*16+8，白底）
+var _netMaskCols: Dictionary = {} # SWNet -> PackedInt32Array（带底色，如选中高亮）
+var _netMaskColors: Dictionary = {} # SWNet -> PackedColorArray（与 _netMaskCols 同序）
+# 临时诊断计数（性能探针读取）
+static var dbg_net_checks: int = 0
+static var dbg_cols_written: int = 0
+static var dbg_uploads: int = 0
+static var dbg_floats_uploaded: int = 0
+
 func _init() -> void:
 	_swTransform = SwDefine.SWTransformData.new()
-	semaphore = Semaphore.new()
-	semaphore2 = Semaphore.new()
-	#mutex = Mutex.new()
 	n = e.x * e.y
 	maxInstances = n * SwDefine.MAX_RENDER_PARTS
 	if multimesh:
 		# 启用颜色支持（如果需要）
 		multimesh.use_colors = true
-		multimesh.instance_count = maxInstances
-	#线程改由 _enter_tree 启动、_exit_tree 停止，确保只在节点位于场景树时存活
+		# 实例容量按实际用量调整（见 _upload）
+		multimesh.instance_count = 1
 
-func _enter_tree() -> void:
-	_alive = true
-	if thread == null:
-		thread = Thread.new()
-	if not thread.is_started():
-		thread.start(calBuffer)
-	
 func _ready() -> void:
 	# 运行前从全局配置 SwAtlas 取当前图集，覆盖 shader 采样用的 srcImg
 	# material 是场景子资源，被所有区块节点共享：参数已一致时必须跳过，
@@ -75,7 +74,6 @@ func setDrawMode(mode:SwDefine.GridDrawMode) -> void:
 func resetOffsetAndScale(_swTf:SwDefine.SWTransformData) -> void:
 	_swTransform = _swTf
 	position = _swTransform.offset
-	#(multimesh.mesh as QuadMesh).set_size(Vector2(_gridSize.x, -_gridSize.y)*_swTransform.scale)
 
 func setMeshSize(size:Vector2) -> void:
 	# 软缓存复用节点时尺寸通常不变，避免重复改写 QuadMesh 触发渲染服务器重建
@@ -85,13 +83,6 @@ func setMeshSize(size:Vector2) -> void:
 	_meshSizeInited = true
 	if multimesh and multimesh.mesh:
 		(multimesh.mesh as QuadMesh).set_size(Vector2(size.x, -size.y))
-	
-func _exit_tree() -> void:
-	_alive = false
-	semaphore.post()
-	if thread and thread.is_started():
-		thread.wait_to_finish()
-	thread = null
 
 # 公开方法用于控制颜色支持
 func set_use_color(enabled:bool) -> void:
@@ -109,162 +100,257 @@ func get_use_color() -> bool:
 	return multimesh.use_colors if multimesh else false
 	
 func reUse() -> void:
-	while planIsRunning:
-		pass
-	#buffer.clear()
 	_hadDraw = false
 	curMapData = []
-	#bufferSize=0
-	mapDataIns=null
+	mapDataIns = null
+	_slotStart.clear()
+	_slotParts.clear()
+	_slotsValid = false
+	_usedInstances = 0
+	_netCols.clear()
+	_netMaskCols.clear()
+	_netMaskColors.clear()
 
-# 区块进入软缓存时调用：释放 CPU 侧的双缓冲，仅保留 GPU 上的 MultiMesh buffer。
-# 内容未变时重新上屏不需要重建，只有内容变化时才重新分配。
-func releaseCpuBuffers() -> void:
-	_pingPongBuffers[0].resize(0)
-	_pingPongBuffers[1].resize(0)
-	_pingPongReady[0] = false
-	_pingPongReady[1] = false
+# 增量补丁要求常驻 CPU 缓冲与槽位表都在
+func hasCpuBuffer() -> bool:
+	return _slotsValid
 	
 var mapDataIns:SWBuildItemDefine = null
 var bufferSize = 0
 
 var curMapData:Array[SWBuildItemDefine]
 
+# 同步绘制：函数返回时 buffer 已经提交给 MultiMesh，不再有"后台构建中"状态
 func drawMap(mapData:Array[SWBuildItemDefine], _flashDrawRegion:bool = false) -> void:
-	if _hadDraw:
-		return
 	_gridSizeTmp = _gridSize * _swTransform.scale
 	if _drawMode == SwDefine.GridDrawMode.Tiling:
+		if _hadDraw:
+			return
 		_hadDraw = true
 	curMapData = mapData
-	
-	# 动态计算buffer大小
-	var use_colors = multimesh.use_colors
-	var buffer_size_per_instance = 12 if not use_colors else 16
+	var buffer_size_per_instance = 12 if not multimesh.use_colors else 16
 	bufferSize = n * buffer_size_per_instance
+	if _drawMode == SwDefine.GridDrawMode.Tiling:
+		_buildTiling()
+	elif _drawMode == SwDefine.GridDrawMode.ByContent:
+		_buildContent()
+	else:
+		_buildSparse()
 
-	hasNewPlan = true
-	semaphore.post()
+# 平铺层：单个地图资源铺满整块
+func _buildTiling() -> void:
+	if multimesh == null:
+		return
+	var use_colors: bool = multimesh.use_colors
+	var stride: int = 16 if use_colors else 12
+	if curMapData.is_empty():
+		multimesh.visible_instance_count = 0
+		return
+	var need: int = n * stride
+	if buffer.size() != need:
+		buffer.resize(need)
+	var ins: SWBuildItemDefine = curMapData[0]
+	var grid_x: float = _gridSizeTmp.x
+	var grid_y: float = _gridSizeTmp.y
+	var rect: Rect2 = ins.getRenderableCompoent().drawRect
+	var index: int = 0
+	for i in range(e.x):
+		for j in range(e.y):
+			var t = Transform2D(
+				deg_to_rad(ins.rotation*90),
+				Vector2(grid_x * i + grid_x / 2.0, grid_y * j + grid_y / 2.0))
+			_fill_instance(buffer, index*stride, t, _get_instance_color(ins, i, j), rect, use_colors)
+			index += 1
+	if multimesh.instance_count != index:
+		multimesh.instance_count = index
+	multimesh.set_buffer(buffer)
+	multimesh.visible_instance_count = index
+	multimesh.emit_changed()
 
-func calBuffer() -> void:
-	while true:
-		if not _alive:
+# 内容层：逐建筑 append 预烘培好的整块数据（一次 memcpy），并记录实例槽位供增量回写
+func _buildContent() -> void:
+	if multimesh == null:
+		return
+	var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
+	var cap: int = maxInstances
+	var grid_x: float = _gridSizeTmp.x
+	var grid_y: float = _gridSizeTmp.y
+	var buf: PackedFloat32Array = _cpuBuffer
+	buf.resize(0)
+	_slotStart.clear()
+	_slotParts.clear()
+	_netCols.clear()
+	_netMaskCols.clear()
+	_netMaskColors.clear()
+	var inst: int = 0
+	for mapData:SWBuildItemDefine in curMapData:
+		if inst >= cap:
 			break
-		semaphore.wait()
-		planIsRunning = true
-		var index = 0
-		# 根据是否使用颜色调整buffer大小
-		var use_colors = multimesh.use_colors
-		var buffer_size_per_instance = 12 if not use_colors else 16
-		var needed_size = maxInstances * buffer_size_per_instance
-		# 双缓冲交替：仅当容量或每实例字节数变化时才 resize，正常绘制直接复用，避免每帧分配与清零
-		_pingPongIndex = 1 - _pingPongIndex
-		var newBuffer = _pingPongBuffers[_pingPongIndex]
-		var showCount = 0
-		
-		if _drawMode == SwDefine.GridDrawMode.Tiling:
-			if newBuffer.size() != needed_size:
-				newBuffer.resize(needed_size)
-			if curMapData.is_empty():
-				# 没有内容可画：必须复位构建标志，否则该区块永远被当成"仍在构建"，既不会被卸载也会长期占用并发名额
-				planIsRunning = false
-				continue
-			var localMapDataIns:SWBuildItemDefine
-			localMapDataIns = curMapData[0]
-			for i in range(e.x):
-				for j in range(e.y):
-					var gridPos = Vector2i(_gridSizeTmp.x * i, _gridSizeTmp.y * j)
-					var color = _get_instance_color(localMapDataIns, i, j)
-					var t = Transform2D(
-						deg_to_rad(localMapDataIns.rotation*90),
-						Vector2(gridPos.x + _gridSizeTmp.x / 2.0, 
-								gridPos.y + _gridSizeTmp.y / 2.0))
-					var buffer_index = index * buffer_size_per_instance
-					_fill_instance(newBuffer,buffer_index,t,color,localMapDataIns.getRenderableCompoent().drawRect,use_colors)
-					index += 1
-			showCount = e.x*e.y
-		else:
-			if curMapData.is_empty():
-				showCount = 0
-				# 空区块也要提交与容量一致的 buffer：MultiMesh.set_buffer 要求长度严格匹配
-				if newBuffer.size() != needed_size:
-					newBuffer.resize(needed_size)
-				call_deferred("bufferCalFinish", newBuffer.duplicate(), showCount)
-				planIsRunning = false
-				continue
-			var max_instances: int = maxInstances
-			var grid_x: float = _gridSizeTmp.x
-			var grid_y: float = _gridSizeTmp.y
-			var use_hold_alpha: bool = _drawMode == SwDefine.GridDrawMode.ByHold
-			var index_inst: int = 0
-			if _drawMode == SwDefine.GridDrawMode.ByContent:
-				# 内容层每帧要重绘大量建筑：直接 append 预烘培好的整块数据（一次 memcpy）
-				if not _pingPongReady[_pingPongIndex]:
-					newBuffer.resize(needed_size)
-					_pingPongReady[_pingPongIndex] = true
-				newBuffer.resize(0)
-				var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
-				for mapData:SWBuildItemDefine in curMapData:
-					if index_inst >= max_instances:
-						break
-					var color: Color = mapData.buildState.mask_color
-					var block: PackedFloat32Array = mapData.getRenderableCompoent().getInstanceBlock(
-							float(mapData.buildAxisPos.x), float(mapData.buildAxisPos.y), grid_x, grid_y, color)
-					var block_len: int = block.size()
-					if block_len == 0:
-						continue
-					var block_parts: int = block_len / stride
-					if index_inst + block_parts > max_instances:
-						# 超出本区块实例上限时截断，只取放得下的部件
-						var allowed: int = (max_instances - index_inst) * stride
-						if allowed > 0:
-							newBuffer.append_array(block.slice(0, allowed))
-							index_inst = max_instances
-						break
-					newBuffer.append_array(block)
-					index_inst += block_parts
-				# MultiMesh.set_buffer 要求数组长度与实例总数一致，末尾补零到固定容量
-				if newBuffer.size() != needed_size:
-					newBuffer.resize(needed_size)
-			else:
-				# 手持/阴影图层的建筑数极少，逐实例写入即可，避免多图层线程争用烘培缓存
-				if newBuffer.size() != needed_size:
-					newBuffer.resize(needed_size)
-				for mapData:SWBuildItemDefine in curMapData:
-					if index_inst >= max_instances:
-						break
-					var color: Color = mapData.buildState.mask_color
-					if use_hold_alpha:
-						color.a *= 0.85
-					index_inst += mapData.getRenderableCompoent().writeInstances(
-							newBuffer, index_inst, float(mapData.buildAxisPos.x), float(mapData.buildAxisPos.y),
-							grid_x, grid_y, color, max_instances)
-			showCount = index_inst
-		# 使用 call_deferred 传递数据，但 n 通过参数传递
-		# 必须交独立快照：worker 紧接着就会复用同一块 ping-pong 缓冲，直接传引用会让
-		# 主线程读到 worker 正在改写的数组（撕裂读），set_buffer 随即因长度不匹配而报错
-		call_deferred("bufferCalFinish", newBuffer.duplicate(), showCount)
-		planIsRunning = false
+		var comp: SWBuildCompoentRenderable = mapData.getRenderableCompoent()
+		var block: PackedFloat32Array = comp.getInstanceBlock(
+				float(mapData.buildAxisPos.x), float(mapData.buildAxisPos.y), grid_x, grid_y,
+				mapData.buildState.mask_color)
+		if block.size() == 0:
+			continue
+		var parts: int = block.size() / stride
+		var truncated: bool = false
+		if inst + parts > cap:
+			# 超出本区块实例上限时截断，只取放得下的部件
+			parts = cap - inst
+			if parts <= 0:
+				break
+			block = block.slice(0, parts * stride)
+			truncated = true
+		if not truncated:
+			comp.registerNetColumns(inst, _netCols, _netMaskCols, _netMaskColors)
+		_slotStart[mapData] = inst
+		_slotParts[mapData] = parts
+		buf.append_array(block)
+		inst += parts
+	_cpuBuffer = buf
+	_usedInstances = inst
+	_slotsValid = true
+	_upload(inst)
+
+# 手持/阴影图层：建筑数极少，逐实例写入即可
+func _buildSparse() -> void:
+	if multimesh == null:
+		return
+	var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
+	var need: int = maxInstances * stride
+	var buf: PackedFloat32Array = _cpuBuffer
+	if buf.size() != need:
+		buf.resize(need)
+	var grid_x: float = _gridSizeTmp.x
+	var grid_y: float = _gridSizeTmp.y
+	var use_hold_alpha: bool = _drawMode == SwDefine.GridDrawMode.ByHold
+	var inst: int = 0
+	for mapData:SWBuildItemDefine in curMapData:
+		if inst >= maxInstances:
+			break
+		var color: Color = mapData.buildState.mask_color
+		if use_hold_alpha:
+			color.a *= 0.85
+		inst += mapData.getRenderableCompoent().writeInstances(
+				buf, inst, float(mapData.buildAxisPos.x), float(mapData.buildAxisPos.y),
+				grid_x, grid_y, color, maxInstances)
+	_cpuBuffer = buf
+	_slotStart.clear()
+	_slotParts.clear()
+	_slotsValid = false
+	_usedInstances = inst
+	_upload(inst)
+
+# 信号变化只影响颜色与图集帧：按槽把每个实例的 8..15 列回写（不提交，交给 flushPatch）。
+# 槽位缺失/部件数变化（几何变了）返回 false，由调用方退回整块重建。
+func patchBuilds(builds:Array) -> bool:
+	if not _slotsValid:
+		return false
+	var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
+	var grid_x: float = _gridSizeTmp.x
+	var grid_y: float = _gridSizeTmp.y
+	var buf: PackedFloat32Array = _cpuBuffer
+	for mapData:SWBuildItemDefine in builds:
+		if not _slotStart.has(mapData):
+			return false
+		var parts: int = _slotParts[mapData]
+		var block: PackedFloat32Array = mapData.getRenderableCompoent().getInstanceBlock(
+				float(mapData.buildAxisPos.x), float(mapData.buildAxisPos.y), grid_x, grid_y,
+				mapData.buildState.mask_color)
+		if block.size() != parts * stride:
+			return false
+		var dst: int = int(_slotStart[mapData]) * stride
+		var src: int = 0
+		for _p in parts:
+			for k in range(8, stride):
+				buf[dst + k] = block[src + k]
+			dst += stride
+			src += stride
+	_cpuBuffer = buf
+	return true
+
+# 连线换色：只处理本区块内确实被翻转的 net，按预摊平的颜色列批量回写
+func patchNets(netSet:Dictionary) -> bool:
+	if (_netCols.is_empty() and _netMaskCols.is_empty()) or netSet.is_empty():
+		return false
+	var buf: PackedFloat32Array = _cpuBuffer
+	var touched: bool = false
+	for net:SWNet in _netCols.keys():
+		dbg_net_checks += 1
+		if not netSet.has(net):
+			continue
+		touched = true
+		var c: Color = _net_color(net)
+		var cols: PackedInt32Array = _netCols[net]
+		dbg_cols_written += cols.size()
+		for col: int in cols:
+			buf[col + 0] = c.r
+			buf[col + 1] = c.g
+			buf[col + 2] = c.b
+			buf[col + 3] = c.a
+		_writeMaskCols(buf, net, c)
+	#底色实例通常同时登记在白底索引里，这里只补「整块全是底色」的少数 net
+	for net:SWNet in _netMaskCols.keys():
+		if _netCols.has(net) or not netSet.has(net):
+			continue
+		touched = true
+		_writeMaskCols(buf, net, _net_color(net))
+	if touched:
+		_cpuBuffer = buf
+	return touched
+
+func _writeMaskCols(buf: PackedFloat32Array, net: SWNet, c: Color) -> void:
+	if not _netMaskCols.has(net):
+		return
+	var mcols: PackedInt32Array = _netMaskCols[net]
+	var masks: PackedColorArray = _netMaskColors[net]
+	for i in mcols.size():
+		var col: int = mcols[i]
+		var m: Color = masks[i]
+		buf[col + 0] = c.r * m.r
+		buf[col + 1] = c.g * m.g
+		buf[col + 2] = c.b * m.b
+		buf[col + 3] = c.a * m.a
+
+# 补丁结束提交一次：同一帧里建筑补丁与连线换色共用一次上传
+func flushPatch() -> void:
+	if _slotsValid:
+		_upload(_usedInstances)
+
+# net 的电平色（低/高两档），与 _applyColors 里连线部件的取色规则一致
+func _net_color(net:SWNet) -> Color:
+	if not net.renderColorResolved:
+		var wireName: String = net.wireGroup.wireName if net.wireGroup != null else ""
+		var arr = SwCommon.GetWireColor(wireName)
+		net.renderColorLow = arr[0]
+		net.renderColorHigh = arr[1]
+		net.renderColorResolved = true
+	return net.renderColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else net.renderColorLow
+
+# 提交 _cpuBuffer 的前 inst 个实例；容量跟着真实用量走，避免上传大量补零实例
+func _upload(inst: int) -> void:
+	if multimesh == null:
+		return
+	if inst <= 0:
+		multimesh.visible_instance_count = 0
+		return
+	var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
+	if _cpuBuffer.size() != inst * stride:
+		_cpuBuffer.resize(inst * stride)
+	if multimesh.instance_count != inst:
+		multimesh.instance_count = inst
+	dbg_uploads += 1
+	dbg_floats_uploaded += _cpuBuffer.size()
+	multimesh.set_buffer(_cpuBuffer)
+	multimesh.visible_instance_count = inst
+	multimesh.emit_changed()
 
 # 获取实例颜色的辅助函数
-func _get_instance_color(mapData:SWBuildItemDefine, grid_x:float, grid_y:float) -> Color:
+func _get_instance_color(mapData:SWBuildItemDefine, _grid_x:float, _grid_y:float) -> Color:
 	var color = mapData.buildState.mask_color
 	if _drawMode == SwDefine.GridDrawMode.ByHold:
 		color.a *= 0.85
 	return color
-
-func bufferCalFinish(newBuffer:PackedFloat32Array, localN:int) -> void:
-	if multimesh == null:
-		return
-	var stride:int = 16 if multimesh.use_colors else 12
-	var need:int = multimesh.instance_count * stride
-	if newBuffer.size() != need:
-		# 兜底：长度不符时引擎会直接报错且不生效，这里补齐并把该区块隐藏，避免把残缺数据上屏
-		newBuffer.resize(need)
-		localN = 0
-	multimesh.set_buffer(newBuffer)
-	multimesh.visible_instance_count = localN
-	multimesh.emit_changed()
 
 func _fill_instance(newBuffer:PackedFloat32Array, buffer_index:int, t:Transform2D, color:Color, rect:Rect2, use_colors:bool) -> void:
 	newBuffer[buffer_index + 0] = t.x.x

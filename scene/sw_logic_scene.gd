@@ -3,20 +3,22 @@ class_name SWLogicScene extends Node
 @onready var sw_layer_manager: SWLayerManager = $SWLayerManager
 
 var system_manager: SWSystemManager = null
-var camera_system:SWCameraSystem = null
+var camera_system: SWCameraSystem = null
+var render_system :SWRenderSystem = null
 
 func _init() -> void:
 	SWObjectPool.InitSWChunkDataObject()
-	system_manager = SWSystemManager.new(null)
+	system_manager = SWSystemManager.new()
 	camera_system = SWCameraSystem.new()
+	render_system = SWRenderSystem.new()
 
 func _ready() -> void:
 	camera_system.enable = true
 	camera_system.attach_camera(sw_camera_2d)
 	system_manager.add_system(camera_system)
+	#system_manager.add_system(render_system)
 	for layer in sw_layer_manager.layers:
 		sw_camera_2d.addLayerNotify(layer)
-		
 	system_manager.start()
 	
 	# 延后一帧再初始化视野，避免窗口尺寸、相机等信息尚未稳定导致首帧加载不完整
@@ -27,6 +29,10 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if system_manager != null:
 		system_manager.tick(delta)
+		
+func _process(delta: float) -> void:
+	if system_manager:
+		system_manager.frame(delta)
 		
 func _init_camera_view() -> void:
 	# 保持原有缩放逻辑，同时在视口尺寸稳定后触发一次完整的视野刷新

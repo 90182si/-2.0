@@ -50,14 +50,13 @@ func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
 	var tunnelBuild:SWBuildWireTunnel = buildRef as SWBuildWireTunnel
 	net = srcNet
 	pinNetMap[dir] = srcNet
+	invalidateDirMasks()
 	if tunnelBuild.pairId != -1:
 		var circuitCom:SWBuildCompoentCircuitTunnel = tunnelBuild.getCircuitCompoent() as SWBuildCompoentCircuitTunnel
 		circuitCom.net = srcNet
 		circuitCom.pinNetMap[SwDefine.getAntiDir(dir)] = srcNet
+		circuitCom.invalidateDirMasks()
 
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	return [buildRef]
-	
 func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	return SwDefine.CircuitSignal.NONE
 	
@@ -74,6 +73,7 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 			var dir = wBuildItem["dir"]
 			wBuild.getCircuitCompoent().setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
+		wireNet.buildChunkIndex()
 	pass
 			
 func initPortState(swBuildManager:SWBuildManager) -> void:

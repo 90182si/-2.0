@@ -19,7 +19,17 @@ func onPressed(_pressed:bool) -> void:
 	else:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
+	getRenderableCompoent().markAtlasRectDirty()
 
 func resetBuildState() -> void:
 	in_loop = false
 	getCircuitCompoent().resetPortState()
+	getRenderableCompoent().markRenderPartsDirty()
+
+func save_state() -> Dictionary:
+	return {"pressed": pressed}
+
+func load_state(state: Dictionary) -> void:
+	var p: bool = state.get("pressed", false)
+	if p != pressed:
+		onPressed(p)

@@ -63,10 +63,7 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 			var dir = wBuildItem["dir"]
 			wBuild.getCircuitCompoent().setNet(wireNet,dir)
 			wireNet.wireGroup.addWireBuild(wBuild)
-
-#电线不自行求值，视觉由传播时的 setValue 驱动；仅返回自身
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	return [buildRef]
+		wireNet.buildChunkIndex()
 
 func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	return SwDefine.CircuitSignal.NONE
@@ -77,6 +74,7 @@ func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
 		net.wireGroup.wireName = buildRef.buildDefine.buildName
 	for pinIndex in range(3,-1,-1):
 		pinNetMap[pinIndex] = srcNet
+	invalidateDirMasks()
 	
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	buildRef.buildStateChanged(value)

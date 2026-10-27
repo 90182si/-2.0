@@ -24,6 +24,7 @@ SwCommon="*uid://d3s671y2ttvwt"
 SwAtlas="*uid://dub4tq5e41llw"
 Ezcha="*uid://b6odi12jokac"
 SwTimeTool="*uid://cvvag6exuwjtt"
+SwStaticFunction="*uid://b1gr0wrdpxh1c"
 
 [debug]
 
@@ -46,6 +47,7 @@ enabled=PackedStringArray("res://addons/Todo_Manager/plugin.cfg", "res://addons/
 [global_group]
 
 SWLayer="图层"
+SWRender=""
 
 [input]
 

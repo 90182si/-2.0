@@ -42,24 +42,12 @@ func getBuildExpr() -> void:
 				pinExprMap[dir].args.append(expr)
 
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
-	var value = super.getValue(dir)
-	var net:SWNet = pinNetMap.get(dir,null)
-	if net:
-		net.curSignal = value
-		for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
-			load.getCircuitCompoent().setValue(dir,value)
-	return value
-	
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
-	var v1 = getValue(SwDefine.SW_Dir.UP) == SwDefine.CircuitSignal.HIGH
-	var v2 = getValue(SwDefine.SW_Dir.RIGHT) == SwDefine.CircuitSignal.HIGH
-	var v3 = getValue(SwDefine.SW_Dir.DOWN) == SwDefine.CircuitSignal.HIGH
-	var v4 = getValue(SwDefine.SW_Dir.LEFT) == SwDefine.CircuitSignal.HIGH
-	var value = SwDefine.CircuitSignal.LOW
-	if v1 or v2 or v3 or v4:
-		value = SwDefine.CircuitSignal.HIGH
-	else:
-		value = SwDefine.CircuitSignal.LOW
-	buildRef.buildStateChanged(value)
-	return retArr
+	return super.getValue(dir)
+
+func reCalSignals() -> void:
+	var lit:bool = false
+	for dir in 4:
+		if netBit(dir) == 1:
+			lit = true
+			break
+	buildRef.buildStateChanged(SwDefine.CircuitSignal.HIGH if lit else SwDefine.CircuitSignal.LOW)

@@ -6,6 +6,13 @@ var idling:bool = false
 var circuits:Dictionary[int,SwDefine.SWCircuitData] = {}
 #本轮重建内的邻接缓存：find1 与 createCircuit 共用，避免重复网格查询与临时对象分配
 var _neighborsCache:Dictionary[SWBuildItemDefine,Array] = {}
+#本轮电平翻转的 net 所覆盖的区块；由调度方取走并合并进重绘列表
+var _dirtyChunks:Dictionary[Vector2i,bool] = {}
+#本轮翻电平的 net：渲染端按「net -> 实例颜色列」的预摊平索引批量换色，
+#比逐根连线调用脚本补丁快一个数量级（连线数量是门的十几倍）
+var _dirtyNets:Dictionary[SWNet,bool] = {}
+#当前求值轮次：热点里用成员读代替跨类静态访问
+var _curEpoch:int = 0
 
 #开始放置建筑物
 func beginIdle()->void:
@@ -75,9 +82,11 @@ func resetEmptyWireNet(builds:Array[SWBuildItemDefine]) -> void:
 			var nextBuild = build.getDirBuild(buildManager,dir)
 			if not nextBuild:
 				build.getCircuitCompoent().pinNetMap[dir] = null
+				build.getCircuitCompoent().invalidateDirMasks()
 				continue
 			if not nextBuild.getCircuitCompoent().isPort(SwDefine.getAntiDir(dir)):
 				build.getCircuitCompoent().pinNetMap[dir] = null
+				build.getCircuitCompoent().invalidateDirMasks()
 				
 func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
 	#这里wire不用计算
@@ -149,9 +158,87 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 					if not cir.noticeMap.has(depBuild):
 						cir.noticeMap[depBuild] = []
 					cir.noticeMap[depBuild].append(build)
+	#重建后的首轮求值：源先落一次，再让其余元件（浮空门、未接时钟的寄存器）各求值一次。
+	#求值时按源输入递归解析上游，一轮足够，不需要反复跑到静止
+	_curEpoch = SwCommon.evalEpoch
+	_queue.clear()
+	_collectingNotify = false
 	for build:SWBuildItemDefine in builds:
-		if not build.bIsToBeRemoved():
-			build.getCircuitCompoent().reCalSignals()
+		if build.bIsToBeRemoved() or SwCommon.IsWireBuild(build):
+			continue
+		var firstComp:SWBuildCompoentCircuit = build.getCircuitCompoent()
+		firstComp.refreshDirMasks()
+		if firstComp.inDirMask != 0:
+			continue
+		_compOut(firstComp)
+	_drainQueue()
+	for build:SWBuildItemDefine in builds:
+		if build.bIsToBeRemoved():
+			continue
+		var comp:SWBuildCompoentCircuit = build.getCircuitCompoent()
+		if comp.evalMark == _curEpoch:
+			continue
+		_compOut(comp)
+	_drainQueue()
+
+#一轮内每个元件只求值一次：求值时从源输入解析（见 resolveNetSignal），
+#所以不需要反复迭代到收敛，也不会把中间电平发布出去（寄存器不会锁存毛刺）
+var _queue:Array[SWBuildCompoentCircuit] = []
+var _notify:Dictionary = {}
+var _collectingNotify:bool = false
+var _lastQueueSize:int = 0
+
+func _compOut(comp:SWBuildCompoentCircuit) -> int:
+	if comp.evalMark == _curEpoch:
+		return comp.evalOut
+	comp.evalMark = _curEpoch
+	comp.seenMark = _curEpoch
+	var prevOut:int = comp.evalOut
+	var prevSig:int = comp.buildRef.signal_state
+	#占位用上一轮电平：组合环回读自己的输出时看到的是上一轮值，不会形成无限递归
+	comp.evalOut = prevOut
+	comp.evalOut = comp.evaluate()
+	#只有显示电平或输出电平真的变了才进入重绘列表，否则整块重绘会被无谓拉满
+	if _collectingNotify and (comp.evalOut != prevOut or comp.buildRef.signal_state != prevSig):
+		_notify[comp.buildRef] = true
+	_publishComp(comp)
+	return comp.evalOut
+
+func _drainQueue() -> void:
+	var head:int = 0
+	while head < _queue.size():
+		var comp:SWBuildCompoentCircuit = _queue[head]
+		head += 1
+		if comp.evalMark == _curEpoch:
+			continue
+		_compOut(comp)
+	_lastQueueSize = head
+	_queue.clear()
+
+#时序元件没轮到求值前只回读已锁存电平：解析上游不能顺带触发锁存
+func _driverOut(comp:SWBuildCompoentCircuit) -> int:
+	if comp == null:
+		return 1
+	if comp.isStateful() and comp.evalMark != _curEpoch:
+		return comp.evalOutput()
+	return _compOut(comp)
+
+#net 最终电平 = 所有驱动门输出的线与（无驱动为低）。
+#按轮缓存：同一轮内重复读取不再重算驱动锥
+func resolveNetSignal(net:SWNet) -> SwDefine.CircuitSignal:
+	if net == null:
+		return SwDefine.CircuitSignal.NONE
+	if net.sigEpoch == _curEpoch:
+		return net.curSignal
+	if net.resolving:
+		return net.curSignal
+	net.resolving = true
+	var v:int = _netSignal(net)
+	net.resolving = false
+	net.sigEpoch = _curEpoch
+	var sig:SwDefine.CircuitSignal = SwDefine.CircuitSignal.HIGH if v == 1 else SwDefine.CircuitSignal.LOW
+	_publishNetSignal(net, sig)
+	return net.curSignal
 		
 func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefine]:
 	if not buildManager:
@@ -163,6 +250,9 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	#开启新的求值轮次，令上一轮的表达式缓存失效
 	SwCommon.NextEvalEpoch()
 	_neighborsCache.clear()
+	#重建期由调用方按返回的建筑列表整体重绘，这里不保留 net 区块脏集
+	_dirtyChunks.clear()
+	_dirtyNets.clear()
 	#查找受影的所有响建筑物
 	var affectBuilds = find1(builds)
 	#将这些受影响的建筑物关联的电路清空
@@ -171,6 +261,8 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	createNets(affectBuilds)
 	#对wire多余的net进行重置
 	resetEmptyWireNet(affectBuilds)
+	#net 记录所属电路控制：求值时用它拉取源输入
+	_bindNetOwner(affectBuilds)
 	#方向构建依赖电路
 	getCircuit(affectBuilds)
 	var affectBuilds2:Array[SWBuildItemDefine] = []
@@ -182,23 +274,116 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	return affectBuilds
 	
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
-	SwCommon.NextEvalEpoch()
-	var notifyPosArr:Array[SWBuildItemDefine] = []
-	if not build.circuit:
-		return notifyPosArr
-	var cir = build.circuit
-	#noticeMap现在只存直接依赖边，沿边级联展开传递闭包；
-	#每个建筑本轮只处理一次，配合EvalStruct缓存总代价为O(下游规模)
-	var queue:Array[SWBuildItemDefine] = [build]
-	var processed:Dictionary[SWBuildItemDefine,bool] = {build:true}
-	var head:int = 0
-	while head < queue.size():
-		var src:SWBuildItemDefine = queue[head]
-		head += 1
-		for noticeBuild:SWBuildItemDefine in cir.noticeMap.get(src,[]):
-			if processed.has(noticeBuild):
-				continue
-			processed[noticeBuild] = true
-			notifyPosArr.append_array(noticeBuild.getCircuitCompoent().reCalSignals())
-			queue.append(noticeBuild)
-	return notifyPosArr
+	var seeds:Array[SWBuildItemDefine] = [build]
+	return buildSignalsChanged(seeds)
+
+#一拍内多个源（多个时钟）合并到同一求值轮次。
+#增量驱动：只有输入 net 在本轮翻过电平的门才需要重新求值，
+#下游只沿「输出电平真的变了」的边继续展开，因此每拍代价是 O(真实变化的下游规模)。
+func buildSignalsChanged(seeds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
+	var epoch:int = SwCommon.NextEvalEpoch()
+	_curEpoch = epoch
+	_dirtyChunks.clear()
+	_dirtyNets.clear()
+	_notify.clear()
+	_collectingNotify = true
+	_queue.clear()
+	for seed in seeds:
+		if seed.circuit == null:
+			continue
+		var comp:SWBuildCompoentCircuit = seed.getCircuitCompoent()
+		if comp.evalMark == epoch:
+			continue
+		_compOut(comp)
+	_drainQueue()
+	_collectingNotify = false
+	SwCommon.dbgEvaluated = _notify.size()
+	SwCommon.dbgQueue = _lastQueueSize
+	var notifyArr:Array[SWBuildItemDefine] = []
+	notifyArr.assign(_notify.keys())
+	_notify.clear()
+	return notifyArr
+
+#把刚求出的输出电平写回该元件驱动的 net；电平真的变了才标脏连线并展开下游
+func _publishComp(comp:SWBuildCompoentCircuit) -> void:
+	if not comp._dirMaskValid:
+		comp.refreshDirMasks()
+	var mask:int = comp.outDirMask
+	if mask == 0:
+		return
+	var nets:Array = comp.outNets
+	if (mask & 1) != 0:
+		_publishOutNet(nets[0], comp)
+	if (mask & 2) != 0:
+		_publishOutNet(nets[1], comp)
+	if (mask & 4) != 0:
+		_publishOutNet(nets[2], comp)
+	if (mask & 8) != 0:
+		_publishOutNet(nets[3], comp)
+
+func _publishOutNet(net:SWNet, comp:SWBuildCompoentCircuit) -> void:
+	if net == null:
+		return
+	#单驱动 net 直接用刚算出的电平（0/1）；多驱动 net 才需要重新做线与
+	#注意 evalOut 是 0/1，net.curSignal 是 CircuitSignal（LOW=1/HIGH=2），不能混用
+	var sig:SwDefine.CircuitSignal
+	var drivers:Array = net._driverComps
+	if drivers.size() == 1 and drivers[0] == comp:
+		sig = SwDefine.CircuitSignal.HIGH if comp.evalOut == 1 else SwDefine.CircuitSignal.LOW
+	else:
+		sig = SwDefine.CircuitSignal.HIGH if _netSignal(net) == 1 else SwDefine.CircuitSignal.LOW
+	net.sigEpoch = _curEpoch
+	_publishNetSignal(net, sig)
+
+func _publishNetSignal(net:SWNet, sig:SwDefine.CircuitSignal) -> void:
+	if net.curSignal == sig:
+		return
+	#第一次翻转时记下本拍开始前的电平（时序元件的数据输入取它）
+	if net.preEpoch != _curEpoch:
+		net.preEpoch = _curEpoch
+		net.preSignal = net.curSignal
+	net.curSignal = sig
+	net.changedEpoch = _curEpoch
+	net.sigVersion += 1
+	#连线颜色由 net 电平决定：把翻转的 net 交给渲染端批量换色
+	#（门/灯/寄存器在上游求值里已进了 notify 列表，无需在这里逐根展开连线）
+	_dirtyNets[net] = true
+	#按覆盖区块标脏：真正需要重绘的区块集
+	for cp:Vector2i in net.chunkPosArr:
+		_dirtyChunks[cp] = true
+	_queue.append_array(net._loadComps)
+
+#取走本轮被翻转 net 标脏的区块（调用方负责合并去重）
+func takeDirtyChunks() -> Array[Vector2i]:
+	var arr:Array[Vector2i] = _dirtyChunks.keys()
+	_dirtyChunks.clear()
+	return arr
+
+#取走本轮翻转的 net 集合（net -> true；连线换色的批量索引键）
+func takeDirtyNets() -> Dictionary:
+	var nets:Dictionary = _dirtyNets
+	_dirtyNets = {}
+	return nets
+
+#net 电平 = 所有驱动门输出的线与（无驱动视为低），返回 0/1 电平。
+#驱动门按源输入现算：时序元件只回读已锁存电平，组合元件按需递归解析
+func _netSignal(net:SWNet) -> int:
+	var comps:Array = net._driverComps
+	if comps.is_empty():
+		return 0
+	for comp:SWBuildCompoentCircuit in comps:
+		if comp == null:
+			continue
+		if _driverOut(comp) == 0:
+			return 0
+	return 1
+
+#把电路控制挂到本轮所有 net 上：元件求值时经 net.signalNow() 拉取源输入
+func _bindNetOwner(builds:Array) -> void:
+	for build:SWBuildItemDefine in builds:
+		var comp:SWBuildCompoentCircuit = build.getCircuitCompoent()
+		if comp == null:
+			continue
+		for net in comp.pinNetMap.values():
+			if net != null:
+				net.circuit = self

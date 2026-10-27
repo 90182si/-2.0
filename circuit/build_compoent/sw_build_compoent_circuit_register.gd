@@ -16,8 +16,8 @@ const Q_REF:int = SwDefine.SW_Dir.RIGHT
 
 # 锁存输出的状态（Q 电平）
 var qState:SwDefine.CircuitSignal = SwDefine.CircuitSignal.LOW
-# 上一次采样到的 CLK 电平，用于上升沿检测
-var lastClk:SwDefine.CircuitSignal = SwDefine.CircuitSignal.LOW
+# 上一次采样到的 CLK 电平，用于上升沿检测；NONE 表示尚未对齐过时钟相位
+var lastClk:SwDefine.CircuitSignal = SwDefine.CircuitSignal.NONE
 
 # 参考方向 + 机身旋转 = 世界方向
 func _worldDir(refDir:int) -> int:
@@ -109,31 +109,54 @@ func getExpr(pinDir:SwDefine.SW_Dir) -> SwDefine.SWCircuitStruct:
 
 var curClk:SwDefine.CircuitSignal = SwDefine.CircuitSignal.NONE
 var curD:SwDefine.CircuitSignal = SwDefine.CircuitSignal.NONE
+
+func netValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
+	if not _dirMaskValid:
+		refreshDirMasks()
+	var net:SWNet = inNets[dir]
+	if net == null:
+		return SwDefine.CircuitSignal.NONE
+	return net.signalNow()
+
+#数据输入取本拍开始前的电平：既不触发上游求值，也不受同拍传播影响
+func epochNetValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
+	if not _dirMaskValid:
+		refreshDirMasks()
+	var net:SWNet = inNets[dir]
+	if net == null:
+		return SwDefine.CircuitSignal.NONE
+	return net.epochSignal()
+
 func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	if dir == _worldDir(Q_REF):
-		var clkDir = _worldDir(CLK_REF)
-		var dDir = _worldDir(D_REF)
-		var qDir = _worldDir(Q_REF)
-		if lastClk == SwDefine.CircuitSignal.LOW and curClk == SwDefine.CircuitSignal.HIGH:
-			qState = curD
-		lastClk = curClk
 		return qState
-	var value = super.getValue(dir)
-	if portIsInput(dir):
-		var net:SWNet = pinNetMap.get(dir,null)
-		if net:
-			net.curSignal = value
-			for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
-				load.getCircuitCompoent().setValue(dir,value)
-	return value
+	return netValue(dir)
 
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = [buildRef]
+#输出电平只看锁存状态
+func evalOutput() -> int:
+	return 1 if qState == SwDefine.CircuitSignal.HIGH else 0
+
+#时序元件：一轮求值只允许锁存一次，避免同拍内上游反复翻转把寄存器采样多次
+func isStateful() -> bool:
+	return true
+
+func evaluate() -> int:
 	var clkDir = _worldDir(CLK_REF)
 	var dDir = _worldDir(D_REF)
-	var qDir = _worldDir(Q_REF)
-	var value = getValue(qDir)
-	curClk = getValue(clkDir)
-	curD = getValue(dDir)
-	buildRef.buildStateChanged(value)
-	return retArr
+	#时钟读本拍最新电平（上升沿就发生在本拍），数据读本拍开始前的结清值：
+	#同一拍里其它寄存器先锁存的 Q 不能改变本寄存器的采样值（同步电路必须同时采样）
+	curClk = netValue(clkDir)
+	curD = epochNetValue(dDir)
+	#还没有已知时钟相位（首次求值/旧存档）：只对齐电平，不采样可能未稳定的 D
+	if lastClk == SwDefine.CircuitSignal.NONE:
+		lastClk = curClk
+	elif lastClk == SwDefine.CircuitSignal.LOW and curClk == SwDefine.CircuitSignal.HIGH:
+		qState = curD
+		lastClk = curClk
+	else:
+		lastClk = curClk
+	buildRef.buildStateChanged(qState)
+	return 1 if qState == SwDefine.CircuitSignal.HIGH else 0
+
+func reCalSignals() -> void:
+	evaluate()

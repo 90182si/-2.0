@@ -26,5 +26,5 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func on_view_rect_changed(view_rect: Rect2, speed_vec: Vector2) -> void:
-	if layer_system != null:
+	if is_instance_valid(layer_system):
 		layer_system.on_view_rect_changed(view_rect, speed_vec)

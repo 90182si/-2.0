@@ -6,6 +6,8 @@ class_name SWPerformanceMonitor extends CanvasLayer
 @onready var object_label: Label = $StatsContainer/StatsDisplay/ObjectLabel
 @onready var draw_label: Label = $StatsContainer/StatsDisplay/DrawLabel
 @onready var build_count_label: Label = $StatsContainer/StatsDisplay/BuildCountLabel
+@onready var chunk_count_label: Label = $StatsContainer/StatsDisplay/ChunkCountLabel
+@onready var redraw_chunk_label: Label = $StatsContainer/StatsDisplay/RedrawChunkLabel
 @onready var log_btn: Button = $StatsContainer/StatsDisplay/LogBtn
 @onready var vsync_check: CheckButton = $StatsContainer/StatsDisplay/VsyncCheck
 @onready var map_switch: CheckButton = $StatsContainer/StatsDisplay/MapSwitch
@@ -71,6 +73,8 @@ func _process(delta: float) -> void:
 		_update_object_label()
 		_update_draw_label()
 		_update_build_count_label()
+		_update_chunk_count_label()
+		_update_redraw_chunk_label()
 
 	# 建筑悬停信息按间隔更新，避免每帧查询与重建文本
 	if _tooltip_enabled:
@@ -128,6 +132,26 @@ func _update_build_count_label() -> void:
 	if _build_layer != null and _build_layer.sw_build_manager != null:
 		build_count = _build_layer.sw_build_manager.getBuildCount()
 	build_count_label.text = "建筑物: %s" % _format_integer(build_count)
+
+
+func _update_chunk_count_label() -> void:
+	if chunk_count_label == null:
+		return
+	var total: int = 0
+	for dm in get_tree().get_nodes_in_group("DrawManager"):
+		if dm.has_method("get_visible_chunk_count"):
+			total += dm.get_visible_chunk_count()
+	chunk_count_label.text = "显示区块: %s" % _format_integer(total)
+
+
+func _update_redraw_chunk_label() -> void:
+	if redraw_chunk_label == null:
+		return
+	var total: int = 0
+	for dm in get_tree().get_nodes_in_group("DrawManager"):
+		if dm.has_method("get_redraw_chunks_per_frame"):
+			total += dm.get_redraw_chunks_per_frame()
+	redraw_chunk_label.text = "每帧重绘区块: %s" % _format_integer(total)
 
 
 func _format_memory(bytes: float) -> String:
@@ -328,6 +352,10 @@ func expandMonitor(expand: bool) -> void:
 	draw_label.visible = expand
 	if build_count_label != null:
 		build_count_label.visible = expand
+	if chunk_count_label != null:
+		chunk_count_label.visible = expand
+	if redraw_chunk_label != null:
+		redraw_chunk_label.visible = expand
 	log_btn.visible = expand
 	if vsync_check != null:
 		vsync_check.visible = expand

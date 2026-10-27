@@ -14,7 +14,13 @@ var version: int = 0
 func setBuildState(build:SWBuildItemDefine,state:SwDefine.BuildState) -> void:
 	build.buildState.state = state
 	pass
-
+func setBuildDirty(build:SWBuildItemDefine,dirty:bool) -> void:
+	if not build:
+		return
+	var curChunk = getChunkOrCreate(build.buildAxisPos,true)
+	if not curChunk:
+		return
+	curChunk.setDirty(build,dirty)
 func setBuildsState(builds:Array[SWBuildItemDefine],state:SwDefine.BuildState) -> void:
 	for build in builds:
 		build.buildState.state = state
@@ -176,6 +182,22 @@ func getBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
 		return []
 	var builds = curChunk.getAllBuilds()
 	return builds
+	
+func getDirtyBuildsByChunkPos(chunkPos:Vector2i) -> Array[SWBuildItemDefine]:
+	# 方案 3: 缓存优化
+	var curChunk = getChunkOrCreate(chunkPos)
+	if not curChunk:
+		return []
+	var builds = curChunk.getAllDirtyBuilds()
+	return builds
+	
+func setChunkDirtyClearByChunkPos(chunkPos:Vector2i) -> void:
+	# 方案 3: 缓存优化
+	var curChunk = getChunkOrCreate(chunkPos)
+	if not curChunk:
+		return
+	curChunk.setChunkDirtyClear()
+	return
 
 func getAllBuilds() -> Array[SWBuildItemDefine]:
 	var builds:Array[SWBuildItemDefine] = []

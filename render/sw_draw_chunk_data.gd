@@ -2,6 +2,7 @@
 class_name SWChunkBuildData extends RefCounted
 var builds:Array[SWBuildItemDefine] = []
 var notNullBuilds:Array[SWBuildItemDefine] = []
+var dirtyBuilds:Array[SWBuildItemDefine] = []
 var chunk_key:String = ""
 var chunk_pos:Vector2i
 
@@ -44,3 +45,16 @@ func delBuild(build:SWBuildItemDefine) -> bool:
 	
 func getAllBuilds() -> Array[SWBuildItemDefine]:
 	return notNullBuilds
+
+func setDirty(build:SWBuildItemDefine,dirty:bool) -> void:
+	build.dirty = dirty
+	if dirty:
+		dirtyBuilds.append(build)
+	else:
+		dirtyBuilds.erase(build)
+
+func getAllDirtyBuilds() -> Array[SWBuildItemDefine]:
+	return dirtyBuilds
+	
+func setChunkDirtyClear() -> void:
+	dirtyBuilds.clear()

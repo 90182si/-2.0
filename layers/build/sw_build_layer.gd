@@ -23,7 +23,7 @@ func _ensure_build_manager() -> void:
 	if system != null and system.build_manager != null:
 		sw_draw_manager.setBuildManager(system.build_manager)
 		
-func refresh_builds(builds: Array) -> void:
+func refresh_builds(builds: Array,geomDirty:bool = true) -> void:
 	if builds.is_empty():
 		return
 	var chunk_positions: Array[Vector2i] = []
@@ -31,7 +31,10 @@ func refresh_builds(builds: Array) -> void:
 	for build in builds:
 		if build == null:
 			continue
-		build.markRenderPartsDirty()
+		if geomDirty:
+			build.markRenderPartsDirty()
+		else:
+			build.markColorDirty()
 		var chunk_pos := SwCommon.GetChunkPos(build.buildAxisPos)
 		if not seen.has(chunk_pos):
 			seen[chunk_pos] = true
@@ -64,8 +67,8 @@ func load_save_data(data: Dictionary) -> void:
 	if system != null:
 		system.load_save_data(data)
 
-func getNotifyChunkPosArr(builds:Array[SWBuildItemDefine]) -> Array[Vector2i]:
+func getNotifyChunkPosArr(builds:Array[SWBuildItemDefine], geomDirty:bool = true) -> Array[Vector2i]:
 	var system := layer_system as SWBuildLayerSystem
 	if system != null:
-		return system.getNotifyChunkPosArr(builds)
+		return system.getNotifyChunkPosArr(builds,geomDirty)
 	return []

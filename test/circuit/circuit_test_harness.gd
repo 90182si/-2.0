@@ -58,6 +58,35 @@ func get_build(grid_pos: Vector2i) -> SWBuildItemDefine:
 	assert(scene != null, "请先调用 boot_game()")
 	return build_layer.sw_build_manager.getBuild(grid_pos)
 
+# 把存档里所有有建筑的区块在主线程构建出来，返回已加载区块数。
+# headless 下相机视口是空矩形，正常帧循环一个区块都不会加载，
+# 渲染相关的断言必须先把区块真正建出来。
+func force_load_all_chunks() -> int:
+	assert(scene != null, "请先调用 boot_game()")
+	var dm = build_layer.sw_draw_manager
+	var sys = build_layer.layer_system
+	dm._curViewRect = Rect2(-1e9, -1e9, 2e9, 2e9)
+	#关掉分帧上限：一次把所有区块建完
+	dm.async_loading = false
+	var all: Array[Vector2i] = []
+	all.assign(sys.build_manager.chunkMap.keys())
+	dm.updataChunks(all)
+	var guard := 0
+	while dm._pending_tasks.has(0) and not dm._pending_tasks[0].is_empty() and guard < 400:
+		guard += 1
+		dm.process_load_chunk(0)
+		for ins in dm.shouldAddToTree:
+			#带窗口跑时 _process 也在推进，可能已经把它挂上去了
+			if ins.get_parent() == null:
+				dm.add_child(ins)
+		dm.shouldAddToTree.clear()
+	return dm.get_loaded_chunk_positions().size()
+
+# 把挂起的区块刷新队列一次性处理完（测试里不跑帧循环，预算分帧不会自己推进）。
+func flush_draw_queue() -> void:
+	assert(scene != null, "请先调用 boot_game()")
+	build_layer.sw_draw_manager._flush_patches(100000000)
+
 # 点击某位置的建筑物（按钮：一次按下+松开脉冲；开关：切换开/关）。
 # 点击后会触发电路级联求值。返回是否成功点击到按钮/开关。
 func click_build(grid_pos: Vector2i) -> bool:
@@ -108,5 +137,4 @@ func _notify_signal_changed(build: SWBuildItemDefine) -> void:
 	var affected = build_layer.sw_circuit_control.buildSignalChanged(build)
 	affected.append(build)
 	# 刷新受影响区块（与游戏运行时一致；纯逻辑断言其实不依赖此步）
-	var chunk_pos_arr = build_layer.getNotifyChunkPosArr(affected)
-	build_layer.sw_draw_manager.updataChunks(chunk_pos_arr)
+	build_layer.layer_system.refresh_signal_chunks(affected)

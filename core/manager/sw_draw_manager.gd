@@ -32,14 +32,12 @@ var _visible:bool = true
 var async_loading: bool = true
 # 异步模式下 ByContent 每帧最多加载的区块数（需不小于快速移动时单帧轮换的数量）
 @export_range(1, 64, 1) var async_chunks_per_frame: int = 12
-# ByContent 同时在后台构建（工作线程未完成）的区块数上限，避免大量线程抢满 CPU 导致主线程掉帧
-@export_range(1, 32, 1) var max_concurrent_builds: int = 6
 # 视口外保留的区块圈数：相机在区块边界来回移动时不再反复卸载/重建
 @export_range(0, 3, 1) var unload_margin_chunks: int = 1
 # 每帧最多卸载的区块数：缩小视角时视口一次覆盖上百个区块，一次全部卸载会在单帧卡顿上百毫秒
 @export_range(1, 64, 1) var max_unloads_per_frame: int = 16
-# ByContent 模式下卸下后仍保留渲染节点与 buffer 的区块数量上限（0 表示不保留）。
-# 相机移动时区块边界持续轮换，保留节点可免去"销毁节点 + 工作线程 join + 重新创建 + 启动线程"的开销
+# ByContent 模式下卸下后仍保留渲染节点、CPU 缓冲与槽位表的区块数量上限（0 表示不保留）。
+# 相机移动时区块边界持续轮换，保留这些状态可免去重新创建节点与整块重建
 @export_range(0, 2048, 16) var idle_chunk_cache_size: int = 128
 #地图相关：地图资源大小
 var _blockSize = Vector2(256,256)
@@ -60,6 +58,30 @@ var _buildingChunksNow:int = 0
 # 方案 2: 降低查询频率
 var _queryFrameInterval:int = 1  # 改为每帧更新，消除绘制锯齿感
 var _frameCounter:int = 0
+# 本帧触发重绘（调用 drawMap 重建 buffer）的区块数与上一帧快照，供性能面板读取
+var _redraw_chunks_frame:int = 0
+var _redraw_chunks_last:int = 0
+# 本帧退回整块重建的区块数：增量补丁失败（槽位/部件数变了）才会走这里，
+# 正常情况下应保持接近 0，异常升高说明补丁路径没命中
+var _full_rebuilds_frame:int = 0
+# 待增量补丁的区块、各区块的待补丁建筑、以及尚未落地的翻转 net（跨帧累积，幂等）
+var _patch_queue:Dictionary[Vector2i,bool] = {}
+var _patch_builds:Dictionary = {}      # Vector2i -> Dictionary[build,bool]
+var _patch_nets:Dictionary = {}        # net -> true
+# 内容变了（增删建筑/底色）的区块：槽位表已不可信，必须整块重建而不是增量回写
+var _rebuild_queue:Dictionary[Vector2i,bool] = {}
+# 主线程同步构建/补丁的时间预算（微秒）：超出就留到下一帧继续，避免单帧长卡顿。
+# 补丁预算每帧会被消费两次（信号级联当帧一次、_process 补一次），所以按半帧的量给
+const BUILD_BUDGET_USEC:int = 8000
+const PATCH_BUDGET_USEC:int = 4000
+
+# 上一帧需要重绘的区块数量
+func get_redraw_chunks_per_frame() -> int:
+	return _redraw_chunks_last
+
+# 上一帧退回整块重建的区块数（增量补丁未命中）
+func get_full_rebuilds_last_frame() -> int:
+	return _full_rebuilds_frame
 func setBuildManager(buildManager:SWBuildManager) -> void:
 	sw_build_manager = buildManager
 	# 监听建筑变化，标记缓存过期
@@ -71,21 +93,103 @@ func _on_build_changed() -> void:
 func updataAllChunks() -> void:
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
+	# 全量刷新：所有区块都会重建，挂起的增量补丁与累积的脏 net 作废
+	_patch_queue.clear()
+	_patch_builds.clear()
+	_patch_nets.clear()
+	_rebuild_queue.clear()
 	for chunkPos in _chunkInstance.keys():
-		if _chunkInstance.has(chunkPos):
-			_chunkInstance[chunkPos].status = SwDefine.ChunkStatus.UNLOADING
+		if not _chunkInstance.has(chunkPos):
+			continue
+		var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
+		if _drawMode == SwDefine.GridDrawMode.ByContent:
+			# 内容层原地重建：旧内容先留着，按时间预算分帧换成新内容。
+			# 不能走「卸载→重加载」：卸载有每帧上限，期间的加载任务会因为区块还留在
+			# _chunkInstance 里被丢掉，区块就一直显示刷新前的旧建筑（换存档后残留）
+			_patch_queue[chunkPos] = true
+			_rebuild_queue[chunkPos] = true
+			continue
+		chunkIns.status = SwDefine.ChunkStatus.UNLOADING
 		_pending_tasks[0][chunkPos] = false
-func updataChunks(chunkPosArr:Array[Vector2i]) -> void:
+	_flush_patches(PATCH_BUDGET_USEC)
+#changedBuilds：本次信号变化涉及的元件（门/灯/寄存器/开关）。
+#dirtyNets：本次翻转电平的 net 集合（连线换色走批量索引，不逐根进补丁列表）。
+#两者都为空表示这是「内容变了」（放置/删除/剪切/选中底色），区块里的建筑集合或
+#底色都可能对不上已有槽位，必须整块重建内容；否则走增量补丁。
+#两类刷新都按时间预算分帧处理：一次信号级联会覆盖数百个区块，全挤在一帧会拉出长帧。
+func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [], dirtyNets:Dictionary = {}) -> void:
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
+	var contentChanged:bool = changedBuilds.is_empty() and dirtyNets.is_empty()
+	for net in dirtyNets:
+		_patch_nets[net] = true
+	for build:SWBuildItemDefine in changedBuilds:
+		if build == null:
+			continue
+		var cp:Vector2i = SwCommon.GetChunkPos(build.buildAxisPos)
+		var group:Dictionary = _patch_builds.get(cp, {})
+		group[build] = true
+		_patch_builds[cp] = group
 	for chunkPos in chunkPosArr:
 		if _chunkInstance.has(chunkPos):
-			# 已有区块：直接刷新内容，不走"卸载→重加载"流程，避免闪烁
+			_patch_queue[chunkPos] = true
+			if contentChanged:
+				_rebuild_queue[chunkPos] = true
+			continue
+		# 新区块：加入待加载任务
+		_pending_tasks[0][chunkPos] = false
+		# 该区块此刻可能正躺在软缓存里：其内容已变（状态翻转/增删建筑），
+		# 必须失效缓存条目的 builtVersion，否则下次进视口会 reuse 旧 buffer 跳过重绘
+		if _idleChunkCache.has(chunkPos):
+			_idleChunkCache[chunkPos].mesh_instance.builtVersion = -1
+	_flush_patches(PATCH_BUDGET_USEC)
+
+# 分帧处理待刷新区块；补丁按「当前状态」回写，重复执行是幂等的，
+# 因此跨帧/跨级联累积都安全，未处理完的留到下一帧继续
+func _flush_patches(budget_usec:int) -> void:
+	if _patch_queue.is_empty():
+		_patch_nets.clear()
+		return
+	var start:int = Time.get_ticks_usec()
+	var done:Array[Vector2i] = []
+	for chunkPos:Vector2i in _patch_queue:
+		if Time.get_ticks_usec() - start > budget_usec:
+			break
+		done.append(chunkPos)
+		if _rebuild_queue.has(chunkPos):
 			_refreshChunkContent(chunkPos)
-		else:
-			# 新区块：加入待加载任务
-			_pending_tasks[0][chunkPos] = false
-	pass
+			continue
+		var builds:Dictionary = _patch_builds.get(chunkPos, {})
+		_patch_builds.erase(chunkPos)
+		if not _patch_chunk(chunkPos, builds):
+			_refreshChunkContent(chunkPos)
+	for chunkPos in done:
+		_patch_queue.erase(chunkPos)
+		_rebuild_queue.erase(chunkPos)
+	if _patch_queue.is_empty():
+		_patch_nets.clear()
+
+# 返回 false 表示该区块无法增量回写（无 CPU buffer / 槽位对不上），需要整块重建
+func _patch_chunk(chunkPos:Vector2i, builds:Dictionary) -> bool:
+	if not _chunkInstance.has(chunkPos):
+		return true
+	var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
+	if chunkIns.status != SwDefine.ChunkStatus.FULLY_LOADED:
+		return true
+	var mi:SWMultiMeshInstance2D = chunkIns.mesh_instance
+	if not mi.hasCpuBuffer():
+		return false
+	var touched:bool = false
+	if not builds.is_empty():
+		if not mi.patchBuilds(builds.keys()):
+			return false
+		touched = true
+	if not _patch_nets.is_empty() and mi.patchNets(_patch_nets):
+		touched = true
+	if touched:
+		mi.flushPatch()
+		_redraw_chunks_frame += 1
+	return true
 
 # 直接刷新已有区块的绘制内容（不卸载、不隐藏，旧内容继续显示直到新buffer就绪）
 func _refreshChunkContent(chunkPos:Vector2i) -> void:
@@ -94,18 +198,26 @@ func _refreshChunkContent(chunkPos:Vector2i) -> void:
 	var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
 	
 	if _drawMode == SwDefine.GridDrawMode.ByContent:
-		var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
-		if chunkBuilds.size() == 0:
-			# 没有建筑了，走正常卸载流程
-			chunkIns.status = SwDefine.ChunkStatus.UNLOADING
+		var dirtyBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
+		if dirtyBuilds.size() == 0:
+			# 区块已经没有建筑了：只隐藏，状态保持 FULLY_LOADED。
+			# 这里若转成 UNLOADING，视口内的区块会被 on_view_rect_changed 复活，
+			# 旧建筑的 buffer 又原样显示出来（换存档后残留的根因之一）。
+			# builtVersion 故意不动：卸载进软缓存后必须失效，否则重新进视口会复用旧 buffer
+			chunkIns.mesh_instance.visible = false
 			return
-		# 直接在已有实例上触发重绘，旧buffer继续显示
-		# 线程计算完成后通过 call_deferred 原子替换，不会出现空白帧
-		chunkIns.mesh_instance.drawMap(chunkBuilds)
+		# 主线程同步重建并提交 buffer，失败路径与新区块加载完全一致
+		_redraw_chunks_frame += 1
+		_full_rebuilds_frame += 1
+		chunkIns.mesh_instance.drawMap(dirtyBuilds)
 		chunkIns.mesh_instance.builtVersion = sw_build_manager.version
+		# 之前可能因为区块被清空而隐藏，重建出内容后恢复上屏
+		chunkIns.mesh_instance.visible = _visible
 	else:
 		# Tiling等其他模式：保持原有卸载→重加载逻辑
 		chunkIns.status = SwDefine.ChunkStatus.UNLOADING
+		if not _pending_tasks.has(0):
+			_pending_tasks[0] = {}
 		_pending_tasks[0][chunkPos] = false
 #TODO _blockSize根据mapDefine来设置
 
@@ -143,6 +255,21 @@ func set_visible(enable:bool) -> void:
 func is_visible() -> bool:
 	return _visible
 
+# 当前已上屏（可见）的区块数量，供性能面板统计
+func get_visible_chunk_count() -> int:
+	var count:int = 0
+	for chunkIns:SwDefine.SWDrawChunkData in _chunkInstance.values():
+		if chunkIns.mesh_instance != null and chunkIns.mesh_instance.visible:
+			count += 1
+	return count
+
+# 已加载（在 _chunkInstance 中）的区块坐标，供渲染压测/调试统计
+func get_loaded_chunk_positions() -> Array[Vector2i]:
+	var arr:Array[Vector2i] = []
+	for k in _chunkInstance.keys():
+		arr.append(k)
+	return arr
+
 func _ready() -> void:
 	add_to_group("DrawManager")
 	if not mapDefine:
@@ -159,15 +286,19 @@ func _process(_delta: float) -> void:
 	_frameCounter += 1
 	if _frameCounter % _queryFrameInterval != 0:
 		return
+	# 重置本帧重绘计数，处理完成后快照给性能面板
+	_redraw_chunks_frame = 0
+	_full_rebuilds_frame = 0
+	# 上一帧没处理完的信号补丁继续处理
+	_flush_patches(PATCH_BUDGET_USEC)
 	process_unload_chunk()
 	shouldAddToTree.clear()
-	# 同时在后台构建的区块数每个节拍只统计一次，供三个优先级队列共用
-	_buildingChunksNow = _count_building_chunks() if _use_build_limit() else 0
 	process_load_chunk(0)
 	process_load_chunk(1)
 	process_load_chunk(2,false)
 	for ins in shouldAddToTree:
 		add_child(ins)
+	_redraw_chunks_last = _redraw_chunks_frame
 	pass
 	
 func process_load_chunk(priority:int,remove:bool = true) -> void:
@@ -179,16 +310,20 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 	var fast_limit:int = _get_per_frame_limit() * 4
 	var keys := tasks.keys()
 	var originalMapDataArray = mapDataArray
-	# ByContent 下限制同时在后台构建的区块数，防止多线程抢占 CPU 主力线程
-	var limit_building:bool = _use_build_limit()
-	if limit_building and _buildingChunksNow >= max_concurrent_builds:
-		return
+	# 内容层区块构建已在主线程同步完成：用时间预算兜底，单帧不会因为一次加载
+	# 大量区块而长时间卡住（块数上限仍在，两者取先到者）
+	var budget_start:int = Time.get_ticks_usec()
 	for chunkPos in keys:
 		if not _curViewRect.has_point(chunkPos) and (_drawMode != SwDefine.GridDrawMode.ByHold and _drawMode != SwDefine.GridDrawMode.HoldShadow):
 			_pending_tasks[priority].erase(chunkPos)
 			continue
 		var chunkMapDataArray = originalMapDataArray
 		if _chunkInstance.has(chunkPos):
+			var loadedIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
+			if loadedIns.status == SwDefine.ChunkStatus.UNLOADING:
+				# 旧区块还没轮到大卸（卸载每帧限流）：任务必须留着，等它退出 _chunkInstance
+				# 再按新内容重建；直接删任务会让区块永远停在重建前的旧内容上
+				continue
 			tasks.erase(chunkPos)
 			continue
 		# 缓存命中且建筑内容未变：上屏只是恢复可见性，不做任何构建，不受构建限流约束
@@ -200,7 +335,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		else:
 			if count >= _get_per_frame_limit():
 				break
-			if limit_building and _buildingChunksNow >= max_concurrent_builds:
+			if Time.get_ticks_usec() - budget_start > BUILD_BUDGET_USEC:
 				break
 		if _drawMode == SwDefine.GridDrawMode.ByContent:
 			var chunkBuilds = sw_build_manager.getBuildsByChunkPos(chunkPos)
@@ -220,9 +355,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 			chunkMapDataArray = filteredArray
 			
 		count+=1
-		if not fast_hit:
-			_buildingChunksNow += 1
-		# 优先复用软缓存中保留的区块节点：省去节点创建与工作线程启动，buffer 也已存在
+		# 优先复用软缓存中保留的区块节点：省去节点创建与整块重建，CPU 缓冲与槽位表也还在
 		var chunkIns:SwDefine.SWDrawChunkData = _takeCachedChunk(chunkPos)
 		var fromCache:bool = chunkIns != null
 		if chunkIns == null:
@@ -244,6 +377,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 				and _drawMode == SwDefine.GridDrawMode.ByContent \
 				and chunkIns.mesh_instance.builtVersion == sw_build_manager.version
 		if not reuse_content:
+			_redraw_chunks_frame += 1
 			if _drawMode == SwDefine.GridDrawMode.ByContent and chunkIns.mesh_instance.multimesh:
 				chunkIns.mesh_instance.multimesh.visible_instance_count = 0
 			chunkIns.mesh_instance.drawMap(chunkMapDataArray)
@@ -277,10 +411,6 @@ func _get_per_frame_limit() -> int:
 	return 99999
 		
 
-# ByContent 且异步加载时才需要限制后台构建数量
-func _use_build_limit() -> bool:
-	return _drawMode == SwDefine.GridDrawMode.ByContent and async_loading
-
 # 只有随相机移动轮换的区块才值得保留节点：内容层（建筑）与地图平铺层都适用
 func _use_chunk_cache() -> bool:
 	if idle_chunk_cache_size <= 0:
@@ -295,19 +425,10 @@ func _isCachedContentValid(chunkPos:Vector2i) -> bool:
 		return false
 	return _idleChunkCache[chunkPos].mesh_instance.builtVersion == sw_build_manager.version
 
-# 统计仍在后台构建（工作线程未完成）的区块数量
-func _count_building_chunks() -> int:
-	var total:int = 0
-	for chunkIns:SwDefine.SWDrawChunkData in _chunkInstance.values():
-		var mi:SWMultiMeshInstance2D = chunkIns.mesh_instance
-		if mi != null and mi.planIsRunning:
-			total += 1
-	return total
-
 # 把卸载的区块放进软缓存；超过上限时按最久未使用顺序真正销毁
 func _cacheChunkNode(chunkPos:Vector2i, chunkIns:SwDefine.SWDrawChunkData) -> void:
-	# 释放 CPU 侧双缓冲，只保留 GPU 上的 MultiMesh buffer；内容未变时重新上屏不需要重建
-	chunkIns.mesh_instance.releaseCpuBuffers()
+	# CPU 侧缓冲与槽位表一起留在缓存里：区块重新进视口后仍能走增量补丁，
+	# 否则每次滚屏回来的区块都要在下一次信号变化时整块重建
 	if _idleChunkCache.has(chunkPos):
 		_evictChunkNode(_idleChunkCache[chunkPos])
 	_idleChunkCache[chunkPos] = chunkIns
@@ -341,10 +462,6 @@ func process_unload_chunk() -> void:
 	var unloaded:int = 0
 	for chunkIns:SwDefine.SWDrawChunkData in _chunkInstance.values():
 		if chunkIns.status != SwDefine.ChunkStatus.UNLOADING:
-			continue
-		# 后台还在构建时先隐藏并推迟归还：主线程等待线程退出会阻塞几十毫秒
-		if chunkIns.mesh_instance.planIsRunning:
-			chunkIns.mesh_instance.visible = false
 			continue
 		# 分帧卸载：每帧只处理固定数量，避免相机快速移动时单帧卸载上百个区块造成长卡顿
 		if unloaded >= max_unloads_per_frame:
@@ -449,6 +566,10 @@ func on_view_rect_changed(viewRect:Rect2 = color_rect.get_rect(),speedVec:Vector
 			if not keepRect.has_point(chunkPos):
 				chunkIns.status = SwDefine.ChunkStatus.UNLOADING
 			elif chunkIns.status == SwDefine.ChunkStatus.UNLOADING:
+				# 挂着全量重建任务的区块不能就地复活：它必须退场后按新内容重建，
+				# 否则复活的是重建前的旧 buffer
+				if _pending_tasks.has(0) and _pending_tasks[0].has(chunkPos):
+					continue
 				# 相机又移回保留范围：撤销卸载，避免白白重建一遍
 				chunkIns.status = SwDefine.ChunkStatus.FULLY_LOADED
 				chunkIns.mesh_instance.visible = _visible

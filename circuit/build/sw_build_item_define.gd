@@ -1,6 +1,7 @@
 #建筑物定义
 @abstract
 class_name SWBuildItemDefine extends RefCounted
+var dirty:bool = true
 var buildState:SwDefine.SWBuildState = null
 var id:int
 var buildAxisPos:Vector2i
@@ -36,8 +37,20 @@ func markRenderPartsDirty() -> void:
 	if _renderableCompoent:
 		_renderableCompoent.markRenderPartsDirty()
 
+func markColorDirty() -> void:
+	if _renderableCompoent:
+		_renderableCompoent.markColorDirty()
+
+#换图集帧：只失效 atlas 实例的 rect，不重建部件/几何
+func markAtlasRectDirty() -> void:
+	if _renderableCompoent:
+		_renderableCompoent.markAtlasRectDirty()
+		
 func rotOnce() -> void:
 	rotation += 1
+	#端口的世界方向掩码随旋转变化，旋转后必须重算
+	if _circuitCompoent:
+		_circuitCompoent.invalidateDirMasks()
 	
 var signal_state:int = SwDefine.CircuitSignal.NONE
 var circuit_on:bool = false
@@ -83,9 +96,17 @@ func resetBuildState() -> void:
 	in_loop = false
 	getCircuitCompoent().resetPortState()
 	getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
+	getRenderableCompoent().markRenderPartsDirty()
 
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	signal_state = signalValue
+
+#元件内部状态存档（开关/时钟/寄存器等覆盖），加载时在重建电路前恢复
+func save_state() -> Dictionary:
+	return {}
+
+func load_state(_state: Dictionary) -> void:
+	pass
 
 func setValue(dir:SwDefine.SW_Dir,value:SwDefine.CircuitSignal) -> void:
 	pass

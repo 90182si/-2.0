@@ -62,6 +62,7 @@ func on_hold_remove_builds(positions:Array[Vector2i]) -> void:
 			if not build:
 				continue
 			build_manager.setBuildState(build,SwDefine.BuildState.IDLE)
+			#build_manager.setBuildDirty(build,true)
 		v.sw_draw_manager.updataChunks(notifyChunkPosArr)
 		_selected_builds.clear()
 		return
@@ -150,15 +151,50 @@ func on_deselect_by_rect(rect:Rect2) -> void:
 
 #region 内部函数
 #tag buildLayer根据建筑物坐标获取区块坐标
-func getNotifyChunkPosArr(builds:Array[SWBuildItemDefine]) -> Array[Vector2i]:
+func getNotifyChunkPosArr(builds:Array[SWBuildItemDefine],geomDirty:bool = true) -> Array[Vector2i]:
 	var chunkPosMap:Dictionary[Vector2i,bool] = {}
 	for build in builds:
 		if not build:
 			continue
-		build.markRenderPartsDirty()
+		if geomDirty:
+			build.markRenderPartsDirty()
+		else:
+			build.markColorDirty()
 		var chunkPos = SwCommon.GetChunkPos(build.buildAxisPos)
 		chunkPosMap[chunkPos] = true
 	return chunkPosMap.keys()
+
+#信号传播后的重绘区块（不消费脏 net，供测试/统计使用）
+func getSignalChangedChunkPosArr(changedBuilds:Array[SWBuildItemDefine]) -> Array[Vector2i]:
+	var chunkPosMap:Dictionary[Vector2i,bool] = {}
+	for cp:Vector2i in circuit_control.takeDirtyChunks():
+		chunkPosMap[cp] = true
+	for build in changedBuilds:
+		if build == null:
+			continue
+		build.markColorDirty()
+		chunkPosMap[SwCommon.GetChunkPos(build.buildAxisPos)] = true
+	return chunkPosMap.keys()
+
+#信号变化后的统一刷新入口：建筑列表走逐实例补丁，翻转的 net 走连线批量换色
+#返回本次涉及的区块数（供性能统计）
+func refresh_signal_chunks(changedBuilds:Array[SWBuildItemDefine]) -> int:
+	var nets:Dictionary = circuit_control.takeDirtyNets()
+	var chunkPosMap:Dictionary[Vector2i,bool] = {}
+	for cp:Vector2i in circuit_control.takeDirtyChunks():
+		chunkPosMap[cp] = true
+	for build in changedBuilds:
+		if build == null:
+			continue
+		build.markColorDirty()
+		chunkPosMap[SwCommon.GetChunkPos(build.buildAxisPos)] = true
+	if chunkPosMap.is_empty() and nets.is_empty():
+		return 0
+	var v := _get_view()
+	if v == null:
+		return 0
+	v.sw_draw_manager.updataChunks(chunkPosMap.keys(), changedBuilds, nets)
+	return chunkPosMap.size()
 
 #tag buildLayer获取选中元件中心点置
 func _getSelectedBuildCenter() -> Vector2i:
@@ -188,6 +224,7 @@ func clear_all_builds() -> void:
 	_pendingRemovedBuilds.clear()
 	_pendingPlacedBuilds.clear()
 	_selected_builds.clear()
+	clockBuildArr.clear()
 	build_manager.clearAllBuilds()
 	var v := _get_view()
 	if v != null:
@@ -199,6 +236,8 @@ func load_save_data(data: Dictionary) -> void:
 	var builds_arr = data.get("builds", [])
 	if not builds_arr is Array:
 		return
+	#存档里没有 pairId 的隧道：加载后被 on_idled 按先后顺序重新试探过，统一交给几何重配
+	var unpaired_tunnels:Array[SWBuildWireTunnel] = []
 	for b in builds_arr:
 		var pos_dict = b.get("pos", {})
 		var def_name = b.get("def", "")
@@ -206,7 +245,6 @@ func load_save_data(data: Dictionary) -> void:
 		var comp_type = b.get("comp_type", 0)
 		var circuit_on = b.get("circuit_on", false)
 		var signal_state = b.get("signal_state", 0)
-		var tunnel_pair_id = b.get("tunnel_pair_id", -1)
 		var in_loop = b.get("in_loop", false)
 		var pos = Vector2i(pos_dict.get("x", 0), pos_dict.get("y", 0))
 		var def_path = "res://res/" + def_name + ".tres"
@@ -217,8 +255,20 @@ func load_save_data(data: Dictionary) -> void:
 		build.circuit_on = circuit_on
 		build.signal_state = signal_state
 		build.in_loop = in_loop
+		#隧道配对必须在 addBuild 之前写入：on_idled 见到 pairId 已存在就不再重新扫描
+		if build is SWBuildWireTunnel:
+			var pairId: int = int(b.get("tunnel_pair_id", -1))
+			if pairId != -1:
+				build.pairId = pairId
+			else:
+				unpaired_tunnels.append(build)
+		#元件内部状态（开关按下、时钟电平、寄存器锁存）在重建电路前恢复
+		build.load_state(b.get("state", {}))
 		build_manager.addBuild(build)
+	_repair_tunnel_pairs(unpaired_tunnels)
 	circuit_control.updateBuildCircuit(build_manager.getAllBuilds())
+	#时钟不依赖放置操作注册：加载后统一扫描，保证存档里的计数器自动运行
+	_rebuild_clock_registry()
 	var v := _get_view()
 	if v != null:
 		v.sw_draw_manager.updataAllChunks()
@@ -308,8 +358,7 @@ func _on_left_pressed(v:SWBuildLayer) -> bool:
 			build.onPressed(!build.pressed)
 		var newBuilds = circuit_control.buildSignalChanged(build)
 		newBuilds.append(build)
-		var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
-		v.sw_draw_manager.updataChunks(notifyChunkPosArr)
+		refresh_signal_chunks(newBuilds)
 		if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON:
 			_pressed_button_pos = grid_pos
 		v.get_viewport().set_input_as_handled()
@@ -329,8 +378,7 @@ func _on_left_released(v:SWBuildLayer) -> bool:
 				pass
 			var newBuilds = circuit_control.buildSignalChanged(build)
 			newBuilds.append(build)
-			var notifyChunkPosArr = getNotifyChunkPosArr(newBuilds)
-			v.sw_draw_manager.updataChunks(notifyChunkPosArr)
+			refresh_signal_chunks(newBuilds)
 		_pressed_button_pos = Vector2i(-9999, -9999)
 		return true
 	return false
@@ -369,18 +417,79 @@ func addClockBuild(build:SWBuildItemDefine) -> void:
 	clockBuildArr[build]=true
 func delClockBuild(build:SWBuildItemDefine) -> void:
 	clockBuildArr.erase(build)
+
+#按当前建筑表重建时钟注册表：加载存档、批量删除后调用
+func _rebuild_clock_registry() -> void:
+	clockBuildArr.clear()
+	for build in build_manager.getAllBuilds():
+		if build is SWBuildClockSiggen:
+			clockBuildArr[build] = true
+
+#加载存档后重建隧道配对：addBuild 的 on_idled 依赖放置顺序，
+#批量加载时同一对隧道可能互相错过甚至配错，这里按几何位置确定性地重配。
+#存档已记录 pairId 的（新存档）直接保留，不再改动。
+func _repair_tunnel_pairs(unpaired:Array[SWBuildWireTunnel]) -> void:
+	if unpaired.is_empty():
+		return
+	for t in unpaired:
+		#撤销加载期 on_idled 按数组顺序做出的试探配对
+		t.pairId = -1
+	#左→右、上→下，保证"最近的前方隧道"这一配对结果与加载顺序无关
+	unpaired.sort_custom(func(a:SWBuildWireTunnel,b:SWBuildWireTunnel) -> bool:
+		return a.buildAxisPos.x < b.buildAxisPos.x if a.buildAxisPos.x != b.buildAxisPos.x else a.buildAxisPos.y < b.buildAxisPos.y)
+	for t in unpaired:
+		if t.pairId != -1:
+			continue
+		var dir:int = posmod(t.rotation+1,4)
+		var vec:Vector2i = SwDefine.dir_to_vec(dir)*SwDefine.GRID_SIZE
+		for dis in SwDefine.MAX_TUNNEL_DIS+1:
+			var other := build_manager.getBuild(t.buildAxisPos+vec*(1+dis)) as SWBuildWireTunnel
+			if other == null or other == t or other.pairId != -1:
+				continue
+			t.pairId = other.id
+			other.pairId = t.id
+			break
+# ===== 临时实验开关：绕过电路，强制所有已加载区块每拍全部翻转并整块重绘 =====
+# true  = 渲染压测（电路不驱动建筑，脏率拉满 100%）
+# false = 恢复原电路 tick
+const RENDER_STRESS := false
+var _stressFlip:bool = false
+
 func tick(_delta: float,_tick_index:int) -> void:
 	curTimeGap+=_delta
-	var changedBuilds:Array[SWBuildItemDefine] = []
 	if curTimeGap > CLOCK_GAP_TIME*2:
 		curTimeGap = 0
-		for build in clockBuildArr.keys():
+		if RENDER_STRESS:
+			_stress_render_all()
+			return
+		var clocks:Array[SWBuildItemDefine] = []
+		clocks.assign(clockBuildArr.keys())
+		for build in clocks:
 			build.onPressed(true)
-			var newBuilds = circuit_control.buildSignalChanged(build)
-			changedBuilds.append_array(newBuilds)
-		if changedBuilds.size() > 0:
-			var v := _get_view()
-			if v != null:
-				var notifyChunkPosArr = getNotifyChunkPosArr(changedBuilds)
-				v.sw_draw_manager.updataChunks(notifyChunkPosArr)
+		var changedBuilds := circuit_control.buildSignalsChanged(clocks)
+		refresh_signal_chunks(changedBuilds)
+
+# 每拍翻转全局信号值：写入各建筑 signal_state 与其所在 net 的 curSignal，
+# 再让所有建筑按新信号值刷新（颜色 + 图集帧），并整块重绘所有已加载区块（纯渲染压测）
+func _stress_render_all() -> void:
+	var v := _get_view()
+	if v == null:
+		return
+	var dm = v.sw_draw_manager
+	var chunkPosArr:Array[Vector2i] = dm.get_loaded_chunk_positions()
+	_stressFlip = not _stressFlip
+	var sig:SwDefine.CircuitSignal = SwDefine.CircuitSignal.HIGH if _stressFlip else SwDefine.CircuitSignal.LOW
+	for cp in chunkPosArr:
+		for b:SWBuildItemDefine in build_manager.getBuildsByChunkPos(cp):
+			# 修改信号值：建筑自身状态（LED/非门/寄存器据此换图集帧）+ 所连 net 的电平
+			b.buildStateChanged(sig)
+			var cir:SWBuildCompoentCircuit = b.getCircuitCompoent()
+			if cir != null:
+				for net in cir.pinNetMap.values():
+					if net != null:
+						net.curSignal = sig
+			# 按新信号值刷新建筑：颜色重算 + 图集帧 rect 回写（不重建部件/几何）
+			b.markColorDirty()
+			b.markAtlasRectDirty()
+	dm.updataChunks(chunkPosArr)
 #endregion

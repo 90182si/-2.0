@@ -32,3 +32,11 @@ func onPressed(_pressed:bool) -> void:
 	#else:
 		#getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 		#circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
+
+func save_state() -> Dictionary:
+	return {"pressed": pressed, "cur_sig": int(curSig)}
+
+func load_state(state: Dictionary) -> void:
+	pressed = state.get("pressed", false)
+	curSig = int(state.get("cur_sig", SwDefine.CircuitSignal.LOW)) as SwDefine.CircuitSignal
+	getCircuitCompoent().setPinValue(SwDefine.SW_Dir.UP, curSig)

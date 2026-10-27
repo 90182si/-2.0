@@ -21,16 +21,19 @@ func getValue(dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 		return SwDefine.CircuitSignal.NONE
 	if dir != buildRef.rotation:
 		return SwDefine.CircuitSignal.NONE
-	var value = btn.curSig
-	if portIsInput(dir):
-		var net:SWNet = pinNetMap.get(dir,null)
-		if net:
-			net.curSignal = value
-			for load:SWBuildItemDefine in net.wireGroup.wireBuilds:
-				load.getCircuitCompoent().setValue(dir,value)
-	return value
+	return btn.curSig
 
-func reCalSignals() -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = super.reCalSignals()
-	buildRef.buildStateChanged(getValue(buildRef.rotation))
-	return retArr
+#输出电平只取决于时钟自身相位，与上游 net 无关
+func evalOutput() -> int:
+	var clk := buildRef as SWBuildClockSiggen
+	return 1 if clk != null and clk.curSig == SwDefine.CircuitSignal.HIGH else 0
+
+func evaluate() -> int:
+	var clk := buildRef as SWBuildClockSiggen
+	if clk == null:
+		return 0
+	buildRef.buildStateChanged(clk.curSig)
+	return 1 if clk.curSig == SwDefine.CircuitSignal.HIGH else 0
+
+func reCalSignals() -> void:
+	evaluate()
