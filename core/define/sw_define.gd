@@ -3,6 +3,10 @@ extends Node
 const CHUNK_SIZE = 16
 const VIEW_MAX_LEVEL = 4
 const VIEW_MIN_LEVEL = -30-15
+# 视口缩放级别 <= 该值时改用低分辨率 LOD 图集（级别越小越远）
+const VIEW_LOD_LEVEL = -32
+# 再远一级：LOD 图集尺寸每级减半，阈值按「缩放再减半」递进（1.1^-32 ≈ 0.0475，减半 ≈ -39）
+const VIEW_LOD2_LEVEL = -39
 const VIEW_NEXT_LEVEL = -14
 const GRID_SIZE = Vector2i(128,128)
 const MAX_RENDER_PARTS:int = 6
@@ -251,19 +255,20 @@ static func getDirValue(dir:SW_Dir) -> int:
 		SW_Dir.LEFT: return 3
 	return 0
 
-static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) -> SWBuildItemDefine:
+#preview=true 生成手持预览克隆：不建电路组件，完全不参与电路
+static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0,preview:bool = false) -> SWBuildItemDefine:
 	match buildDef.buildName:
-		"按钮":return SWBuildButton.new(axisPos,buildDef,rot)
-		"灯泡":return SWBuildLed.new(axisPos,buildDef,rot)
-		"非门":return SWBuildNot.new(axisPos,buildDef,rot)
-		"电线A":return SWBuildWire.new(axisPos,buildDef,rot)
-		"电线B":return SWBuildWire.new(axisPos,buildDef,rot)
-		"电线桥梁":return SWBuildWireCross.new(axisPos,buildDef,rot)
-		"开关":return SWBuildButton.new(axisPos,buildDef,rot)
-		"电线隧道":return SWBuildWireTunnel.new(axisPos,buildDef,rot)
-		"时钟":return SWBuildClockSiggen.new(axisPos,buildDef,rot)
-		"1bit寄存器":return SWBuildRegister1Bit.new(axisPos,buildDef,rot)
-		_:return SWBuildNone.new(axisPos,buildDef,rot)
+		"按钮":return SWBuildButton.new(axisPos,buildDef,rot,preview)
+		"灯泡":return SWBuildLed.new(axisPos,buildDef,rot,preview)
+		"非门":return SWBuildNot.new(axisPos,buildDef,rot,preview)
+		"电线A":return SWBuildWire.new(axisPos,buildDef,rot,preview)
+		"电线B":return SWBuildWire.new(axisPos,buildDef,rot,preview)
+		"电线桥梁":return SWBuildWireCross.new(axisPos,buildDef,rot,preview)
+		"开关":return SWBuildButton.new(axisPos,buildDef,rot,preview)
+		"电线隧道":return SWBuildWireTunnel.new(axisPos,buildDef,rot,preview)
+		"时钟":return SWBuildClockSiggen.new(axisPos,buildDef,rot,preview)
+		"1bit寄存器":return SWBuildRegister1Bit.new(axisPos,buildDef,rot,preview)
+		_:return SWBuildNone.new(axisPos,buildDef,rot,preview)
 	return null
 
 ## 卡诺图数据 - 存储输入到输出的映射关系

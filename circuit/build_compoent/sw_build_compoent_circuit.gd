@@ -275,9 +275,13 @@ func netBit(dir:SwDefine.SW_Dir) -> int:
 	if not _dirMaskValid:
 		refreshDirMasks()
 	var net:SWNet = inNets[dir]
-	if net != null and net.signalNow() == SwDefine.CircuitSignal.HIGH:
-		return 1
-	return 0
+	if net == null:
+		return 0
+	#本轮已解析过就直接读缓存，热点里省掉 signalNow → resolveNetSignal 两次脚本调用
+	var cc:SWCircuitControl = net.circuit
+	if cc != null and net.sigEpoch != cc._curEpoch:
+		cc.resolveNetSignal(net)
+	return 1 if net.curSignal == SwDefine.CircuitSignal.HIGH else 0
 
 func initPortState(swBuildManager:SWBuildManager) -> void:
 	pass

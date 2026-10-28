@@ -58,17 +58,21 @@ var circuit_on:bool = false
 #var tunnel_extra_data:int = 0
 var in_loop:bool = false
 var circuit:SwDefine.SWCircuitData = null
+#手持预览克隆：只用于绘制，不建电路组件，也不参与任何求值/连网
+var is_preview:bool = false
 
 
 func _sub_init() -> void:
 	pass
 	
-func _init(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0) -> void:
+func _init(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0,preview:bool = false) -> void:
 	id = SwCommon.GenNextBuildId()
 	buildState = SwDefine.SWBuildState.new()
 	buildAxisPos = axisPos
 	buildDefine = buildDef
-	getCircuitCompoent().setPortFlag(buildDefine)
+	is_preview = preview
+	if not is_preview:
+		getCircuitCompoent().setPortFlag(buildDefine)
 	var rotCount:int = rot
 	for i in range(rotCount):
 		rotOnce()

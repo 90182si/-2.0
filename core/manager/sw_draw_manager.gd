@@ -64,12 +64,16 @@ var _redraw_chunks_last:int = 0
 # 本帧退回整块重建的区块数：增量补丁失败（槽位/部件数变了）才会走这里，
 # 正常情况下应保持接近 0，异常升高说明补丁路径没命中
 var _full_rebuilds_frame:int = 0
-# 待增量补丁的区块、各区块的待补丁建筑、以及尚未落地的翻转 net（跨帧累积，幂等）
+# 待增量补丁的区块与各区块的待补丁建筑（跨帧累积，幂等）。
+# 连线换色不再需要全局 dirty net 集合：每个区块自己按 net.patchStamp 比对
 var _patch_queue:Dictionary[Vector2i,bool] = {}
 var _patch_builds:Dictionary = {}      # Vector2i -> Dictionary[build,bool]
-var _patch_nets:Dictionary = {}        # net -> true
+# 该区块的补丁必须重算颜色（选中/取消选中底色）：LOD 冻结颜色的档位也要放行
+var _patch_force_color:Dictionary[Vector2i,bool] = {}
 # 内容变了（增删建筑/底色）的区块：槽位表已不可信，必须整块重建而不是增量回写
 var _rebuild_queue:Dictionary[Vector2i,bool] = {}
+# LOD 档切换后待按当前档位重染的区块（降级：连线统一 high 色；回升：还原真实电平）
+var _color_resync_queue:Dictionary[Vector2i,bool] = {}
 # 主线程同步构建/补丁的时间预算（微秒）：超出就留到下一帧继续，避免单帧长卡顿。
 # 补丁预算每帧会被消费两次（信号级联当帧一次、_process 补一次），所以按半帧的量给
 const BUILD_BUDGET_USEC:int = 8000
@@ -96,8 +100,9 @@ func updataAllChunks() -> void:
 	# 全量刷新：所有区块都会重建，挂起的增量补丁与累积的脏 net 作废
 	_patch_queue.clear()
 	_patch_builds.clear()
-	_patch_nets.clear()
+	_patch_force_color.clear()
 	_rebuild_queue.clear()
+	_color_resync_queue.clear()
 	for chunkPos in _chunkInstance.keys():
 		if not _chunkInstance.has(chunkPos):
 			continue
@@ -116,23 +121,30 @@ func updataAllChunks() -> void:
 #dirtyNets：本次翻转电平的 net 集合（连线换色走批量索引，不逐根进补丁列表）。
 #两者都为空表示这是「内容变了」（放置/删除/剪切/选中底色），区块里的建筑集合或
 #底色都可能对不上已有槽位，必须整块重建内容；否则走增量补丁。
-#两类刷新都按时间预算分帧处理：一次信号级联会覆盖数百个区块，全挤在一帧会拉出长帧。
-func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [], dirtyNets:Dictionary = {}) -> void:
+#patchBudgetUsec：本次补丁的时间预算。选中/取消选中这类只改底色的批量操作可以调大，
+#避免颜色分几百帧才铺完。
+#forceColor：本次补丁必须写颜色（选中底色）。LOD 档位平时冻结电路颜色，
+#但选中高亮不随电路变化，任何档位都要即时生效。
+func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [], dirtyNets:Dictionary = {}, patchBudgetUsec:int = PATCH_BUDGET_USEC, forceColor:bool = false) -> void:
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
 	var contentChanged:bool = changedBuilds.is_empty() and dirtyNets.is_empty()
-	for net in dirtyNets:
-		_patch_nets[net] = true
 	for build:SWBuildItemDefine in changedBuilds:
 		if build == null:
 			continue
 		var cp:Vector2i = SwCommon.GetChunkPos(build.buildAxisPos)
-		var group:Dictionary = _patch_builds.get(cp, {})
+		var group:Dictionary
+		if _patch_builds.has(cp):
+			group = _patch_builds[cp]
+		else:
+			group = {}
+			_patch_builds[cp] = group
 		group[build] = true
-		_patch_builds[cp] = group
 	for chunkPos in chunkPosArr:
 		if _chunkInstance.has(chunkPos):
 			_patch_queue[chunkPos] = true
+			if forceColor:
+				_patch_force_color[chunkPos] = true
 			if contentChanged:
 				_rebuild_queue[chunkPos] = true
 			continue
@@ -142,35 +154,88 @@ func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [], dirtyNe
 		# 必须失效缓存条目的 builtVersion，否则下次进视口会 reuse 旧 buffer 跳过重绘
 		if _idleChunkCache.has(chunkPos):
 			_idleChunkCache[chunkPos].mesh_instance.builtVersion = -1
+	_flush_patches(patchBudgetUsec)
+
+# 图集 LOD 切换通知（SwAtlas 通过 DrawManager 组广播）：
+# 两个方向都要整屏重染一次——降级时连线统一取 high 色、之后不再跟随电路；
+# 回升到全分辨率时还原真实电平颜色。重染按帧预算分摊，不会一次性卡住。
+func on_atlas_lod_changed(_level:int) -> void:
+	# 手持阴影只在全分辨率显示：切档后已上屏的区块要立刻跟随显隐
+	if _drawMode == SwDefine.GridDrawMode.HoldShadow:
+		_apply_chunk_visible()
+	for chunkPos:Vector2i in _chunkInstance.keys():
+		var mi:SWMultiMeshInstance2D = _chunkInstance[chunkPos].mesh_instance
+		if mi != null and mi.hasCpuBuffer():
+			_color_resync_queue[chunkPos] = true
+	# 隐藏的软缓存区块：上屏时按当前档位整块重建，重染成本省掉
+	for chunkPos:Vector2i in _idleChunkCache.keys():
+		_idleChunkCache[chunkPos].mesh_instance.builtVersion = -1
 	_flush_patches(PATCH_BUDGET_USEC)
+
+# 按当前 LOD 档位重染某一区块；返回 false 表示需要整块重建
+func _resync_chunk_colors(chunkPos:Vector2i) -> bool:
+	if not _chunkInstance.has(chunkPos):
+		return true
+	var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
+	if chunkIns.status != SwDefine.ChunkStatus.FULLY_LOADED:
+		return true
+	var mi:SWMultiMeshInstance2D = chunkIns.mesh_instance
+	if mi == null or not mi.hasCpuBuffer():
+		return true
+	if not mi.resyncColors(true):
+		return false
+	mi.flushPatch()
+	_redraw_chunks_frame += 1
+	return true
 
 # 分帧处理待刷新区块；补丁按「当前状态」回写，重复执行是幂等的，
 # 因此跨帧/跨级联累积都安全，未处理完的留到下一帧继续
 func _flush_patches(budget_usec:int) -> void:
-	if _patch_queue.is_empty():
-		_patch_nets.clear()
+	if _patch_queue.is_empty() and _color_resync_queue.is_empty():
 		return
 	var start:int = Time.get_ticks_usec()
+	# LOD 恢复后的颜色补齐优先：这是已上屏的陈旧颜色，等不起。
+	# 但只能占预算的一部分：整屏补色要几百个区块，独占预算会把信号补丁饿死，
+	# 补丁队列越积越多、连线颜色滞后好几拍。
+	if not _color_resync_queue.is_empty():
+		var resynced:Array[Vector2i] = []
+		var resync_budget:int = maxi(budget_usec / 3, 500)
+		for chunkPos:Vector2i in _color_resync_queue:
+			if Time.get_ticks_usec() - start > resync_budget:
+				break
+			resynced.append(chunkPos)
+			if not _resync_chunk_colors(chunkPos):
+				_refreshChunkContent(chunkPos)
+		for chunkPos in resynced:
+			_color_resync_queue.erase(chunkPos)
+	if _patch_queue.is_empty():
+		return
 	var done:Array[Vector2i] = []
 	for chunkPos:Vector2i in _patch_queue:
 		if Time.get_ticks_usec() - start > budget_usec:
 			break
 		done.append(chunkPos)
+		var force_color:bool = _patch_force_color.get(chunkPos, false)
 		if _rebuild_queue.has(chunkPos):
 			_refreshChunkContent(chunkPos)
 			continue
 		var builds:Dictionary = _patch_builds.get(chunkPos, {})
 		_patch_builds.erase(chunkPos)
-		if not _patch_chunk(chunkPos, builds):
+		if not _patch_chunk(chunkPos, builds, force_color):
 			_refreshChunkContent(chunkPos)
 	for chunkPos in done:
 		_patch_queue.erase(chunkPos)
+		_patch_force_color.erase(chunkPos)
 		_rebuild_queue.erase(chunkPos)
-	if _patch_queue.is_empty():
-		_patch_nets.clear()
 
 # 返回 false 表示该区块无法增量回写（无 CPU buffer / 槽位对不上），需要整块重建
-func _patch_chunk(chunkPos:Vector2i, builds:Dictionary) -> bool:
+# force_color：选中底色补丁，LOD 冻结也要写颜色（但冻结档位只写颜色列，图集帧继续冻结）
+func _patch_chunk(chunkPos:Vector2i, builds:Dictionary, force_color:bool = false) -> bool:
+	# LOD2 起整屏冻结：信号变化的补丁直接丢弃。这里必须返回 true——返回 false 会让上层
+	# 退回整块重建，反而把新颜色写进 buffer。结构性变更走 _rebuild_queue，不受影响。
+	var frozen:bool = SwAtlas.is_frame_updates_frozen()
+	if frozen and not force_color:
+		return true
 	if not _chunkInstance.has(chunkPos):
 		return true
 	var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
@@ -181,10 +246,10 @@ func _patch_chunk(chunkPos:Vector2i, builds:Dictionary) -> bool:
 		return false
 	var touched:bool = false
 	if not builds.is_empty():
-		if not mi.patchBuilds(builds.keys()):
+		if not mi.patchBuilds(builds.keys(), force_color, frozen):
 			return false
 		touched = true
-	if not _patch_nets.is_empty() and mi.patchNets(_patch_nets):
+	if not frozen and mi.patchNets():
 		touched = true
 	if touched:
 		mi.flushPatch()
@@ -212,7 +277,7 @@ func _refreshChunkContent(chunkPos:Vector2i) -> void:
 		chunkIns.mesh_instance.drawMap(dirtyBuilds)
 		chunkIns.mesh_instance.builtVersion = sw_build_manager.version
 		# 之前可能因为区块被清空而隐藏，重建出内容后恢复上屏
-		chunkIns.mesh_instance.visible = _visible
+		chunkIns.mesh_instance.visible = _chunk_visible()
 	else:
 		# Tiling等其他模式：保持原有卸载→重加载逻辑
 		chunkIns.status = SwDefine.ChunkStatus.UNLOADING
@@ -245,12 +310,21 @@ func setDrawMode(drawMode:SwDefine.GridDrawMode) -> void:
 	pass
 	
 func set_visible(enable:bool) -> void:
-	if _visible == enable:
-		return
 	_visible = enable
+	_apply_chunk_visible()
+
+# 手持阴影在低分辨率 LOD 档位不显示：缩远时预览不需要投影，也省一批实例
+func _lod_hides_layer() -> bool:
+	return _drawMode == SwDefine.GridDrawMode.HoldShadow and SwAtlas.is_lod_active()
+
+func _chunk_visible() -> bool:
+	return _visible and not _lod_hides_layer()
+
+func _apply_chunk_visible() -> void:
+	var vis:bool = _chunk_visible()
 	for chunkIns:SwDefine.SWDrawChunkData in _chunkInstance.values():
 		if chunkIns.mesh_instance:
-			chunkIns.mesh_instance.visible = enable
+			chunkIns.mesh_instance.visible = vis
 
 func is_visible() -> bool:
 	return _visible
@@ -262,6 +336,22 @@ func get_visible_chunk_count() -> int:
 		if chunkIns.mesh_instance != null and chunkIns.mesh_instance.visible:
 			count += 1
 	return count
+
+# 待处理任务数（加载/重建/卸载），供任务系统判断手持预览是否已生成完毕
+func get_pending_task_count() -> int:
+	var count:int = 0
+	for tasks:Dictionary in _pending_tasks.values():
+		count += tasks.size()
+	return count
+
+# 没有待处理任务、也没有区块停在卸载中：手持预览只有在这个状态下才算可以上屏
+func is_idle() -> bool:
+	if get_pending_task_count() > 0:
+		return false
+	for chunkIns:SwDefine.SWDrawChunkData in _chunkInstance.values():
+		if chunkIns.status == SwDefine.ChunkStatus.UNLOADING:
+			return false
+	return true
 
 # 已加载（在 _chunkInstance 中）的区块坐标，供渲染压测/调试统计
 func get_loaded_chunk_positions() -> Array[Vector2i]:
@@ -391,7 +481,7 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 			mi_parent = null
 		if mi_parent == null:
 			shouldAddToTree.append(mi)
-		mi.visible = _visible
+		mi.visible = _chunk_visible()
 		mi.set_process(true)
 		chunkIns.status = SwDefine.ChunkStatus.FULLY_LOADED
 		tasks.erase(chunkPos)
@@ -572,7 +662,7 @@ func on_view_rect_changed(viewRect:Rect2 = color_rect.get_rect(),speedVec:Vector
 					continue
 				# 相机又移回保留范围：撤销卸载，避免白白重建一遍
 				chunkIns.status = SwDefine.ChunkStatus.FULLY_LOADED
-				chunkIns.mesh_instance.visible = _visible
+				chunkIns.mesh_instance.visible = _chunk_visible()
 				chunkIns.mesh_instance.set_process(true)
 	pass
 

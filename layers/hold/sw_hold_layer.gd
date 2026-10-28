@@ -31,9 +31,24 @@ func get_anchor_pos(worldPos: Vector2) -> Vector2i:
 func show_hold(draw_data:SWDrawData,shadow_data:SWDrawData) -> void:
 	sw_draw_manager.setHoldBuild(draw_data)
 	sw_draw_manager_shadow.setHoldBuild(shadow_data)
+# 安装分帧准备好的手持数据（复制/剪切）：两份克隆由调用方一起分批建好，
+# make_visible=false 时区块照常建、只是先不上屏，等构建完再统一显示
+func install_hold_prepared(draw_data:SWDrawData,shadow_data:SWDrawData,make_visible:bool) -> void:
+	set_hold_visible(make_visible)
+	show_hold(draw_data,shadow_data)
 func clear_hold() -> void:
 	sw_draw_manager.setHoldBuild(null)
 	sw_draw_manager_shadow.setHoldBuild(null)
+# 手持预览显隐：隐藏时对之后新建的区块同样生效
+func set_hold_visible(enable:bool) -> void:
+	sw_draw_manager.set_visible(enable)
+	sw_draw_manager_shadow.set_visible(enable)
+# 手持预览是否已构建完毕（两个绘制层都没有待处理任务/卸载中的区块）
+func is_hold_render_idle() -> bool:
+	return sw_draw_manager.is_idle() and sw_draw_manager_shadow.is_idle()
+# 还差多少个区块没建出来（供准备进度条使用）
+func get_hold_pending_count() -> int:
+	return sw_draw_manager.get_pending_task_count() + sw_draw_manager_shadow.get_pending_task_count()
 func get_hold_draw_data() -> SWDrawData:
 	return sw_draw_manager.getHoldBuild()
 func get_shadow_draw_data() -> SWDrawData:

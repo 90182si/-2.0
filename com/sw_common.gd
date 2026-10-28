@@ -87,6 +87,9 @@ static func get_all_text_in_brackets(input: String) -> Array[String]:
 
 #求值轮次：每次电路重建或信号变化时自增，表达式节点缓存按轮次失效
 static var evalEpoch:int = 0
+#连线翻转变更戳：任一 net 电平变化时自增并写进该 net.patchStamp，
+#区块补丁按它判断「本区块自上次补丁后有哪些连线变了颜色」
+static var netPatchStamp:int = 0
 static var dbgEvaluated:int = 0
 static var dbgQueue:int = 0
 static func NextEvalEpoch() -> int:
@@ -154,13 +157,13 @@ static func GetWireColor(wireName:String) -> Array[Color]:
 	var retArr:Array[Color] = []
 	match wireName:
 		"电线A":
-			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
+			retArr = [Color(0.29, 0.036, 0.07, 1.0),Color(0.726, 0.165, 0.235, 1.0)]
 		"电线B":
-			retArr = [Color(0.335, 0.231, 0.737, 1.0),Color(0.721, 0.713, 0.977, 1.0)]
+			retArr = [Color(0.032, 0.253, 0.137, 1.0),Color(0.134, 0.683, 0.405, 1.0)]
 		_:
-			retArr = [Color(0.122, 0.395, 0.524, 1.0),Color(0.603, 0.84, 0.968, 1.0)]
+			retArr = [Color(0.032, 0.253, 0.137, 1.0),Color(0.134, 0.683, 0.405, 1.0)]
 	return retArr
 
 # 循环依赖（反馈环）元件与电线的警示色
 static func GetLoopColor() -> Color:
-	return Color(1.0, 0.0, 0.0, 1.0)
+	return Color(0.293, 0.001, 0.511, 1.0)

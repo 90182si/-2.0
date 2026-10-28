@@ -11,6 +11,9 @@ var curSignal:SwDefine.CircuitSignal
 var changedEpoch:int = -1
 # 电平版本号：每次翻转 +1，渲染端在区块重绘时比对它决定连线颜色要不要重刷
 var sigVersion:int = 0
+# 全局翻转戳（SwCommon.netPatchStamp 的快照）：区块按「上次补丁时的戳」比对它，
+# 决定本区块里哪些连线需要重染。比「每帧累积一个 net 集合」省掉无界增长的查表。
+var patchStamp:int = 0
 # 本 net 的连线覆盖到的区块：信号翻转时直接按它标脏，
 # 省掉「逐根电线 buildStateChanged + markColorDirty」（连线数量是门的十几倍）
 var chunkPosArr:Array[Vector2i] = []

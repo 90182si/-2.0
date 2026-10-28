@@ -36,46 +36,79 @@ func getNeighborsCached(build:SWBuildItemDefine) -> Array:
 	if not _neighborsCache.has(build):
 		_neighborsCache[build] = build.getCircuitCompoent().getBuildIOConnectBuildArr(buildManager)
 	return _neighborsCache[build]
-func find1(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
-	var retArr:Array[SWBuildItemDefine] = []
-	var buildMap:Dictionary[SWBuildItemDefine,bool] = {}
-	#同一旧电路只展开一次，避免多个新建筑触碰同一电路时重复扫描整表
-	var handledCircuits:Dictionary[SwDefine.SWCircuitData,bool] = {}
-	for build:SWBuildItemDefine in builds:
+
+# find1 的分批累加态：读档时按区间多次调用，结果与一次调用完全一致
+# （Dictionary 保持插入顺序，因此 Evaluation 对建筑顺序的敏感性不变）
+var _find1BuildMap:Dictionary[SWBuildItemDefine,bool] = {}
+var _find1Handled:Dictionary[SwDefine.SWCircuitData,bool] = {}
+func find1(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> Array[SWBuildItemDefine]:
+	if to < 0 or to > builds.size():
+		to = builds.size()
+	for i in range(from, to):
+		var build:SWBuildItemDefine = builds[i]
 		var neiBuilds = getNeighborsCached(build)
 		for neiBuildItem:Dictionary in neiBuilds:
 			var neiBuild = neiBuildItem["build"]
 			if neiBuild.circuit != null:
-				if handledCircuits.has(neiBuild.circuit):
+				if _find1Handled.has(neiBuild.circuit):
 					continue
-				handledCircuits[neiBuild.circuit] = true
+				_find1Handled[neiBuild.circuit] = true
 				for cBuild in neiBuild.circuit.buildArr:
 					if cBuild.buildState.state != SwDefine.BuildState.TO_BE_REMOVED:
-						buildMap[cBuild] = true
+						_find1BuildMap[cBuild] = true
 			else:
 				if neiBuild.buildState.state != SwDefine.BuildState.TO_BE_REMOVED:
-					buildMap[neiBuild] = true
+					_find1BuildMap[neiBuild] = true
 		if build.buildState.state != SwDefine.BuildState.TO_BE_REMOVED:
-			buildMap[build] = true
-	retArr = buildMap.keys()
+			_find1BuildMap[build] = true
+	var retArr:Array[SWBuildItemDefine] = []
+	if to >= builds.size():
+		retArr.assign(_find1BuildMap.keys())
+		_find1BuildMap.clear()
+		_find1Handled.clear()
 	return retArr
+
 func clearBuildsCircuitState(builds:Array[SWBuildItemDefine]) -> void:
+	var forDelCircuit:Dictionary = resetBuildCircuitState(builds)
+	initBuildPortState(builds)
+	dropCircuits(forDelCircuit)
+
+# 只重置建筑自身的电路状态；返回需要从 circuits 表里删掉的旧电路
+func resetBuildCircuitState(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> Dictionary:
+	if to < 0 or to > builds.size():
+		to = builds.size()
 	var forDelCircuit:Dictionary = {}
-	for build:SWBuildItemDefine in builds:
+	for i in range(from, to):
+		var build:SWBuildItemDefine = builds[i]
 		build.resetBuildState()
 		if build.circuit == null:
 			continue
 		forDelCircuit[build.circuit] = true
 		build.circuit = null
-	for build:SWBuildItemDefine in builds:
-		build.getCircuitCompoent().initPortState(buildManager)
+	return forDelCircuit
+
+# 各建筑重新初始化端口（连线类会按 wireGroup 重建 net）
+func initBuildPortState(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> void:
+	if to < 0 or to > builds.size():
+		to = builds.size()
+	for i in range(from, to):
+		builds[i].getCircuitCompoent().initPortState(buildManager)
+
+func dropCircuits(forDelCircuit:Dictionary) -> void:
 	for circuit:SwDefine.SWCircuitData in forDelCircuit.keys():
 		circuits.erase(circuit.circuitID)
-func createNets(builds:Array[SWBuildItemDefine]) -> void:
-	for build:SWBuildItemDefine in builds:
-		build.getCircuitCompoent().getNet(buildManager)
-func resetEmptyWireNet(builds:Array[SWBuildItemDefine]) -> void:
-	for build:SWBuildItemDefine in builds:
+
+func createNets(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> void:
+	if to < 0 or to > builds.size():
+		to = builds.size()
+	for i in range(from, to):
+		builds[i].getCircuitCompoent().getNet(buildManager)
+
+func resetEmptyWireNet(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> void:
+	if to < 0 or to > builds.size():
+		to = builds.size()
+	for i in range(from, to):
+		var build:SWBuildItemDefine = builds[i]
 		if build.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.WIRE:
 			continue
 		for dir in 4:
@@ -88,14 +121,25 @@ func resetEmptyWireNet(builds:Array[SWBuildItemDefine]) -> void:
 				build.getCircuitCompoent().pinNetMap[dir] = null
 				build.getCircuitCompoent().invalidateDirMasks()
 				
-func getCircuit(builds:Array[SWBuildItemDefine]) -> void:
+func getCircuit(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> void:
+	if to < 0 or to > builds.size():
+		to = builds.size()
 	#这里wire不用计算
-	for build:SWBuildItemDefine in builds:
-		build.getCircuitCompoent().getBuildExpr()
+	for i in range(from, to):
+		builds[i].getCircuitCompoent().getBuildExpr()
 
 func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
+	createCircuitRange(builds)
+	evaluateCircuits(builds)
+
+#给 [from,to) 里还没有 circuit 的建筑建电路分组（按区间分批时语义不变：
+#已有 circuit 的建筑本来就会被跳过，分组结果只取决于遍历顺序）
+func createCircuitRange(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> void:
+	if to < 0 or to > builds.size():
+		to = builds.size()
 	var buildQueue:Array[SWBuildItemDefine] = []
-	for buildOne in builds:
+	for i in range(from, to):
+		var buildOne:SWBuildItemDefine = builds[i]
 		if buildOne.circuit != null:
 			continue
 		var visited:Dictionary[SWBuildItemDefine,bool] = {}
@@ -158,6 +202,8 @@ func createCircuit(builds:Array[SWBuildItemDefine]) -> void:
 					if not cir.noticeMap.has(depBuild):
 						cir.noticeMap[depBuild] = []
 					cir.noticeMap[depBuild].append(build)
+
+func evaluateCircuits(builds:Array[SWBuildItemDefine]) -> void:
 	#重建后的首轮求值：源先落一次，再让其余元件（浮空门、未接时钟的寄存器）各求值一次。
 	#求值时按源输入递归解析上游，一轮足够，不需要反复跑到静止
 	_curEpoch = SwCommon.evalEpoch
@@ -240,6 +286,24 @@ func resolveNetSignal(net:SWNet) -> SwDefine.CircuitSignal:
 	_publishNetSignal(net, sig)
 	return net.curSignal
 		
+#一轮重建的公共前置：新求值轮次 + 清空上一轮的缓存/脏集
+func prepareRebuild() -> void:
+	#开启新的求值轮次，令上一轮的表达式缓存失效
+	SwCommon.NextEvalEpoch()
+	_neighborsCache.clear()
+	#重建期由调用方按返回的建筑列表整体重绘，这里不保留 net 区块脏集
+	_dirtyChunks.clear()
+	_dirtyNets.clear()
+	_find1BuildMap.clear()
+	_find1Handled.clear()
+
+func _filterNonWire(builds:Array[SWBuildItemDefine]) -> Array[SWBuildItemDefine]:
+	var arr:Array[SWBuildItemDefine] = []
+	for build in builds:
+		if not SwCommon.IsWireBuild(build):
+			arr.append(build)
+	return arr
+
 func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefine]:
 	if not buildManager:
 		return []
@@ -247,14 +311,9 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 		return []
 	if builds.is_empty():
 		return []
-	#开启新的求值轮次，令上一轮的表达式缓存失效
-	SwCommon.NextEvalEpoch()
-	_neighborsCache.clear()
-	#重建期由调用方按返回的建筑列表整体重绘，这里不保留 net 区块脏集
-	_dirtyChunks.clear()
-	_dirtyNets.clear()
+	prepareRebuild()
 	#查找受影的所有响建筑物
-	var affectBuilds = find1(builds)
+	var affectBuilds:Array[SWBuildItemDefine] = find1(builds)
 	#将这些受影响的建筑物关联的电路清空
 	clearBuildsCircuitState(affectBuilds)
 	#每个建筑物创建net
@@ -262,16 +321,95 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	#对wire多余的net进行重置
 	resetEmptyWireNet(affectBuilds)
 	#net 记录所属电路控制：求值时用它拉取源输入
-	_bindNetOwner(affectBuilds)
+	bindNetOwner(affectBuilds)
 	#方向构建依赖电路
 	getCircuit(affectBuilds)
-	var affectBuilds2:Array[SWBuildItemDefine] = []
-	for affectBuild in affectBuilds:
-		if not SwCommon.IsWireBuild(affectBuild):
-			affectBuilds2.append(affectBuild)
-	createCircuit(affectBuilds2)
-	
+	createCircuit(_filterNonWire(affectBuilds))
+
 	return affectBuilds
+
+#读档专用：阶段顺序与 updateBuildCircuit 完全一致（加载结果对建筑遍历顺序敏感，
+#不能跳步也不能重排），只是按时间预算分帧，每批之间让出主线程。
+#on_stage.call(stage:int, percent:float)；stage 0..8。
+#单批预算：太小会让每帧的等待时间占满（读档总时长翻倍），太大则卡顿明显。
+const STAGED_BUDGET_USEC:int = 50000
+#预算的最细粒度（每次进 fn 的建筑数），避免单个超慢批次把预算撑破太多
+#（重建端口阶段单建筑可达数百微秒，粒度要小才能守住 50ms 预算）
+const STAGED_STEP:int = 64
+func updateBuildCircuitStaged(builds:Array[SWBuildItemDefine], tree:SceneTree, on_stage:Callable,
+		budget_usec:int = STAGED_BUDGET_USEC, step:int = STAGED_STEP) -> Array[SWBuildItemDefine]:
+	if not buildManager or idling or builds.is_empty():
+		return []
+	prepareRebuild()
+	var total:int = builds.size()
+	# 1) find1：邻居扩展（累加态，最后一次调用才产出结果）
+	var affectBuilds:Array[SWBuildItemDefine] = []
+	var i:int = 0
+	while i < total:
+		var t0:int = Time.get_ticks_usec()
+		while i < total:
+			var next:int = mini(i + step, total)
+			var res:Array[SWBuildItemDefine] = find1(builds, i, next)
+			i = next
+			if i >= total:
+				affectBuilds = res
+			if Time.get_ticks_usec() - t0 >= budget_usec:
+				break
+		on_stage.call(0, float(i) / float(total))
+		if i >= total:
+			break
+		await tree.process_frame
+	var affectTotal:int = affectBuilds.size()
+	if affectTotal == 0:
+		return affectBuilds
+	# 2) 重置建筑电路状态
+	var forDelCircuit:Dictionary = {}
+	await _staged_range(func(from:int, to:int) -> void:
+		var part:Dictionary = resetBuildCircuitState(affectBuilds, from, to)
+		for c in part:
+			forDelCircuit[c] = true, affectTotal, 1, tree, on_stage, budget_usec, step)
+	# 3) 重建端口
+	await _staged_range(func(from:int, to:int) -> void:
+		initBuildPortState(affectBuilds, from, to), affectTotal, 2, tree, on_stage, budget_usec, step)
+	dropCircuits(forDelCircuit)
+	# 4) 建立 net
+	await _staged_range(func(from:int, to:int) -> void:
+		createNets(affectBuilds, from, to), affectTotal, 3, tree, on_stage, budget_usec, step)
+	# 5) 清理空 net
+	await _staged_range(func(from:int, to:int) -> void:
+		resetEmptyWireNet(affectBuilds, from, to), affectTotal, 4, tree, on_stage, budget_usec, step)
+	# 6) net 挂回电路控制
+	await _staged_range(func(from:int, to:int) -> void:
+		bindNetOwner(affectBuilds, from, to), affectTotal, 5, tree, on_stage, budget_usec, step)
+	# 7) 元件表达式
+	await _staged_range(func(from:int, to:int) -> void:
+		getCircuit(affectBuilds, from, to), affectTotal, 6, tree, on_stage, budget_usec, step)
+	# 8) 电路分组
+	var nonWire:Array[SWBuildItemDefine] = _filterNonWire(affectBuilds)
+	await _staged_range(func(from:int, to:int) -> void:
+		createCircuitRange(nonWire, from, to), nonWire.size(), 7, tree, on_stage, budget_usec, step)
+	# 9) 首轮求值（整体一次，不切分：求值依赖完整拓扑）
+	on_stage.call(8, 0.0)
+	await tree.process_frame
+	evaluateCircuits(nonWire)
+	on_stage.call(8, 1.0)
+	return affectBuilds
+
+#按时间预算跑一个逐建筑阶段，超预算就报进度并让出主线程
+func _staged_range(fn:Callable, total:int, stage:int, tree:SceneTree, on_stage:Callable,
+		budget_usec:int = STAGED_BUDGET_USEC, step:int = STAGED_STEP) -> void:
+	var i:int = 0
+	while i < total:
+		var t0:int = Time.get_ticks_usec()
+		while i < total:
+			var next:int = mini(i + step, total)
+			fn.call(i, next)
+			i = next
+			if Time.get_ticks_usec() - t0 >= budget_usec:
+				break
+		on_stage.call(stage, float(i) / float(total))
+		if i < total:
+			await tree.process_frame
 	
 func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 	var seeds:Array[SWBuildItemDefine] = [build]
@@ -345,6 +483,9 @@ func _publishNetSignal(net:SWNet, sig:SwDefine.CircuitSignal) -> void:
 	net.curSignal = sig
 	net.changedEpoch = _curEpoch
 	net.sigVersion += 1
+	#翻转戳：区块补丁按它判断本区块有哪些连线需要重染（不用逐帧累积 net 集合）
+	SwCommon.netPatchStamp += 1
+	net.patchStamp = SwCommon.netPatchStamp
 	#连线颜色由 net 电平决定：把翻转的 net 交给渲染端批量换色
 	#（门/灯/寄存器在上游求值里已进了 notify 列表，无需在这里逐根展开连线）
 	_dirtyNets[net] = true
@@ -379,8 +520,11 @@ func _netSignal(net:SWNet) -> int:
 	return 1
 
 #把电路控制挂到本轮所有 net 上：元件求值时经 net.signalNow() 拉取源输入
-func _bindNetOwner(builds:Array) -> void:
-	for build:SWBuildItemDefine in builds:
+func bindNetOwner(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> void:
+	if to < 0 or to > builds.size():
+		to = builds.size()
+	for i in range(from, to):
+		var build:SWBuildItemDefine = builds[i]
 		var comp:SWBuildCompoentCircuit = build.getCircuitCompoent()
 		if comp == null:
 			continue

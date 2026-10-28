@@ -36,6 +36,7 @@ func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2 = Vector2.ZERO) -> void:
 	var mouse_offset := mouse_screen - viewport_center
 	_logic_pos += mouse_offset * (Vector2(1.0,1.0)/old_zoom - Vector2(1.0,1.0)/new_zoom)
 	_apply_position()
+	_update_atlas_lod()
 	view_rect_changed()
 	pass
 
@@ -75,7 +76,17 @@ func set_view(pos:Vector2, zoom_vec:Vector2, level:int) -> void:
 	view_scale_level = level
 	_logic_pos = pos
 	_apply_position()
+	_update_atlas_lod()
 	view_rect_changed()
+
+# 缩到阈值以外换低分辨率图集：只换纹理，不触发区块重绘
+func _update_atlas_lod() -> void:
+	if view_scale_level <= SwDefine.VIEW_LOD2_LEVEL:
+		SwAtlas.set_lod(2)
+	elif view_scale_level <= SwDefine.VIEW_LOD_LEVEL:
+		SwAtlas.set_lod(1)
+	else:
+		SwAtlas.set_lod(0)
 
 func view_rect_changed(speedVec:Vector2=Vector2.ZERO) -> void:
 	var viewRect := get_visible_rect()

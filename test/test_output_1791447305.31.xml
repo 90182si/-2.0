@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="GutTests" failures="1" tests="1" >
-  <testsuite name="test/circuit/test_circuit_led.gd" tests="1" failures="1" skipped="0" time="0.594111" >
-      <testcase name="test_led_states_after_interactions" assertions="12" status="fail" classname="test/circuit/test_circuit_led.gd" time="0.594111" >
-      <failure message="failed"><![CDATA[[2] expected to equal [1]:  灯泡 (896, 384) 状态不符：期望 LOW(灭)，实际 HIGH(亮)
-            at line 85]]></failure></testcase>
-  </testsuite>
-</testsuites>

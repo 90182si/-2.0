@@ -31,11 +31,12 @@ var _usedInstances: int = 0
 var _slotsValid: bool = false
 # ========== 连线色批量索引 ==========
 # 一根 net 翻转时它挂着的所有连线都要换色；上万根线逐建筑补丁会退化成上万次脚本调用。
-# 这里把「net -> 本区块内相关实例的颜色列偏移」预先摊平，翻转时一次算色、
+# 这里把「net+线别 -> 本区块内相关实例的颜色列偏移」预先摊平，翻转时一次算色、
 # 顺序写 4 个分量，把开销压回纯内存写。
-var _netCols: Dictionary = {}     # SWNet -> PackedInt32Array（每项 = 实例下标*16+8，白底）
-var _netMaskCols: Dictionary = {} # SWNet -> PackedInt32Array（带底色，如选中高亮）
-var _netMaskColors: Dictionary = {} # SWNet -> PackedColorArray（与 _netMaskCols 同序）
+# 电线A/B 混接在同一个 net（桥梁/隧道）时要各自保持本色，所以按 net+调色板分组。
+var _netEntries: Array = []       # Array[SWNetColorEntry]
+# 本区块连线颜色已经染到的全局翻转戳：patchNets 只重染戳更新的 net
+var _netStamp: int = 0
 # 临时诊断计数（性能探针读取）
 static var dbg_net_checks: int = 0
 static var dbg_cols_written: int = 0
@@ -56,9 +57,17 @@ func _ready() -> void:
 	# 运行前从全局配置 SwAtlas 取当前图集，覆盖 shader 采样用的 srcImg
 	# material 是场景子资源，被所有区块节点共享：参数已一致时必须跳过，
 	# 否则每新增一个区块都会触发一次全量材质更新（区块越多越慢）
+	# 登记进组：换图集/LOD 时由 SwAtlas 统一刷材质参数
+	add_to_group(SwAtlas.MESH_GROUP)
 	var mat := material as ShaderMaterial
-	if mat and SwAtlas.current and mat.get_shader_parameter("srcImg") != SwAtlas.current:
-		mat.set_shader_parameter("srcImg", SwAtlas.current)
+	if mat == null:
+		return
+	var tex: Texture2D = SwAtlas.get_texture()
+	if tex and mat.get_shader_parameter("srcImg") != tex:
+		mat.set_shader_parameter("srcImg", tex)
+	var sc: float = SwAtlas.get_rect_scale()
+	if mat.get_shader_parameter("atlas_scale") != sc:
+		mat.set_shader_parameter("atlas_scale", sc)
 		
 func setDrawMode(mode:SwDefine.GridDrawMode) -> void:
 	_drawMode = mode
@@ -107,9 +116,7 @@ func reUse() -> void:
 	_slotParts.clear()
 	_slotsValid = false
 	_usedInstances = 0
-	_netCols.clear()
-	_netMaskCols.clear()
-	_netMaskColors.clear()
+	_netEntries.clear()
 
 # 增量补丁要求常驻 CPU 缓冲与槽位表都在
 func hasCpuBuffer() -> bool:
@@ -179,9 +186,8 @@ func _buildContent() -> void:
 	buf.resize(0)
 	_slotStart.clear()
 	_slotParts.clear()
-	_netCols.clear()
-	_netMaskCols.clear()
-	_netMaskColors.clear()
+	_netEntries.clear()
+	var netEntryIndex: Dictionary = {}
 	var inst: int = 0
 	for mapData:SWBuildItemDefine in curMapData:
 		if inst >= cap:
@@ -202,7 +208,7 @@ func _buildContent() -> void:
 			block = block.slice(0, parts * stride)
 			truncated = true
 		if not truncated:
-			comp.registerNetColumns(inst, _netCols, _netMaskCols, _netMaskColors)
+			comp.registerNetColumns(inst, _netEntries, netEntryIndex)
 		_slotStart[mapData] = inst
 		_slotParts[mapData] = parts
 		buf.append_array(block)
@@ -210,6 +216,8 @@ func _buildContent() -> void:
 	_cpuBuffer = buf
 	_usedInstances = inst
 	_slotsValid = true
+	# 整块刚按当前电平烘好颜色：连线染色进度直接对齐到当前翻转戳
+	_netStamp = SwCommon.netPatchStamp
 	_upload(inst)
 
 # 手持/阴影图层：建筑数极少，逐实例写入即可
@@ -243,89 +251,102 @@ func _buildSparse() -> void:
 
 # 信号变化只影响颜色与图集帧：按槽把每个实例的 8..15 列回写（不提交，交给 flushPatch）。
 # 槽位缺失/部件数变化（几何变了）返回 false，由调用方退回整块重建。
-func patchBuilds(builds:Array) -> bool:
+# LOD 降级期间只回写 12..15（图集帧：灯泡/开关/寄存器），颜色列冻结，省掉高频电路的颜色重算；
+# forceColor=true 用于 LOD 档切换 / 选中底色：按当前档位强制重染一次
+#（降级时连线统一 high 色，回升时还原真实电平；选中高亮在任何档位都要立刻生效）。
+# colorOnly=true：只写 8..11 颜色列，图集帧保持冻结（LOD2 下的选中底色）。
+func patchBuilds(builds:Array, forceColor:bool = false, colorOnly:bool = false) -> bool:
 	if not _slotsValid:
 		return false
 	var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
 	var grid_x: float = _gridSizeTmp.x
 	var grid_y: float = _gridSizeTmp.y
 	var buf: PackedFloat32Array = _cpuBuffer
+	var apply_color: bool = colorOnly or forceColor or not SwAtlas.is_lod_active()
+	var col_start: int = 8 if apply_color else 12
+	var col_end: int = 12 if colorOnly else stride
 	for mapData:SWBuildItemDefine in builds:
 		if not _slotStart.has(mapData):
 			return false
 		var parts: int = _slotParts[mapData]
 		var block: PackedFloat32Array = mapData.getRenderableCompoent().getInstanceBlock(
 				float(mapData.buildAxisPos.x), float(mapData.buildAxisPos.y), grid_x, grid_y,
-				mapData.buildState.mask_color)
+				mapData.buildState.mask_color, apply_color)
 		if block.size() != parts * stride:
 			return false
 		var dst: int = int(_slotStart[mapData]) * stride
 		var src: int = 0
 		for _p in parts:
-			for k in range(8, stride):
+			for k in range(col_start, col_end):
 				buf[dst + k] = block[src + k]
 			dst += stride
 			src += stride
 	_cpuBuffer = buf
 	return true
 
-# 连线换色：只处理本区块内确实被翻转的 net，按预摊平的颜色列批量回写
-func patchNets(netSet:Dictionary) -> bool:
-	if (_netCols.is_empty() and _netMaskCols.is_empty()) or netSet.is_empty():
+# 连线换色：只重染「自上次补丁后翻转过」的 net（按 net.patchStamp 与区块戳比对）。
+# 区块戳让每个区块自己记住已经染到哪一刻，不需要渲染端逐帧累积全局 dirty net 集合，
+# 队列积压时也不会越积越多。
+func patchNets() -> bool:
+	if _netEntries.is_empty():
+		return false
+	# LOD 降级期间连线颜色一并冻结，回到全分辨率时由 resyncColors 补齐
+	if SwAtlas.is_lod_active():
+		return false
+	var stamp:int = SwCommon.netPatchStamp
+	if stamp == _netStamp:
 		return false
 	var buf: PackedFloat32Array = _cpuBuffer
 	var touched: bool = false
-	for net:SWNet in _netCols.keys():
+	for e: SWNetColorEntry in _netEntries:
 		dbg_net_checks += 1
-		if not netSet.has(net):
+		if e.net.patchStamp <= _netStamp:
 			continue
 		touched = true
-		var c: Color = _net_color(net)
-		var cols: PackedInt32Array = _netCols[net]
-		dbg_cols_written += cols.size()
-		for col: int in cols:
+		var c: Color = e.high if e.net.curSignal == SwDefine.CircuitSignal.HIGH else e.low
+		dbg_cols_written += e.cols.size() + e.mask_cols.size()
+		for col: int in e.cols:
 			buf[col + 0] = c.r
 			buf[col + 1] = c.g
 			buf[col + 2] = c.b
 			buf[col + 3] = c.a
-		_writeMaskCols(buf, net, c)
-	#底色实例通常同时登记在白底索引里，这里只补「整块全是底色」的少数 net
-	for net:SWNet in _netMaskCols.keys():
-		if _netCols.has(net) or not netSet.has(net):
-			continue
-		touched = true
-		_writeMaskCols(buf, net, _net_color(net))
+		var mcols: PackedInt32Array = e.mask_cols
+		var masks: PackedColorArray = e.mask_colors
+		for i in mcols.size():
+			var col: int = mcols[i]
+			var m: Color = masks[i]
+			buf[col + 0] = c.r * m.r
+			buf[col + 1] = c.g * m.g
+			buf[col + 2] = c.b * m.b
+			buf[col + 3] = c.a * m.a
 	if touched:
 		_cpuBuffer = buf
+	_netStamp = stamp
 	return touched
-
-func _writeMaskCols(buf: PackedFloat32Array, net: SWNet, c: Color) -> void:
-	if not _netMaskCols.has(net):
-		return
-	var mcols: PackedInt32Array = _netMaskCols[net]
-	var masks: PackedColorArray = _netMaskColors[net]
-	for i in mcols.size():
-		var col: int = mcols[i]
-		var m: Color = masks[i]
-		buf[col + 0] = c.r * m.r
-		buf[col + 1] = c.g * m.g
-		buf[col + 2] = c.b * m.b
-		buf[col + 3] = c.a * m.a
 
 # 补丁结束提交一次：同一帧里建筑补丁与连线换色共用一次上传
 func flushPatch() -> void:
 	if _slotsValid:
 		_upload(_usedInstances)
 
-# net 的电平色（低/高两档），与 _applyColors 里连线部件的取色规则一致
-func _net_color(net:SWNet) -> Color:
-	if not net.renderColorResolved:
-		var wireName: String = net.wireGroup.wireName if net.wireGroup != null else ""
-		var arr = SwCommon.GetWireColor(wireName)
-		net.renderColorLow = arr[0]
-		net.renderColorHigh = arr[1]
-		net.renderColorResolved = true
-	return net.renderColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else net.renderColorLow
+# LOD 档切换：按当前档位把整块颜色重染一遍（几何不动，只写颜色/图集列）。
+# 降级时连线统一取 high 色，回升时还原真实电平。
+# 返回 false 表示槽位对不上（期间有结构性变更），由调用方退回整块重建。
+func resyncColors(forceColor:bool = false) -> bool:
+	if not _slotsValid:
+		return false
+	var builds: Array = []
+	for mapData:SWBuildItemDefine in curMapData:
+		if _slotStart.has(mapData):
+			builds.append(mapData)
+	if builds.is_empty():
+		return false
+	if not patchBuilds(builds, forceColor):
+		return false
+	# 整块重染写的是当前电平色，连线进度对齐到当前戳，避免紧接着重复重染一遍
+	if not SwAtlas.is_lod_active():
+		_netStamp = SwCommon.netPatchStamp
+	return true
 
 # 提交 _cpuBuffer 的前 inst 个实例；容量跟着真实用量走，避免上传大量补零实例
 func _upload(inst: int) -> void:

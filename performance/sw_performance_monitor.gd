@@ -265,13 +265,17 @@ func _format_build_info(build: SWBuildItemDefine) -> String:
 	lines.append("类型: %s" % _comp_type_to_text(build.buildDefine.circuit_component_type))
 	lines.append("信号: %s" % _signal_to_text(build.signal_state))
 	lines.append("电路: %s" % _circuit_to_text(build.circuit))
+	#分阶段重建/孤立电线时 net 可能还没建出来，取组名要先判空
 	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
 		var wireBuild:SWBuildWire = build as SWBuildWire
-		lines.append("WireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().net.wireGroup))
+		var wireNet:SWNet = wireBuild.getCircuitCompoent().net
+		lines.append("WireGroup: %s" % _wire_group_to_text(wireNet.wireGroup if wireNet != null else null))
 	elif build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_BRIDGE:
 		var wireBuild:SWBuildWireCross = build as SWBuildWireCross
-		lines.append("VerticalWireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().v_net.wireGroup))
-		lines.append("HorizontalWireGroup: %s" % _wire_group_to_text(wireBuild.getCircuitCompoent().h_net.wireGroup))
+		var vNet:SWNet = wireBuild.getCircuitCompoent().v_net
+		var hNet:SWNet = wireBuild.getCircuitCompoent().h_net
+		lines.append("VerticalWireGroup: %s" % _wire_group_to_text(vNet.wireGroup if vNet != null else null))
+		lines.append("HorizontalWireGroup: %s" % _wire_group_to_text(hNet.wireGroup if hNet != null else null))
 	if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE_TUNNEL:
 		var tunnelBuild:SWBuildWireTunnel = build as SWBuildWireTunnel
 		lines.append("Tunnel PairId: %d" % tunnelBuild.pairId)

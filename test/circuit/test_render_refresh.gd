@@ -25,6 +25,8 @@ func _boot(save_name: String = SAVE_NAME) -> bool:
 	if data.is_empty():
 		push_error("存档加载失败: " + save_name)
 		return false
+	# 存档视口可能落在 LOD 档位（降级期间颜色按设计冻结），本文件断言全分辨率下的补丁
+	SwAtlas.set_lod(0)
 	assert_gt(harness.force_load_all_chunks(), 0, "没有任何区块被构建出来")
 	return true
 
@@ -67,6 +69,85 @@ func test_content_change_rebuilds_chunk() -> void:
 	assert_gt(mi.multimesh.visible_instance_count, afterDel,
 		"放置建筑后区块没有重建内容（实例数停在 %d）" % afterDel)
 
+# 连线换色走区块级 patchNets：同一 net 上混接的电线A/B 必须各按自身线别取色。
+# 区块索引若只按 net 去重（一个调色板槽），后登记的那种线会把另一种染成自己的颜色。
+func test_mixed_wire_palette_survives_patch() -> void:
+	if not await _boot():
+		return
+	var sys: SWBuildLayerSystem = harness.build_layer.layer_system
+	var dm = harness.build_layer.sw_draw_manager
+	var samples: Array = _collect_mixed_net_wires(sys, dm)
+	assert_gt(samples.size(), 0, "存档里没有同时含电线A和电线B、且已上屏的 net")
+	var clocks: Array[SWBuildItemDefine] = sys.clockBuildArr.keys()
+	assert_gt(clocks.size(), 0, "存档里没有时钟，无法驱动级联")
+	var flipped: bool = false
+	for tick in 8:
+		var before: Array = []
+		for s: Dictionary in samples:
+			before.append((s["net"] as SWNet).curSignal)
+		for clk in clocks:
+			clk.onPressed(true)
+		sys.refresh_signal_chunks(sys.circuit_control.buildSignalsChanged(clocks))
+		harness.flush_draw_queue()
+		for i: int in samples.size():
+			if (samples[i]["net"] as SWNet).curSignal != before[i]:
+				flipped = true
+		# 每拍都查：翻转只发生在一部分拍上，但任何一拍写错都算失败
+		var bad: Array[String] = []
+		for s: Dictionary in samples:
+			var b: SWBuildItemDefine = s["build"]
+			var net: SWNet = s["net"]
+			var arr: Array[Color] = SwCommon.GetWireColor(b.buildDefine.buildName)
+			var want: Color = arr[1] if net.curSignal == SwDefine.CircuitSignal.HIGH else arr[0]
+			var got: Color = _build_color(s["mi"], b)
+			if not got.is_equal_approx(want):
+				bad.append("%s@%s got=%s want=%s" % [
+					b.buildDefine.buildName, str(b.buildAxisPos), str(got), str(want)])
+		assert_eq(bad.size(), 0, "第 %d 拍混接 net 上有 %d 根线被染成别的线别色：%s" % [
+			tick, bad.size(), ", ".join(bad.slice(0, 5))])
+	assert_true(flipped, "连续 8 拍里混接 net 电平从未翻转，没有真正走到换色补丁")
+
+# 收集混接 net（同时含电线A和电线B）上已上屏的电线
+func _collect_mixed_net_wires(sys: SWBuildLayerSystem, dm) -> Array:
+	var by_net: Dictionary = {}
+	for b: SWBuildItemDefine in sys.build_manager.getAllBuilds():
+		if b.buildDefine.circuit_component_type != SwDefine.CircuitComponentType.WIRE or b.in_loop:
+			continue
+		var wire_name: String = b.buildDefine.buildName
+		if wire_name != "电线A" and wire_name != "电线B":
+			continue
+		var cir: SWBuildCompoentCircuit = b.getCircuitCompoent()
+		var net: SWNet = null
+		for d in 4:
+			net = cir.pinNetMap.get(d, null)
+			if net != null:
+				break
+		if net == null:
+			continue
+		var cp: Vector2i = SwCommon.GetChunkPos(b.buildAxisPos)
+		if not dm._chunkInstance.has(cp):
+			continue
+		var mi: SWMultiMeshInstance2D = dm._chunkInstance[cp].mesh_instance
+		if mi == null or not mi._slotStart.has(b):
+			continue
+		var lst: Array = by_net.get(net, [])
+		lst.append({"build": b, "mi": mi, "net": net})
+		by_net[net] = lst
+	var out: Array = []
+	for key in by_net:
+		var lst: Array = by_net[key]
+		var has_a: bool = false
+		var has_b: bool = false
+		for s: Dictionary in lst:
+			var w: String = (s["build"] as SWBuildItemDefine).buildDefine.buildName
+			if w == "电线A":
+				has_a = true
+			elif w == "电线B":
+				has_b = true
+		if has_a and has_b:
+			out.append_array(lst)
+	return out
+
 # 信号翻转只改颜色：应当走增量补丁（buffer 内容变了，但没有整块重建）
 func test_signal_change_patches_colors() -> void:
 	if not await _boot():
@@ -79,7 +160,7 @@ func test_signal_change_patches_colors() -> void:
 	var mi: SWMultiMeshInstance2D = null
 	for chunkPos: Vector2i in dm.get_loaded_chunk_positions():
 		var cand: SWMultiMeshInstance2D = dm._chunkInstance[chunkPos].mesh_instance
-		if not cand._netCols.is_empty():
+		if not cand._netEntries.is_empty():
 			mi = cand
 			break
 	if mi == null:
@@ -94,6 +175,13 @@ func test_signal_change_patches_colors() -> void:
 	assert_gt(touched, 0, "信号级联没有标脏任何区块")
 	assert_ne(_color_signature(mi._cpuBuffer), before, "电平翻转后区块颜色没有回写")
 	assert_eq(dm.get_full_rebuilds_last_frame(), 0, "纯信号变化不该退回整块重建")
+
+# 建筑首个实例的颜色分量（连线类建筑的首个部件就是线本身）
+func _build_color(mi: SWMultiMeshInstance2D, b: SWBuildItemDefine) -> Color:
+	var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
+	var idx: int = int(mi._slotStart[b]) * stride
+	return Color(mi._cpuBuffer[idx + 8], mi._cpuBuffer[idx + 9],
+			mi._cpuBuffer[idx + 10], mi._cpuBuffer[idx + 11])
 
 # 实例颜色分量的加权和：电平翻转必然改变其中一批，用来判断 buffer 是否被回写过
 func _color_signature(buf: PackedFloat32Array) -> float:

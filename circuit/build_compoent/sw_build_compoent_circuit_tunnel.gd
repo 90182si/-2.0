@@ -65,8 +65,12 @@ func connectWireGroup(swBuildManager:SWBuildManager) -> void:
 		var wireGroupBuilds = getWireGroupBuilds(swBuildManager,buildRef,posmod(buildRef.rotation+1,4))
 		var tunnelBuild:SWBuildWireTunnel = buildRef as SWBuildWireTunnel
 		if tunnelBuild.pairId != -1:
-			var pairTunnel = swBuildManager.getBuildById(tunnelBuild.pairId)
-			wireGroupBuilds.append({"build":pairTunnel,"dir":posmod(buildRef.rotation+3,4)})
+			var pairTunnel:SWBuildWireTunnel = swBuildManager.getBuildById(tunnelBuild.pairId) as SWBuildWireTunnel
+			#pairId 失效（存档 id 重排/对方已被删）时按未配对处理，别把 null 塞进 wireGroup
+			if pairTunnel:
+				wireGroupBuilds.append({"build":pairTunnel,"dir":posmod(buildRef.rotation+3,4)})
+			else:
+				tunnelBuild.pairId = -1
 		var wireNet:SWNet = SWNet.new()
 		for wBuildItem:Dictionary in wireGroupBuilds:
 			var wBuild = wBuildItem["build"]

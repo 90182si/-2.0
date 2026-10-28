@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="GutTests" failures="0" tests="1" >
-  <testsuite name="test/circuit/test_circuit_led.gd" tests="1" failures="0" skipped="0" time="0.711065" >
-      <testcase name="test_led_states_after_interactions" assertions="12" status="pass" classname="test/circuit/test_circuit_led.gd" time="0.711065" >
-      </testcase>
-  </testsuite>
-</testsuites>

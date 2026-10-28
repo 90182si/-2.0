@@ -29,12 +29,22 @@ var _blockGridY: float = 0.0
 var _colorDirty: bool = true
 var _lastMaskColor: Color = Color(-1.0, -1.0, -1.0, -1.0)  # 哨兵：首帧必刷
 var _lastInLoop: bool = false
+# 上次染色时的图集 LOD 状态：LOD 档连线统一取 high 色，切换档位必须重染一次
+var _lastLodMode: bool = false
 
 # 连线类部件的颜色只由所连 net 的电平决定：缓存涉及的 net（按对象去重），
 # 区块重绘时比对 net 的电平版本号，翻转了才重刷颜色。
 # 这样一根线翻转不需要在电路层逐根打脏（连线数量是门的十几倍）
 var _colorNets: Array[SWNet] = []
 var _lastSigVersion: int = -1
+
+# 电线A/电线B：连线颜色用建筑自身线别。一个 net 里可能混接两线别，
+# net.wireGroup.wireName 只会记下最后一个写入者，不能作为 A/B 的取色依据。
+var _ownPalette: bool = false
+var _ownColorLow: Color = Color.WHITE
+var _ownColorHigh: Color = Color.WHITE
+# 分组键：用自身线别时取线名（电线A/电线B 各自一组），跟随 net 时为空串
+var _paletteKey: String = ""
 
 # 图集帧切换（开关/灯/寄存器等换贴图）只改 atlas 部件的 rect，
 # 不重建部件与几何。图集部件在 _buildRenderParts 中总是最后追加。
@@ -54,10 +64,10 @@ func markAtlasRectDirty() -> void:
 
 # 把本建筑「随 net 电平变色」的实例颜色列登记进区块的批量索引。
 # startInstance 是本建筑在区块 buffer 中的起始实例下标，部件顺序与 getRenderParts 一致。
-# 白底（绝大多数）与带底色（选中/高亮）分列登记，补丁时白底只写 4 个分量、不做乘法。
-func registerNetColumns(startInstance: int, whiteCols: Dictionary, maskCols: Dictionary, maskColors: Dictionary) -> void:
-	#环路色覆盖整栋建筑，与 net 电平无关，不参与批量换色
-	if buildRef.in_loop:
+# entries 按 net+调色板分组；index 是本次区块构建期的去重表（net -> {调色板键: 条目}）。
+func registerNetColumns(startInstance: int, entries: Array, index: Dictionary) -> void:
+	#环路色覆盖整栋建筑，与 net 电平无关，不参与批量换色；预览建筑不挂电路
+	if buildRef.in_loop or buildRef.is_preview:
 		return
 	var parts: Array = getRenderParts()
 	var cir: SWBuildCompoentCircuit = buildRef.getCircuitCompoent()
@@ -70,18 +80,34 @@ func registerNetColumns(startInstance: int, whiteCols: Dictionary, maskCols: Dic
 		if part.has("pin_dir"):
 			var net: SWNet = cir.pinNetMap.get(part["pin_dir"], null)
 			if net != null:
+				var e: SWNetColorEntry = _netEntryFor(entries, index, net)
 				if isWhite:
-					if not whiteCols.has(net):
-						whiteCols[net] = PackedInt32Array()
-					whiteCols[net].append(col)
+					e.cols.append(col)
 				else:
-					if not maskCols.has(net):
-						maskCols[net] = PackedInt32Array()
-						maskColors[net] = PackedColorArray()
-					maskCols[net].append(col)
-					maskColors[net].append(mask)
+					e.mask_cols.append(col)
+					e.mask_colors.append(mask)
 		col += INSTANCE_STRIDE
-	
+
+func _netEntryFor(entries: Array, index: Dictionary, net: SWNet) -> SWNetColorEntry:
+	var byPalette: Dictionary = index.get(net, {})
+	var e: SWNetColorEntry = byPalette.get(_paletteKey, null)
+	if e != null:
+		return e
+	e = SWNetColorEntry.new()
+	e.net = net
+	e.is_own = _ownPalette
+	if _ownPalette:
+		e.low = _ownColorLow
+		e.high = _ownColorHigh
+	else:
+		_resolveNetColor(net)
+		e.low = net.renderColorLow
+		e.high = net.renderColorHigh
+	byPalette[_paletteKey] = e
+	index[net] = byPalette
+	entries.append(e)
+	return e
+
 func getRenderParts() -> Array:
 	if not _geomDirty:
 		return _renderPartsCache
@@ -91,7 +117,9 @@ func getRenderParts() -> Array:
 	return _renderPartsCache
 
 # 获取整块实例数据：世界坐标/颜色/图集均已烘培，参数未变时零计算直接复用
-func getInstanceBlock(baseX: float, baseY: float, gridX: float, gridY: float, maskColor:Color) -> PackedFloat32Array:
+# applyColor=false 用于 LOD 降级：只取几何与图集帧，跳过电平颜色重算。
+# 此时 _colorDirty / _lastSigVersion 都不动，下次带颜色的调用会把冻结期间的变化一次补齐。
+func getInstanceBlock(baseX: float, baseY: float, gridX: float, gridY: float, maskColor:Color, applyColor:bool = true) -> PackedFloat32Array:
 	if not _geomValid or _geomDirty or _blockBaseX != baseX or _blockBaseY != baseY \
 			or _blockGridX != gridX or _blockGridY != gridY:
 		_bakeGeometry(baseX, baseY, gridX, gridY)
@@ -106,14 +134,19 @@ func getInstanceBlock(baseX: float, baseY: float, gridX: float, gridY: float, ma
 			_instanceBlock[ai + 13] = r.position.y
 			_instanceBlock[ai + 14] = r.size.x
 			_instanceBlock[ai + 15] = r.size.y
+	if not applyColor:
+		return _instanceBlock
 	# 只有本拍颜色可能变化的建筑才重算；其余直接复用上次烘好的颜色
 	var sigVersion: int = _netSigVersion()
+	var lodMode: bool = SwAtlas.is_lod_active()
 	if _colorDirty or sigVersion != _lastSigVersion \
-			or maskColor != _lastMaskColor or buildRef.in_loop != _lastInLoop:
+			or maskColor != _lastMaskColor or buildRef.in_loop != _lastInLoop \
+			or lodMode != _lastLodMode:
 		_applyColors(maskColor)
 		_lastMaskColor = maskColor
 		_lastInLoop = buildRef.in_loop
 		_lastSigVersion = sigVersion
+		_lastLodMode = lodMode
 		_colorDirty = false
 	return _instanceBlock
 
@@ -126,26 +159,43 @@ func _netSigVersion() -> int:
 		v = v * 31 + net.sigVersion
 	return v
 
+func _resolveNetColor(net: SWNet) -> void:
+	if net.renderColorResolved:
+		return
+	var wireName: String = net.wireGroup.wireName if net.wireGroup != null else ""
+	var arr: Array[Color] = SwCommon.GetWireColor(wireName)
+	net.renderColorLow = arr[0]
+	net.renderColorHigh = arr[1]
+	net.renderColorResolved = true
+
+# 连线部件取色：电线A/B 用自身线别调色板，其余（门/灯/按钮/桥梁/隧道）沿用所属 net。
+# 图集 LOD 档位下统一取 high 色，避免缩远时整屏连线随电路闪烁，颜色在此期间也不再跟随电路
+func _pinColor(net: SWNet) -> Color:
+	if _ownPalette:
+		if SwAtlas.is_lod_active():
+			return _ownColorHigh
+		return _ownColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else _ownColorLow
+	_resolveNetColor(net)
+	if SwAtlas.is_lod_active():
+		return net.renderColorHigh
+	return net.renderColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else net.renderColorLow
+
 func _applyColors(maskColor: Color) -> void:
 	var inLoop: bool = buildRef.in_loop
 	var loopColor: Color = SwCommon.GetLoopColor() if inLoop else Color()
-	var cir: SWBuildCompoentCircuit = buildRef.getCircuitCompoent()
+	#预览建筑没有电路组件，整栋按底色绘制
+	var cir: SWBuildCompoentCircuit = null
+	if not buildRef.is_preview:
+		cir = buildRef.getCircuitCompoent()
 	var i: int = 8
 	for part in _renderPartsCache:
 		var c: Color = maskColor
 		if inLoop and part["loop_tint"]:
 			c = maskColor * loopColor
-		elif part.has("pin_dir"):
+		elif cir != null and part.has("pin_dir"):
 			var net: SWNet = cir.pinNetMap.get(part["pin_dir"], null)   # 活引用，不靠缓存
 			if net != null:
-				if not net.renderColorResolved:
-					var wireName: String = net.wireGroup.wireName if net.wireGroup != null else ""
-					var arr = SwCommon.GetWireColor(wireName)
-					net.renderColorLow = arr[0]
-					net.renderColorHigh = arr[1]
-					net.renderColorResolved = true
-				var col: Color = net.renderColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else net.renderColorLow
-				c = maskColor * col
+				c = maskColor * _pinColor(net)
 		_instanceBlock[i + 0] = c.r
 		_instanceBlock[i + 1] = c.g
 		_instanceBlock[i + 2] = c.b
@@ -203,7 +253,9 @@ func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float
 	var halfY: float = gridY * 0.5
 	var inLoop: bool = buildRef.in_loop
 	var loopColor: Color = SwCommon.GetLoopColor() if inLoop else Color()
-	var cir: SWBuildCompoentCircuit = buildRef.getCircuitCompoent()
+	var cir: SWBuildCompoentCircuit = null
+	if not buildRef.is_preview:
+		cir = buildRef.getCircuitCompoent()
 	var written: int = 0
 	for part in parts:
 		if startInstance + written >= maxInstances:
@@ -224,17 +276,10 @@ func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float
 		var col: Color = color
 		if inLoop and part["loop_tint"]:
 			col = color * loopColor
-		elif part.has("pin_dir"):
+		elif cir != null and part.has("pin_dir"):
 			var net: SWNet = cir.pinNetMap.get(part["pin_dir"], null)
 			if net != null:
-				if not net.renderColorResolved:
-					var wireName: String = net.wireGroup.wireName if net.wireGroup != null else ""
-					var arr = SwCommon.GetWireColor(wireName)
-					net.renderColorLow = arr[0]
-					net.renderColorHigh = arr[1]
-					net.renderColorResolved = true
-				var chosen: Color = net.renderColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else net.renderColorLow
-				col = color * chosen
+				col = color * _pinColor(net)
 		target[idx + 8] = col.r
 		target[idx + 9] = col.g
 		target[idx + 10] = col.b
@@ -249,6 +294,15 @@ func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float
 
 func setBuildRef(build:SWBuildItemDefine) -> void:
 	buildRef = build
+	_ownPalette = false
+	_paletteKey = ""
+	if build != null and build.buildDefine != null \
+			and build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
+		_ownPalette = true
+		_paletteKey = build.buildDefine.buildName
+		var arr: Array[Color] = SwCommon.GetWireColor(build.buildDefine.buildName)
+		_ownColorLow = arr[0]
+		_ownColorHigh = arr[1]
 func _buildRenderParts() -> Array:
 	var out:Array = []
 	if buildHasBase:
@@ -269,17 +323,21 @@ func _buildRenderParts() -> Array:
 			"net":null
 		})
 	if buildRef.buildDefine and buildRef.buildDefine.build_pin.size() > 0:
+		#预览建筑不挂电路：所有端口都按无 net 处理，也不去取电路组件
+		var cir: SWBuildCompoentCircuit = null
+		if not buildRef.is_preview:
+			cir = buildRef.getCircuitCompoent()
 		var wire:bool = false
 		if buildRef.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
 			var pinShowCount = 4
 			for pinDir in 4:
-				var net:SWNet = buildRef.getCircuitCompoent().pinNetMap.get(pinDir,null)
+				var net:SWNet = cir.pinNetMap.get(pinDir,null) if cir != null else null
 				if not net:
 					pinShowCount -= 1
 			if buildRef.buildState.state != SwDefine.BuildState.HOLDING and pinShowCount!=0:
 				wire = true
 		for p:SWBuildPinDefine in buildRef.buildDefine.build_pin:
-			var net:SWNet = buildRef.getCircuitCompoent().pinNetMap.get(posmod(p.pin_dir+buildRef.rotation,4),null)
+			var net:SWNet = cir.pinNetMap.get(posmod(p.pin_dir+buildRef.rotation,4),null) if cir != null else null
 			var useColor = false
 			var colorLow:Color = Color()
 			var colorHigh:Color = Color()

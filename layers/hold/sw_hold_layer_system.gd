@@ -121,8 +121,11 @@ func _rot_hold(times:int = 1) -> void:
 	v.refresh_hold_render(chunk_map.keys())
 	_hold_pos_inited = false
 func _clear_hold() -> void:
-	if _get_view() != null:
-		_get_view().clear_hold()
+	var v := _get_view()
+	if v != null:
+		v.clear_hold()
+		# 准备阶段可能把预览设成隐藏：清空时恢复，避免下次手持直接不可见
+		v.set_hold_visible(true)
 	_hold_builds.clear()
 	sel_tunnel=false
 	_hold_pos_inited = false	
@@ -178,6 +181,9 @@ func _paint_between(from_world_pos: Vector2, to_world_pos: Vector2) -> void:
 
 #region 外部输入事件
 func _on_left_pressed(v:SWHoldLayer) -> bool:
+	# 复制/剪切准备期间既不能放置也不能开始框选
+	if not _can_place_now():
+		return false
 	_left_mouse_pressed = true
 	if _hold_builds.size() > 0:
 		var world_pos = v.get_mouse_world_pos()
@@ -194,9 +200,14 @@ func _on_left_pressed(v:SWHoldLayer) -> bool:
 	_selectRectPos = world_pos2
 	return false
 func _on_right_pressed(v:SWHoldLayer) -> bool:
+	# 清空手持不碰地图，也不影响已入队的放置任务：放置没跑完也要能随时收手
 	if _hold_builds.size() > 0:
 		_clear_hold()
-	elif _ctrl_pressed:
+		return false
+	# 擦除会打断分阶段的电路重建：后台任务期间一律不响应
+	if not _can_erase_now():
+		return false
+	if _ctrl_pressed:
 		_right_ctrl_dragging = true
 		var world_pos = v.get_mouse_world_pos()
 		v.set_select_rect_origin(world_pos,Color(1.0, 0.2, 0.2, 0.3))
@@ -295,6 +306,20 @@ func handle_input(event:InputEvent) -> bool:
 #endregion
 
 #region 设置函数
+#放置/擦除闸门：由 build 系统注入。复制准备期间两把都关；放置任务期间只关擦除
+var _place_gate:Callable = Callable()
+var _erase_gate:Callable = Callable()
+
+func set_edit_gates(place_gate:Callable, erase_gate:Callable) -> void:
+	_place_gate = place_gate
+	_erase_gate = erase_gate
+
+func _can_place_now() -> bool:
+	return not _place_gate.is_valid() or bool(_place_gate.call())
+
+func _can_erase_now() -> bool:
+	return not _erase_gate.is_valid() or bool(_erase_gate.call())
+
 func set_hold_tool(build_define:SWBuildDefine) -> void:
 	if build_define == null:
 		_clear_hold()
@@ -312,14 +337,39 @@ func set_hold_draw_data(draw_data:SWDrawData) -> void:
 		return
 	var shadow_define := v.get_hold_shadow_define()
 	var shadow_data := SWDrawData.new()
-	_hold_builds.clear()
-	for data:SWBuildItemDefine in draw_data.mapDatas:
-		_hold_builds.append(data)
-		if shadow_define != null:
+	if shadow_define != null:
+		for data:SWBuildItemDefine in draw_data.mapDatas:
 			shadow_data.addOneDrawBuildDefine(data.buildAxisPos, shadow_define, data.rotation)
-	v.show_hold(draw_data, shadow_data)
+	install_prepared_hold(draw_data, shadow_data, true)
+# 安装已分帧准备好的手持数据（复制/剪切的准备协程调用）：
+# mapDatas 与 shadowData 都必须由调用方建好，这里只做挂接，避免一次性创建上万份克隆
+func install_prepared_hold(draw_data:SWDrawData, shadow_data:SWDrawData, make_visible:bool) -> void:
+	var v := _get_view()
+	if v == null or draw_data == null or draw_data.mapDatas.is_empty():
+		_clear_hold()
+		return
+	_hold_builds.clear()
+	_hold_builds.assign(draw_data.mapDatas)
+	v.install_hold_prepared(draw_data, shadow_data, make_visible)
 	v.refresh_hold_render([])
 	_hold_pos_inited = false
+# 准备阶段开始：旧手持立即清掉并隐藏，准备完成后才会重新出现
+func clear_hold_for_prepare() -> void:
+	_clear_hold()
+	set_hold_visible(false)
+func set_hold_visible(enable:bool) -> void:
+	var v := _get_view()
+	if v != null:
+		v.set_hold_visible(enable)
+func is_hold_render_idle() -> bool:
+	var v := _get_view()
+	return v.is_hold_render_idle() if v != null else true
+func get_hold_pending_count() -> int:
+	var v := _get_view()
+	return v.get_hold_pending_count() if v != null else 0
+func get_hold_shadow_define() -> SWBuildDefine:
+	var v := _get_view()
+	return v.get_hold_shadow_define() if v != null else null
 func set_hold_builds(builds:Array[SWBuildItemDefine], center:Vector2i) -> void:
 	if builds.is_empty():
 		_clear_hold()
