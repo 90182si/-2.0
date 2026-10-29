@@ -362,11 +362,12 @@ func _wire_part_colors(mi: SWMultiMeshInstance2D, b: SWBuildItemDefine) -> Array
 	var out: Array[Color] = []
 	if not mi._slotStart.has(b):
 		return out
-	var parts: Array = b.getRenderableCompoent().getRenderParts()
+	var comp: SWBuildCompoentRenderable = b.getRenderableCompoent()
+	comp._ensureParts()
 	var start: int = int(mi._slotStart[b])
 	var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
-	for i in parts.size():
-		if not (parts[i] as Dictionary).has("pin_dir"):
+	for i in comp._partCount():
+		if comp._partPinDir[i] < 0:
 			continue
 		var idx: int = (start + i) * stride + 8
 		out.append(Color(mi._cpuBuffer[idx], mi._cpuBuffer[idx + 1],

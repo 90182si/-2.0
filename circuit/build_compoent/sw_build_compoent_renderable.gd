@@ -6,10 +6,18 @@ var buildHasAtlas:bool = false
 var buildAtlasRotable:bool = true
 var drawRect:Rect2
 
-# ========== 渲染部件缓存 ==========
-# 区块重绘时块内所有建筑都会调用 getRenderParts()，但绝大多数建筑本次并未变化。
-# 用脏标记缓存部件列表，只有当该建筑的渲染状态（信号/旋转/环路/连接等）变化时才重建。
-var _renderPartsCache: Array = []
+# ========== 渲染部件缓存（平行 PackedArray，替代 Dictionary 数组） ==========
+# 原 Dictionary 数组每部件容器开销 ~500 bytes（9 个 string key + 哈希表），
+# 16万建筑 × 4 部件 ≈ 350MB 纯容器。改成平行 PackedArray 后每部件仅 ~28 bytes 数据。
+# 布局：_partRect[i*4+0..3] = (x,y,w,h)；_partOff[i*2+0..1] = (ox,oy)；
+#       _partRot[i] = 0-3；_partPinDir[i] = -1(无pin) 或 0-3(世界方向)；
+#       _partLoopTint[i] = 0/1；_partNet[i] = SWNet 引用或 null。
+var _partRect: PackedFloat32Array = PackedFloat32Array()
+var _partOff: PackedInt32Array = PackedInt32Array()
+var _partRot: PackedInt32Array = PackedInt32Array()
+var _partPinDir: PackedInt32Array = PackedInt32Array()
+var _partLoopTint: PackedByteArray = PackedByteArray()
+var _partNet: Array = []
 var _geomDirty: bool = true
 
 # ========== 实例数据块缓存 ==========
@@ -62,23 +70,41 @@ func markColorDirty() -> void:
 func markAtlasRectDirty() -> void:
 	_atlasRectDirty = true
 
+# 部件数量
+func _partCount() -> int:
+	return _partRect.size() >> 2
+
+# 兼容旧调用：返回部件数量（外部曾用 getRenderParts().size()）
+func getRenderPartCount() -> int:
+	_ensureParts()
+	return _partCount()
+
+# 确保平行数组已构建（懒触发）
+func _ensureParts() -> void:
+	if _geomDirty:
+		_buildRenderParts()
+		_geomDirty = false
+		_geomValid = false
+
 # 把本建筑「随 net 电平变色」的实例颜色列登记进区块的批量索引。
-# startInstance 是本建筑在区块 buffer 中的起始实例下标，部件顺序与 getRenderParts 一致。
+# startInstance 是本建筑在区块 buffer 中的起始实例下标，部件顺序与平行数组一致。
 # entries 按 net+调色板分组；index 是本次区块构建期的去重表（net -> {调色板键: 条目}）。
 func registerNetColumns(startInstance: int, entries: Array, index: Dictionary) -> void:
 	#环路色覆盖整栋建筑，与 net 电平无关，不参与批量换色；预览建筑不挂电路
 	if buildRef.in_loop or buildRef.is_preview:
 		return
-	var parts: Array = getRenderParts()
+	_ensureParts()
 	var cir: SWBuildCompoentCircuit = buildRef.getCircuitCompoent()
 	if cir == null:
 		return
 	var mask: Color = buildRef.buildState.mask_color
 	var isWhite: bool = mask == Color.WHITE
 	var col: int = startInstance * INSTANCE_STRIDE + 8
-	for part in parts:
-		if part.has("pin_dir"):
-			var net: SWNet = cir.pinNetMap.get(part["pin_dir"], null)
+	var n: int = _partCount()
+	for i in n:
+		var pinDir: int = _partPinDir[i]
+		if pinDir >= 0:
+			var net: SWNet = cir.pinNetMap.get(pinDir, null)
 			if net != null:
 				var e: SWNetColorEntry = _netEntryFor(entries, index, net)
 				if isWhite:
@@ -108,14 +134,6 @@ func _netEntryFor(entries: Array, index: Dictionary, net: SWNet) -> SWNetColorEn
 	entries.append(e)
 	return e
 
-func getRenderParts() -> Array:
-	if not _geomDirty:
-		return _renderPartsCache
-	_renderPartsCache = _buildRenderParts()
-	_geomDirty = false
-	_geomValid = false
-	return _renderPartsCache
-
 # 获取整块实例数据：世界坐标/颜色/图集均已烘培，参数未变时零计算直接复用
 # applyColor=false 用于 LOD 降级：只取几何与图集帧，跳过电平颜色重算。
 # 此时 _colorDirty / _lastSigVersion 都不动，下次带颜色的调用会把冻结期间的变化一次补齐。
@@ -128,10 +146,9 @@ func getInstanceBlock(baseX: float, baseY: float, gridX: float, gridY: float, ma
 			or _blockGridX != gridX or _blockGridY != gridY:
 		_bakeGeometry(baseX, baseY, gridX, gridY)
 	# 图集帧变化：只回写该实例的 rect，几何/部件保持不动
-	# parts 快照可能被其他线程持有，按只读约定不原地改字典；图集 rect 的真源是 drawRect
 	if _atlasRectDirty:
 		_atlasRectDirty = false
-		if _atlasPartIndex >= 0 and _atlasPartIndex < _renderPartsCache.size():
+		if _atlasPartIndex >= 0 and _atlasPartIndex < _partCount():
 			var ai: int = _atlasPartIndex * INSTANCE_STRIDE
 			var r: Rect2 = drawRect
 			_instanceBlock[ai + 12] = r.position.x
@@ -192,12 +209,13 @@ func _applyColors(maskColor: Color) -> void:
 	if not buildRef.is_preview:
 		cir = buildRef.getCircuitCompoent()
 	var i: int = 8
-	for part in _renderPartsCache:
+	var n: int = _partCount()
+	for j in n:
 		var c: Color = maskColor
-		if inLoop and part["loop_tint"]:
+		if inLoop and _partLoopTint[j] != 0:
 			c = maskColor * loopColor
-		elif cir != null and part.has("pin_dir"):
-			var net: SWNet = cir.pinNetMap.get(part["pin_dir"], null)   # 活引用，不靠缓存
+		elif cir != null and _partPinDir[j] >= 0:
+			var net: SWNet = cir.pinNetMap.get(_partPinDir[j], null)   # 活引用，不靠缓存
 			if net != null:
 				c = maskColor * _pinColor(net)
 		_instanceBlock[i + 0] = c.r
@@ -205,54 +223,53 @@ func _applyColors(maskColor: Color) -> void:
 		_instanceBlock[i + 2] = c.b
 		_instanceBlock[i + 3] = c.a
 		i += INSTANCE_STRIDE
-		
-# 部件数量（不需要构建数据块）
-func getRenderPartCount() -> int:
-	return getRenderParts().size()
 
 # 将部件列表烘培成可被 MultiMesh buffer 直接追加的扁平数组
 func _bakeGeometry(baseX: float, baseY: float, gridX: float, gridY: float) -> void:
-	var parts: Array = getRenderParts()
-	var count: int = parts.size()
+	_ensureParts()
+	var count: int = _partCount()
 	if _instanceBlock.size() != count * INSTANCE_STRIDE:
 		_instanceBlock.resize(count * INSTANCE_STRIDE)
 	var halfX: float = gridX * 0.5
 	var halfY: float = gridY * 0.5
 	var i: int = 0
-	var partIdx: int = 0
-	for part in parts:
-		var angle: float = deg_to_rad(float(int(part["rotation"]) * 90))
+	for partIdx in count:
+		var angle: float = deg_to_rad(float(_partRot[partIdx] * 90))
 		var c: float = cos(angle)
 		var s: float = sin(angle)
 		# Transform2D(angle, origin) 的 x=(cos,sin)、y=(-sin,cos)
 		_instanceBlock[i + 0] = c
 		_instanceBlock[i + 1] = -s
 		_instanceBlock[i + 2] = 0.0
-		var offset: Vector2i = part["offset"]
-		_instanceBlock[i + 3] = baseX + float(offset.x) * gridX + halfX
+		var ox: int = _partOff[partIdx * 2]
+		var oy: int = _partOff[partIdx * 2 + 1]
+		_instanceBlock[i + 3] = baseX + float(ox) * gridX + halfX
 		_instanceBlock[i + 4] = s
 		_instanceBlock[i + 5] = c
 		_instanceBlock[i + 6] = 0.0
-		_instanceBlock[i + 7] = baseY + float(offset.y) * gridY + halfY
-		var rect: Rect2 = drawRect if partIdx == _atlasPartIndex else part["rect"]
+		_instanceBlock[i + 7] = baseY + float(oy) * gridY + halfY
+		var rect: Rect2
+		if partIdx == _atlasPartIndex:
+			rect = drawRect
+		else:
+			rect = Rect2(_partRect[partIdx*4], _partRect[partIdx*4+1],
+					_partRect[partIdx*4+2], _partRect[partIdx*4+3])
 		_instanceBlock[i + 12] = rect.position.x
 		_instanceBlock[i + 13] = rect.position.y
 		_instanceBlock[i + 14] = rect.size.x
 		_instanceBlock[i + 15] = rect.size.y
 		i += INSTANCE_STRIDE
-		partIdx += 1
 	_blockBaseX = baseX
 	_blockBaseY = baseY
 	_blockGridX = gridX
 	_blockGridY = gridY
-	#_blockColor = color
 	_geomValid = true
 	_colorDirty = true
 
 # 将本建筑的部件直接写入目标缓冲区（不做跨帧缓存，供手持/阴影等图层使用，避免多线程争用烘培缓存）
 # 返回实际写入的实例数量
 func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float, baseY: float, gridX: float, gridY: float, color: Color, maxInstances: int) -> int:
-	var parts: Array = getRenderParts()
+	_ensureParts()
 	var halfX: float = gridX * 0.5
 	var halfY: float = gridY * 0.5
 	var inLoop: bool = buildRef.in_loop
@@ -261,34 +278,41 @@ func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float
 	if not buildRef.is_preview:
 		cir = buildRef.getCircuitCompoent()
 	var written: int = 0
-	for part in parts:
+	var n: int = _partCount()
+	for j in n:
 		if startInstance + written >= maxInstances:
 			break
 		var idx: int = (startInstance + written) * INSTANCE_STRIDE
-		var angle: float = deg_to_rad(float(int(part["rotation"]) * 90))
+		var angle: float = deg_to_rad(float(_partRot[j] * 90))
 		var c: float = cos(angle)
 		var s: float = sin(angle)
 		target[idx + 0] = c
 		target[idx + 1] = -s
 		target[idx + 2] = 0.0
-		var offset: Vector2i = part["offset"]
-		target[idx + 3] = baseX + float(offset.x) * gridX + halfX
+		var ox: int = _partOff[j * 2]
+		var oy: int = _partOff[j * 2 + 1]
+		target[idx + 3] = baseX + float(ox) * gridX + halfX
 		target[idx + 4] = s
 		target[idx + 5] = c
 		target[idx + 6] = 0.0
-		target[idx + 7] = baseY + float(offset.y) * gridY + halfY
+		target[idx + 7] = baseY + float(oy) * gridY + halfY
 		var col: Color = color
-		if inLoop and part["loop_tint"]:
+		if inLoop and _partLoopTint[j] != 0:
 			col = color * loopColor
-		elif cir != null and part.has("pin_dir"):
-			var net: SWNet = cir.pinNetMap.get(part["pin_dir"], null)
+		elif cir != null and _partPinDir[j] >= 0:
+			var net: SWNet = cir.pinNetMap.get(_partPinDir[j], null)
 			if net != null:
 				col = color * _pinColor(net)
 		target[idx + 8] = col.r
 		target[idx + 9] = col.g
 		target[idx + 10] = col.b
 		target[idx + 11] = col.a
-		var rect: Rect2 = drawRect if written == _atlasPartIndex else part["rect"]
+		var rect: Rect2
+		if written == _atlasPartIndex:
+			rect = drawRect
+		else:
+			rect = Rect2(_partRect[j*4], _partRect[j*4+1],
+					_partRect[j*4+2], _partRect[j*4+3])
 		target[idx + 12] = rect.position.x
 		target[idx + 13] = rect.position.y
 		target[idx + 14] = rect.size.x
@@ -307,25 +331,32 @@ func setBuildRef(build:SWBuildItemDefine) -> void:
 		var arr: Array[Color] = SwCommon.GetWireColor(build.buildDefine.buildName)
 		_ownColorLow = arr[0]
 		_ownColorHigh = arr[1]
-func _buildRenderParts() -> Array:
-	var out:Array = []
+
+# 追加一个部件到平行数组
+func _appendPart(rect: Rect2, offset: Vector2i, rotation: int, pinDir: int, loopTint: bool, net: SWNet) -> void:
+	_partRect.append(rect.position.x)
+	_partRect.append(rect.position.y)
+	_partRect.append(rect.size.x)
+	_partRect.append(rect.size.y)
+	_partOff.append(offset.x)
+	_partOff.append(offset.y)
+	_partRot.append(rotation)
+	_partPinDir.append(pinDir)   # -1 = 无 pin
+	_partLoopTint.append(1 if loopTint else 0)
+	_partNet.append(net)
+
+func _buildRenderParts() -> void:
+	# 清空旧平行数组
+	_partRect.resize(0)
+	_partOff.resize(0)
+	_partRot.resize(0)
+	_partPinDir.resize(0)
+	_partLoopTint.resize(0)
+	_partNet.resize(0)
+
 	if buildHasBase:
 		#非门等符号在图集中为黑色像素，乘法混色无法变红；改染可着色的灰色底板
-		var baseColor:Color = Color()
-		var baseUseColor:bool = false
-		if buildRef.in_loop:
-			baseColor = SwCommon.GetLoopColor()
-			baseUseColor = true
-		out.append({
-			"rect":buildRef.buildDefine.atlasBuildBase.region,
-			"offset":Vector2i.ZERO,
-			"rotation":0,
-			"use_color":false,
-			"loop_tint":true,
-			"color_low":Color(),
-			"color_high":Color(),
-			"net":null
-		})
+		_appendPart(buildRef.buildDefine.atlasBuildBase.region, Vector2i.ZERO, 0, -1, true, null)
 	if buildRef.buildDefine and buildRef.buildDefine.build_pin.size() > 0:
 		#预览建筑不挂电路：所有端口都按无 net 处理，也不去取电路组件
 		var cir: SWBuildCompoentCircuit = null
@@ -335,70 +366,31 @@ func _buildRenderParts() -> Array:
 		if buildRef.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
 			var pinShowCount = 4
 			for pinDir in 4:
-				var net:SWNet = cir.pinNetMap.get(pinDir,null) if cir != null else null
-				if not net:
+				var net0:SWNet = cir.pinNetMap.get(pinDir,null) if cir != null else null
+				if not net0:
 					pinShowCount -= 1
 			if buildRef.buildState.state != SwDefine.BuildState.HOLDING and pinShowCount!=0:
 				wire = true
 		for p:SWBuildPinDefine in buildRef.buildDefine.build_pin:
 			var net:SWNet = cir.pinNetMap.get(posmod(p.pin_dir+buildRef.rotation,4),null) if cir != null else null
-			var useColor = false
-			var colorLow:Color = Color()
-			var colorHigh:Color = Color()
-			if net:
-				useColor = true
-				var wireName:String = ""
-				if net.wireGroup != null:
-					wireName = net.wireGroup.wireName
-				var colorArr = SwCommon.GetWireColor(wireName)
-				colorLow = colorArr[0]
-				colorHigh = colorArr[1]
-			elif wire == true:
+			if net == null and wire:
 				continue
-			out.append({
-				"rect":p.wire_pin.region,
-				"offset":p.cell_offset,
-				"rotation":posmod(p.pin_dir+buildRef.rotation,4),
-				"pin_dir":posmod(p.pin_dir+buildRef.rotation,4),   # ← 新增：世界方向，供 _applyColors 现取 net
-				"use_color":useColor,
-				"loop_tint":true,
-				"color_low":colorLow,
-				"color_high":colorHigh,
-				"net":net
-			})	
+			# pin_dir 存世界方向，供 _applyColors/registerNetColumns 现取 net
+			_appendPart(p.wire_pin.region, p.cell_offset,
+					posmod(p.pin_dir+buildRef.rotation,4),
+					posmod(p.pin_dir+buildRef.rotation,4),
+					true, net)
 	if buildHasAtlas:
-		if buildAtlasRotable:
-			out.append({
-				"rect":drawRect,
-				"offset":Vector2i.ZERO,
-				"rotation":buildRef.rotation,
-				"use_color":false,
-				"loop_tint":false,
-				"color_low":Color(),
-				"color_high":Color(),
-				"net":null
-			})
-		else:
-			out.append({
-				"rect":drawRect,
-				"offset":Vector2i.ZERO,
-				"rotation":0,
-				"use_color":false,
-				"loop_tint":false,
-				"color_low":Color(),
-				"color_high":Color(),
-				"net":null
-			})
-		_atlasPartIndex = out.size() - 1
+		var rot: int = buildRef.rotation if buildAtlasRotable else 0
+		_appendPart(drawRect, Vector2i.ZERO, rot, -1, false, null)
+		_atlasPartIndex = _partCount() - 1
 	else:
 		_atlasPartIndex = -1
-	#收集本建筑着色部件涉及的 net（同一 net 只存一次），供重绘时比对比电平版本
+	#收集本建筑着色部件涉及的 net（同一 net 只存一次），供重绘时比对电平版本
 	_colorNets.clear()
 	_lastSigVersion = -1
-	for part in out:
-		if not part.has("pin_dir"):
-			continue
-		var net:SWNet = part["net"]
+	var n: int = _partCount()
+	for i in n:
+		var net: SWNet = _partNet[i]
 		if net != null and not _colorNets.has(net):
 			_colorNets.append(net)
-	return out
