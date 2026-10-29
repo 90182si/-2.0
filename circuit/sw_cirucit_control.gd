@@ -393,6 +393,11 @@ func updateBuildCircuitStaged(builds:Array[SWBuildItemDefine], tree:SceneTree, o
 	await tree.process_frame
 	evaluateCircuits(nonWire)
 	on_stage.call(8, 1.0)
+	# 读档完成：释放本轮重建累积的邻接缓存/队列，这些数据下次重建会重算，
+	# 不释放会常驻 RAM（16万建筑的邻居 Dictionary 可达数十 MB）。
+	_neighborsCache.clear()
+	_queue.clear()
+	_notify.clear()
 	return affectBuilds
 
 #按时间预算跑一个逐建筑阶段，超预算就报进度并让出主线程

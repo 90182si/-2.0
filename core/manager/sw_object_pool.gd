@@ -1,6 +1,8 @@
 class_name SWObjectPool extends Node
 
-const max_chunk_pool = 1400
+# 启动预热数量：够撑过首屏即可；超过首屏的 chunk 按需 new 并在归还时自然入池，
+# 不再启动就 instantiate 上千个 MultiMeshInstance2D 占内存。
+const max_chunk_pool = 128
 # 按照 GridDrawMode 分池：地图平铺 / 内容 / 手持 / 手持阴影 各自一组对象
 static var chunkDataObjectArr:Dictionary = {}
 static var delChunkDataObjectArr:Dictionary = {}

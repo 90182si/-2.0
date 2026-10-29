@@ -120,6 +120,10 @@ func getRenderParts() -> Array:
 # applyColor=false 用于 LOD 降级：只取几何与图集帧，跳过电平颜色重算。
 # 此时 _colorDirty / _lastSigVersion 都不动，下次带颜色的调用会把冻结期间的变化一次补齐。
 func getInstanceBlock(baseX: float, baseY: float, gridX: float, gridY: float, maskColor:Color, applyColor:bool = true) -> PackedFloat32Array:
+	# 手持预览克隆不进 ByContent 图层（它走 ByHold/HoldShadow 的 writeInstances 直写），
+	# 直接短路，跳过 _instanceBlock 烘焙与颜色重算，省掉每克隆 300+ bytes 的 PackedFloat32Array
+	if buildRef != null and buildRef.is_preview:
+		return PackedFloat32Array()
 	if not _geomValid or _geomDirty or _blockBaseX != baseX or _blockBaseY != baseY \
 			or _blockGridX != gridX or _blockGridY != gridY:
 		_bakeGeometry(baseX, baseY, gridX, gridY)

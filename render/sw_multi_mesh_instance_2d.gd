@@ -121,6 +121,21 @@ func reUse() -> void:
 # 增量补丁要求常驻 CPU 缓冲与槽位表都在
 func hasCpuBuffer() -> bool:
 	return _slotsValid
+
+# 软缓存卸下时调用：只保留节点本身（MultiMeshInstance2D），释放 CPU 侧烘焙数据。
+# 重新进视口时 drawMap 会重建 _cpuBuffer 与槽位表，builtVersion=-1 强制走整块重建。
+# GPU 侧 visible_instance_count 清零，避免屏外 chunk 仍占绘制调用。
+func freeCpuBuffer() -> void:
+	_cpuBuffer.resize(0)
+	_slotStart.clear()
+	_slotParts.clear()
+	_netEntries.clear()
+	_slotsValid = false
+	_netStamp = 0
+	_usedInstances = 0
+	builtVersion = -1
+	if multimesh:
+		multimesh.visible_instance_count = 0
 	
 var mapDataIns:SWBuildItemDefine = null
 var bufferSize = 0

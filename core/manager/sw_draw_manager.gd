@@ -516,10 +516,12 @@ func _isCachedContentValid(chunkPos:Vector2i) -> bool:
 		return false
 	return _idleChunkCache[chunkPos].mesh_instance.builtVersion == sw_build_manager.version
 
-# 把卸载的区块放进软缓存；超过上限时按最久未使用顺序真正销毁
+# 把卸载的区块放进软缓存；超过上限时按最久未使用顺序真正销毁。
+# 注意：这里保留 MultiMeshInstance2D 的 CPU buffer 与 GPU buffer 不变——
+# 节点在 on_view_rect_changed 的复活路径里会直接 visible=true 而不重走 drawMap，
+# 如果这里提前释放 buffer，屏外再移回时会出现 chunk 标记已加载但画面空白。
+# 内存靠 idle_chunk_cache_size=256 硬顶控制，不再扩到 2048。
 func _cacheChunkNode(chunkPos:Vector2i, chunkIns:SwDefine.SWDrawChunkData) -> void:
-	# CPU 侧缓冲与槽位表一起留在缓存里：区块重新进视口后仍能走增量补丁，
-	# 否则每次滚屏回来的区块都要在下一次信号变化时整块重建
 	if _idleChunkCache.has(chunkPos):
 		_evictChunkNode(_idleChunkCache[chunkPos])
 	_idleChunkCache[chunkPos] = chunkIns
@@ -596,11 +598,12 @@ func on_view_rect_changed(viewRect:Rect2 = color_rect.get_rect(),speedVec:Vector
 	var beginChunkPos:Vector2i = floor(bPos)*Vector2(_chunkSize)
 	var showInsRect = Rect2(beginChunkPos,Vector2(mmiCount)*Vector2(_chunkSize))
 	if _use_chunk_cache():
-		# 缓存容量至少覆盖视口区块数的两倍：缩小视角时视口会一次覆盖上百个区块，
-		# 容量不够会让缓存刚存进去就被淘汰，来回移动时反复重建
+		# 软缓存只保留 MultiMeshInstance2D 节点（CPU buffer 已在入缓存时 freeCpuBuffer 释放），
+		# 容量按视口需求扩，但硬顶 256：缩远时视口覆盖上千 chunk 也不跟着膨胀到几百 MB。
+		# 256 足够覆盖"相机在边界来回滑动"的回退窗口；超出的最久未用节点直接销毁。
 		var need_cache:int = mmiCount.x * mmiCount.y * 2
 		if need_cache > idle_chunk_cache_size:
-			idle_chunk_cache_size = mini(need_cache, 2048)
+			idle_chunk_cache_size = mini(need_cache, 256)
 	if _drawMode == SwDefine.GridDrawMode.ByHold or _drawMode == SwDefine.GridDrawMode.HoldShadow:
 		return
 	#_curViewRect = showInsRect

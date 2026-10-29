@@ -393,6 +393,13 @@ class SWBuildStateStrategy extends RefCounted:
 		buildState.mask_color = Color(1,1,1,1)
 		
 class SWBuildStateSelected extends SWBuildStateStrategy:
+	# 策略对象无状态，全局共享一个实例，避免每建筑 new 一次（16万建筑省 ~15MB）
+	static var _instance: SWBuildStateSelected = null
+	static func shared() -> SWBuildStateSelected:
+		if _instance == null:
+			_instance = SWBuildStateSelected.new()
+		return _instance
+
 	func stateChanged(buildState:SWBuildState,state:BuildState) -> void:
 		if state == BuildState.IDLE:
 			buildState.mask_color = Color(1,1,1,1)
@@ -410,5 +417,5 @@ class SWBuildState extends Resource:
 				buildStateStrategy.stateChanged(self,s)
 	
 	func _init() -> void:
-		buildStateStrategy = SWBuildStateSelected.new()
+		buildStateStrategy = SWBuildStateSelected.shared()
 	pass
