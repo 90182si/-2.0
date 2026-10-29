@@ -829,6 +829,7 @@ const RENDER_STRESS := false
 var _stressFlip:bool = false
 
 func tick(_delta: float,_tick_index:int) -> void:
+	#return
 	#放置任务的电路重建是分帧进行的：中间态下跑时钟增量求值会把电路写坏
 	if _place_running:
 		return

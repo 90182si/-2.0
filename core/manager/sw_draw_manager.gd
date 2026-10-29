@@ -125,7 +125,8 @@ func updataAllChunks() -> void:
 #避免颜色分几百帧才铺完。
 #forceColor：本次补丁必须写颜色（选中底色）。LOD 档位平时冻结电路颜色，
 #但选中高亮不随电路变化，任何档位都要即时生效。
-func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [], dirtyNets:Dictionary = {}, patchBudgetUsec:int = PATCH_BUDGET_USEC, forceColor:bool = false) -> void:
+func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [], 
+	dirtyNets:Dictionary = {}, patchBudgetUsec:int = PATCH_BUDGET_USEC, forceColor:bool = false) -> void:
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
 	var contentChanged:bool = changedBuilds.is_empty() and dirtyNets.is_empty()

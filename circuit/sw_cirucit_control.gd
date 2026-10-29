@@ -513,8 +513,6 @@ func _netSignal(net:SWNet) -> int:
 	if comps.is_empty():
 		return 0
 	for comp:SWBuildCompoentCircuit in comps:
-		if comp == null:
-			continue
 		if _driverOut(comp) == 0:
 			return 0
 	return 1

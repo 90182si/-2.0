@@ -37,4 +37,3 @@ func evaluate() -> int:
 
 func evalOutput() -> int:
 	return evaluate()
-
