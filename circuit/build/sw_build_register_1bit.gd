@@ -10,14 +10,14 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 		_circuitCompoent.setBuildRef(self)
 	return _circuitCompoent
 
-# Q 输出状态驱动主体贴图亮灭
+# Q 输出状态驱动主体贴图亮灭（shader 化：写信号纹理帧槽，实例缓冲零写入）
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
 	if signalValue == SwDefine.CircuitSignal.HIGH:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
 	else:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
-	getRenderableCompoent().markAtlasRectDirty()
+	getRenderableCompoent().setFrameState(signalValue == SwDefine.CircuitSignal.HIGH)
 
 func save_state() -> Dictionary:
 	var cir := getCircuitCompoent() as SWBuildCompoentCircuitRegister

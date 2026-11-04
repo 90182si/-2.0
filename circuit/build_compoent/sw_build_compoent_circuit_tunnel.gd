@@ -46,16 +46,22 @@ func getNet(swBuildManager:SWBuildManager) -> Array:
 				net.addLoader({"build":nextBuild,"pinDir":antiDir})
 	return []
 
-func setNet(srcNet:SWNet,dir:SwDefine.SW_Dir) -> void:
-	var tunnelBuild:SWBuildWireTunnel = buildRef as SWBuildWireTunnel
+func setNet(srcNet:SWNet,_dir:SwDefine.SW_Dir) -> void:
 	net = srcNet
-	pinNetMap[dir] = srcNet
+	#隧道是等电位导线：两个物理口（入口 rotation+3 / 出口 rotation+1）必须指向同一根 net。
+	#原先只按传入的 dir 写一个口，而 dir 是 BFS 的「从上一个建筑看本建筑」方向，
+	#可能根本不是物理口方向（比如从正上方扫进来），那样两个口一个都没设上。
+	#又因为先放的隧道会把自己建过 net 的口留在旧 net 上，配对/连线换 net 后新旧两根共存，
+	#接在未更新那一口的负载就恒读空 net（表现为不亮）。
+	#配对隧道那一端不在这里同步：setNet 拿不到 buildManager；
+	#connectWireGroup 会把配对隧道也放进 wireGroup 遍历，那边会再调一次本函数
+	assign_both_pins(srcNet)
+
+#两个物理口一起写：只写单口会让隧道「一半通一半断」，且断的那一半事后没有任何地方会补上
+func assign_both_pins(srcNet:SWNet) -> void:
+	pinNetMap[posmod(buildRef.rotation+3,4)] = srcNet
+	pinNetMap[posmod(buildRef.rotation+1,4)] = srcNet
 	invalidateDirMasks()
-	if tunnelBuild.pairId != -1:
-		var circuitCom:SWBuildCompoentCircuitTunnel = tunnelBuild.getCircuitCompoent() as SWBuildCompoentCircuitTunnel
-		circuitCom.net = srcNet
-		circuitCom.pinNetMap[SwDefine.getAntiDir(dir)] = srcNet
-		circuitCom.invalidateDirMasks()
 
 func getValue(_dir:SwDefine.SW_Dir) -> SwDefine.CircuitSignal:
 	return SwDefine.CircuitSignal.NONE

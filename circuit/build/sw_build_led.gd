@@ -12,11 +12,9 @@ func rotOnce() -> void:
 
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
-	if signalValue == SwDefine.CircuitSignal.LOW:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
-	elif signalValue == SwDefine.CircuitSignal.HIGH:
-		getRenderableCompoent().drawRect = buildDefine.atlasTextureOn.region
-	getRenderableCompoent().markAtlasRectDirty()
+	# 亮灭已 shader 化：只写信号纹理帧槽选 on/off 帧，实例缓冲零写入。
+	# drawRect 对帧建筑是死写入（烘焙走 _is_frame_build 分支不读它），去掉省两次组件查找 + 资源访问
+	getRenderableCompoent().setFrameState(signalValue == SwDefine.CircuitSignal.HIGH)
 
 func _sub_init() -> void:
 	var renderable = getCompoent(SwDefine.BuildCompoentType.RENDER_ABLE) as SWBuildCompoentRenderable

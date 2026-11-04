@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cuwcf3nffqs43"
+path="res://.godot/imported/sw_signal_compute_latch.glsl-2fd74ad160b636a1a4c69e7877c62d52.res"
+
+[deps]
+
+source_file="res://render/sw_signal_compute_latch.glsl"
+dest_files=["res://.godot/imported/sw_signal_compute_latch.glsl-2fd74ad160b636a1a4c69e7877c62d52.res"]
+
+[params]
+

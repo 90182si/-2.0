@@ -66,6 +66,10 @@ func force_load_all_chunks() -> int:
 	var dm = build_layer.sw_draw_manager
 	var sys = build_layer.layer_system
 	dm._curViewRect = Rect2(-1e9, -1e9, 2e9, 2e9)
+	# 这里等于声明「整个地图都在视野内」，电路侧的视野裁剪必须一起关掉：
+	# headless 相机推过来的真实视口只覆盖一小块，视野外的电路按产品要求整条不求值，
+	# 渲染/刷新类用例「玩家正看着这些电路」的断言前提就不成立了。
+	sys.circuit_control.view_cull_enabled = false
 	#关掉分帧上限：一次把所有区块建完
 	dm.async_loading = false
 	var all: Array[Vector2i] = []

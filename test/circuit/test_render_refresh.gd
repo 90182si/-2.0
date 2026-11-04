@@ -69,13 +69,18 @@ func test_content_change_rebuilds_chunk() -> void:
 	assert_gt(mi.multimesh.visible_instance_count, afterDel,
 		"放置建筑后区块没有重建内容（实例数停在 %d）" % afterDel)
 
-# 连线换色走区块级 patchNets：同一 net 上混接的电线A/B 必须各按自身线别取色。
-# 区块索引若只按 net 去重（一个调色板槽），后登记的那种线会把另一种染成自己的颜色。
+# 混接 net 的电线A/B 必须各按自身线别采样：实例 custom_data 里 palette_id 与线别对应、
+# net_id 指向正确 net，信号纹理电平与 net.curSignal 一致（shader 采样的数据源）。
+# 旧版断言 buffer 颜色分量，纹理化后颜色由 shader 采样，这里改为验证采样侧的数据契约。
 func test_mixed_wire_palette_survives_patch() -> void:
 	if not await _boot():
 		return
 	var sys: SWBuildLayerSystem = harness.build_layer.layer_system
 	var dm = harness.build_layer.sw_draw_manager
+	# 本用例验证「信号纹理电平随 net.curSignal 更新」——依赖完整回填（默认已是 true）
+	sys.circuit_control.backfill_net_signal = true
+	sys.circuit_control.backfill_gate_display = true
+	sys.circuit_control.clear_cpu_backends()
 	var samples: Array = _collect_mixed_net_wires(sys, dm)
 	assert_gt(samples.size(), 0, "存档里没有同时含电线A和电线B、且已上屏的 net")
 	var clocks: Array[SWBuildItemDefine] = sys.clockBuildArr.keys()
@@ -92,20 +97,30 @@ func test_mixed_wire_palette_survives_patch() -> void:
 		for i: int in samples.size():
 			if (samples[i]["net"] as SWNet).curSignal != before[i]:
 				flipped = true
-		# 每拍都查：翻转只发生在一部分拍上，但任何一拍写错都算失败
+		# 每拍都查：采样侧数据契约（net_id / palette_id / 信号纹理电平）
 		var bad: Array[String] = []
 		for s: Dictionary in samples:
 			var b: SWBuildItemDefine = s["build"]
 			var net: SWNet = s["net"]
-			var arr: Array[Color] = SwCommon.GetWireColor(b.buildDefine.buildName)
-			var want: Color = arr[1] if net.curSignal == SwDefine.CircuitSignal.HIGH else arr[0]
-			var got: Color = _build_color(s["mi"], b)
-			if not got.is_equal_approx(want):
-				bad.append("%s@%s got=%s want=%s" % [
-					b.buildDefine.buildName, str(b.buildAxisPos), str(got), str(want)])
-		assert_eq(bad.size(), 0, "第 %d 拍混接 net 上有 %d 根线被染成别的线别色：%s" % [
-			tick, bad.size(), ", ".join(bad.slice(0, 5))])
-	assert_true(flipped, "连续 8 拍里混接 net 电平从未翻转，没有真正走到换色补丁")
+			var mi: SWMultiMeshInstance2D = s["mi"]
+			var stride: int = SWBuildCompoentRenderable.INSTANCE_STRIDE
+			var idx: int = int(mi._slotStart[b]) * stride
+			var net_id: int = int(mi._cpuBuffer[idx + 13])
+			var pal_id: int = int(mi._cpuBuffer[idx + 14])
+			if net_id != net.netId:
+				bad.append("%s@%s netId=%d want=%d" % [b.buildDefine.buildName, str(b.buildAxisPos), net_id, net.netId])
+				continue
+			var want_pal: int = SWSignalTexture.palette_id_for(net.wireGroup.wireName if net.wireGroup != null else "")
+			if pal_id != want_pal:
+				bad.append("%s@%s palette=%d want=%d" % [b.buildDefine.buildName, str(b.buildAxisPos), pal_id, want_pal])
+			var lv: float = SWSignalTexture.instance.image.get_pixel(
+					net.netId % SWSignalTexture.TEX_COLS, net.netId / SWSignalTexture.TEX_COLS).r
+			var want_lv: float = 1.0 if net.curSignal == SwDefine.CircuitSignal.HIGH else 0.0
+			if not is_equal_approx(lv, want_lv):
+				bad.append("%s@%s level=%.0f want=%.0f" % [b.buildDefine.buildName, str(b.buildAxisPos), lv, want_lv])
+		assert_eq(bad.size(), 0, "第 %d 拍混接 net 采样数据不一致：%s" % [
+			tick, ", ".join(bad.slice(0, 5))])
+	assert_true(flipped, "连续 8 拍里混接 net 电平从未翻转，没有真正走到信号纹理更新")
 
 # 收集混接 net（同时含电线A和电线B）上已上屏的电线
 func _collect_mixed_net_wires(sys: SWBuildLayerSystem, dm) -> Array:
@@ -148,32 +163,55 @@ func _collect_mixed_net_wires(sys: SWBuildLayerSystem, dm) -> Array:
 			out.append_array(lst)
 	return out
 
-# 信号翻转只改颜色：应当走增量补丁（buffer 内容变了，但没有整块重建）
+# 信号翻转只改纹理：tick 期间实例缓冲零写入/零上传，电平只进信号纹理
 func test_signal_change_patches_colors() -> void:
 	if not await _boot():
 		return
 	var sys: SWBuildLayerSystem = harness.build_layer.layer_system
 	var dm = harness.build_layer.sw_draw_manager
+	# 本用例验证「连线随信号变色 / net 标脏」——这依赖完整回填（默认已是 true，
+	# 这里显式写死，避免默认值变动让用例失去覆盖）。
+	sys.circuit_control.backfill_net_signal = true
+	sys.circuit_control.backfill_gate_display = true
+	sys.circuit_control.clear_cpu_backends()
 	var clocks: Array[SWBuildItemDefine] = sys.clockBuildArr.keys()
 	assert_gt(clocks.size(), 0, "存档里没有时钟，无法驱动级联")
-	#挑一个登记了 net 颜色列的区块：只有这种区块的 buffer 会因电平翻转而改变
+	# 预热一拍：存档的时钟相位是在首轮求值**之后**才恢复的（load_state 晚于 evaluateCircuits），
+	# 手动第一按往往只是把时钟拨回与 net 当前电平相同的值——净变化为 0，
+	# 后面的断言就变成「什么都没发生」的空跑。先跑一轮把相位与电平对齐。
+	for clk in clocks:
+		clk.onPressed(true)
+	sys.refresh_signal_chunks(sys.circuit_control.buildSignalsChanged(clocks))
+	# 挑一个已构建的区块：tick 期间 buffer 不得有任何写入/上传
 	var mi: SWMultiMeshInstance2D = null
 	for chunkPos: Vector2i in dm.get_loaded_chunk_positions():
 		var cand: SWMultiMeshInstance2D = dm._chunkInstance[chunkPos].mesh_instance
-		if not cand._netEntries.is_empty():
+		if cand != null and cand.hasCpuBuffer():
 			mi = cand
 			break
 	if mi == null:
-		fail_test("没有任何已加载区块登记 net 颜色列")
+		fail_test("没有任何已加载且已构建的区块")
 		return
-	var before: float = _color_signature(mi._cpuBuffer)
+	var before: PackedFloat32Array = mi._cpuBuffer.duplicate()
+	var uploads_before: int = SWMultiMeshInstance2D.dbg_uploads
+	var flush_before: int = SWSignalTexture.instance.dbg_flush_count
+	# 先清掉 boot 遗留的补丁/重建队列与计数，让本拍增量从零基线度量
+	harness.flush_draw_queue()
+	dm._full_rebuilds_frame = 0
+	var patch_before: int = dm._patch_queue.size()
+	var rebuild_before: int = dm._rebuild_queue.size()
 	for clk in clocks:
 		clk.onPressed(true)
 	var changed: Array = sys.circuit_control.buildSignalsChanged(clocks)
 	var touched: int = sys.refresh_signal_chunks(changed)
+	assert_gt(touched, 0, "信号级联没有标脏任何 net")
+	# tick 路径不得产生补丁/重建队列（信号只进纹理）
+	assert_eq(dm._patch_queue.size(), patch_before, "纯信号变化不该进入补丁队列")
+	assert_eq(dm._rebuild_queue.size(), rebuild_before, "纯信号变化不该进入重建队列")
 	harness.flush_draw_queue()
-	assert_gt(touched, 0, "信号级联没有标脏任何区块")
-	assert_ne(_color_signature(mi._cpuBuffer), before, "电平翻转后区块颜色没有回写")
+	assert_eq(mi._cpuBuffer, before, "电平翻转后实例缓冲被改写了（应只写信号纹理）")
+	assert_eq(SWMultiMeshInstance2D.dbg_uploads, uploads_before, "电平翻转触发了实例缓冲上传")
+	assert_gt(SWSignalTexture.instance.dbg_flush_count, flush_before, "信号纹理没有在 tick 后刷新")
 	assert_eq(dm.get_full_rebuilds_last_frame(), 0, "纯信号变化不该退回整块重建")
 
 # 建筑首个实例的颜色分量（连线类建筑的首个部件就是线本身）
@@ -263,12 +301,15 @@ func _verify_register_display(save_name: String, regs: Array[SWBuildItemDefine])
 				if cir.qState == SwDefine.CircuitSignal.HIGH else b.buildDefine.atlasTextureOff.region
 		assert_eq(b.getRenderableCompoent().drawRect, want,
 			"%s 寄存器 %s 贴图帧与 Q 不一致" % [save_name, str(b.buildAxisPos)])
-	#组件上的 drawRect 对了还不够：它必须被写进区块 buffer，否则画面仍是旧帧
+	#组件上的 drawRect 对了还不够：帧切换已 shader 化——寄存器帧部件必须登记了帧槽
+	#（buffer 13 列 = 帧槽 id），且信号纹理帧槽电平必须与 Q 一致，否则画面仍是旧帧
 	harness.flush_draw_queue()
 	var dm = harness.build_layer.sw_draw_manager
 	var stride := SWBuildCompoentRenderable.INSTANCE_STRIDE
+	var tex := SWSignalTexture.instance
 	var stale := 0
 	for b in regs:
+		var cir2 := b.getCircuitCompoent() as SWBuildCompoentCircuitRegister
 		var cp: Vector2i = SwCommon.GetChunkPos(b.buildAxisPos)
 		if not dm._chunkInstance.has(cp):
 			continue
@@ -279,12 +320,15 @@ func _verify_register_display(save_name: String, regs: Array[SWBuildItemDefine])
 		if parts <= 0:
 			continue
 		var col: int = (int(mi._slotStart[b]) + parts - 1) * stride
-		var inBuf := Rect2(
-			Vector2(mi._cpuBuffer[col + 12], mi._cpuBuffer[col + 13]),
-			Vector2(mi._cpuBuffer[col + 14], mi._cpuBuffer[col + 15]))
-		if inBuf != b.getRenderableCompoent().drawRect:
+		var slot: int = int(mi._cpuBuffer[col + 13])
+		if slot < 0:
 			stale += 1
-	assert_eq(stale, 0, "有 %d 个寄存器在区块 buffer 里的贴图帧没跟上 Q" % stale)
+			continue
+		var lv: float = tex.image.get_pixel(slot % SWSignalTexture.TEX_COLS, slot / SWSignalTexture.TEX_COLS).r
+		var want: float = 1.0 if cir2.qState == SwDefine.CircuitSignal.HIGH else 0.0
+		if not is_equal_approx(lv, want):
+			stale += 1
+	assert_eq(stale, 0, "有 %d 个寄存器在信号纹理里的帧状态没跟上 Q" % stale)
 
 # 换存档：地图上已有建筑时再加载另一个存档，旧建筑必须当场被替换。
 # 之前旧区块只是被标成 UNLOADING，加载任务又因为区块还留在 _chunkInstance 里被丢掉，

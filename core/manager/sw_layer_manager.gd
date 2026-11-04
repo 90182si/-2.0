@@ -85,6 +85,8 @@ func _wire_systems() -> void:
 				if buildSystem == null or not buildSystem.is_clipboard_busy():
 					holdSystem.set_hold_tool(build_define)
 			)
+			#鼠标悬浮元件 → 右上角表达式面板
+			holdSystem.hover_build_changed.connect(hudSystem.on_hover_build_changed)
 		hudSystem.save_requested.connect(_on_save_requested)
 		hudSystem.load_requested.connect(_on_load_requested)
 		

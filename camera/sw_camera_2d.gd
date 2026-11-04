@@ -37,6 +37,8 @@ func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2 = Vector2.ZERO) -> void:
 	_logic_pos += mouse_offset * (Vector2(1.0,1.0)/old_zoom - Vector2(1.0,1.0)/new_zoom)
 	_apply_position()
 	_update_atlas_lod()
+	# 缩远时切换到简化内容 LOD（只画主体部件），避免视野变大后实例数暴涨导致的持续卡顿
+	get_tree().call_group("DrawManager", "set_scale_level", view_scale_level)
 	view_rect_changed()
 	pass
 

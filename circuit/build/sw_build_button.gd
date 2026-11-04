@@ -19,7 +19,8 @@ func onPressed(_pressed:bool) -> void:
 	else:
 		getRenderableCompoent().drawRect = buildDefine.atlasTextureOff.region
 		circuitCompoent.setPinValue(SwDefine.SW_Dir.UP,SwDefine.CircuitSignal.LOW)
-	getRenderableCompoent().markAtlasRectDirty()
+	# 帧切换 shader 化：写信号纹理帧槽，实例缓冲零写入
+	getRenderableCompoent().setFrameState(pressed)
 
 func resetBuildState() -> void:
 	in_loop = false

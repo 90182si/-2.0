@@ -11,6 +11,8 @@ var _selected_builds:Dictionary[SWBuildItemDefine,bool] = {}
 var _pendingRemovedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 #按住左键放置期间暂存的新放置建筑物，左键释放时统一更新电路
 var _pendingPlacedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
+#replace 作业（Ctrl 覆盖 / 相交换桥梁）拆下来的旧元件：先攒着，本批放完再统一做电路善后
+var _pendingReplacedBuilds:Dictionary[SWBuildItemDefine,bool] = {}
 #鼠标按下的位置
 var _pressed_button_pos:Vector2i = Vector2i(-9999, -9999)
 
@@ -32,9 +34,10 @@ func attach_view(v:SWLayer) -> void:
 		
 #region 实时操作地图（放置、删除、框选）
 #tag buildLayer放置元件
-# 只登记放置任务：克隆与入图都交给分片循环，否则一次落笔放下上万建筑会卡住整帧。
+# 只登记放置任务：克隆与入图都交给分片循环，一次落笔放下上万建筑会卡住整帧。
 # 同一位置的连续落笔会排成多个任务，进度条按所有任务的总建筑数合并计算。
-func on_hold_idle_builds(builds:Array[SWBuildItemDefine],positions:Array) -> void:
+# replace = 这一批落点上有元件的先拆掉再放（Ctrl 覆盖、电线相交换桥梁都走这条路）
+func on_hold_idle_builds(builds:Array[SWBuildItemDefine],positions:Array,replace:bool = false) -> void:
 	var v := _get_view()
 	if v == null or builds.is_empty() or positions.is_empty():
 		return
@@ -45,6 +48,7 @@ func on_hold_idle_builds(builds:Array[SWBuildItemDefine],positions:Array) -> voi
 		"positions": positions.duplicate(),
 		"pos_i": 0,
 		"build_i": 0,
+		"replace": replace,
 	})
 	_place_total += builds.size() * positions.size()
 	if not _place_running:
@@ -90,21 +94,16 @@ func on_place_drag_ended() -> void:
 
 #tag buildLayer连续删除元件结束
 func on_erase_drag_ended() -> void:
-	var v := _get_view()
-	if v == null:
+	if _get_view() == null:
 		return
 	if _pendingRemovedBuilds.is_empty():
 		return
 	var removedBuilds:Array[SWBuildItemDefine] = _pendingRemovedBuilds.keys()
 	_pendingRemovedBuilds.clear()
-	var notifyBuilds = removedBuilds.duplicate()
-	if circuit_control:
-		notifyBuilds.append_array(circuit_control.updateBuildCircuit(removedBuilds))
-	var notifyChunkPosArr = getNotifyChunkPosArr(notifyBuilds)
-	v.sw_draw_manager.updataChunks(notifyChunkPosArr)
-	for build in removedBuilds:
-		if build is SWBuildClockSiggen:
-			delClockBuild(build)
+	# 统一善后：重建电路 + 清时钟注册（与 _do_cut / _do_delete_selected 走同一条路径，
+	# 避免某些删除方式漏掉电路更新，导致地图上已经没了的电路还在跑）；
+	# 区块刷新也交给善后入口（大批量时要等它先抹掉画面再分帧重建）
+	_start_remove_followup(removedBuilds, getNotifyChunkPosArr(removedBuilds))
 
 #tag 拖拽开始
 func on_drag_started() -> void:
@@ -123,6 +122,10 @@ func on_select_by_rect(rect:Rect2) -> void:
 	for build in build_manager.getBuildsByRect(rect):
 		if _selected_builds.has(build):
 			continue   # 已经选中：底色没变，别重复打脏
+		# 已标待删除（分帧删除进行中，建筑还在表里）：选中它没有意义，
+		# 而且之后又会被 Delete 一次
+		if build.bIsToBeRemoved():
+			continue
 		_selected_builds[build] = true
 		build_manager.setBuildState(build,SwDefine.BuildState.SELECTED)
 		changed.append(build)
@@ -185,25 +188,28 @@ func getSignalChangedChunkPosArr(changedBuilds:Array[SWBuildItemDefine]) -> Arra
 		chunkPosMap[SwCommon.GetChunkPos(build.buildAxisPos)] = true
 	return chunkPosMap.keys()
 
-#信号变化后的统一刷新入口：建筑列表走逐实例补丁，翻转的 net 走连线批量换色
-#返回本次涉及的区块数（供性能统计）
+#信号变化后的统一刷新入口（纹理化）：翻转的 net 电平写进信号纹理，
+#不再逐建筑打脏/回写实例缓冲（tick 60Hz 下实例上传量降为 0，只剩脏帧 64KB 纹理上传）。
+#一帧内多次调用共享一次 texture.update（SWSignalTexture 内部标脏，每帧最多一次 flush）。
+#返回本次实际写入的 net 数（供性能统计；语义从「区块数」变为「net 数」）
 func refresh_signal_chunks(changedBuilds:Array[SWBuildItemDefine]) -> int:
+	var tex:SWSignalTexture = SWSignalTexture.instance
 	var nets:Dictionary = circuit_control.takeDirtyNets()
-	var chunkPosMap:Dictionary[Vector2i,bool] = {}
-	for cp:Vector2i in circuit_control.takeDirtyChunks():
-		chunkPosMap[cp] = true
-	for build in changedBuilds:
-		if build == null:
+	# 帧槽（LED/寄存器/非门/按钮亮灭）也可能独立标脏：nets 为空但纹理脏时也要 flush
+	if nets.is_empty() and (tex == null or not tex.is_dirty()):
+		return 0
+	if tex == null:
+		return 0
+	var count:int = 0
+	for net in nets:
+		if net == null or net.netId < 0:
 			continue
-		build.markColorDirty()
-		chunkPosMap[SwCommon.GetChunkPos(build.buildAxisPos)] = true
-	if chunkPosMap.is_empty() and nets.is_empty():
-		return 0
-	var v := _get_view()
-	if v == null:
-		return 0
-	v.sw_draw_manager.updataChunks(chunkPosMap.keys(), changedBuilds, nets)
-	return chunkPosMap.size()
+		if net.curSignal != net.paintedSignal:
+			tex.set_level(net.netId, net.curSignal == SwDefine.CircuitSignal.HIGH)
+			net.paintedSignal = net.curSignal
+			count += 1
+	tex.flush()
+	return count
 
 #tag buildLayer获取选中元件中心点置
 func _getSelectedBuildCenter() -> Vector2i:
@@ -232,6 +238,13 @@ const JOB_CIRCUIT_BUDGET_USEC:int = 6000
 const JOB_CIRCUIT_STEP:int = 8
 # 任务超过这个时长才弹进度条，小批量复制不会闪一下
 const JOB_UI_DELAY_MSEC:int = 120
+# 一次删除超过这个数才转「分帧善后」：全删几十个元件时同步跑完，
+# 等一帧反而让 Delete 键像是没反应
+const BULK_REMOVE_THRESHOLD:int = 2048
+# 取重建种子时每次进函数的建筑数（粒度与电路重建的 STAGED_STEP 同量级）
+const JOB_REMOVE_STEP:int = 256
+# 分帧删除时每批喂给 delBuilds 的建筑数：一批约 6~7ms，能守住 JOB_SLICE_USEC
+const JOB_REMOVE_DEL_STEP:int = 1024
 
 var _hud_view:SWHudLayer = null
 #复制/剪切准备进行中：克隆建筑与手持区块构建都算
@@ -250,24 +263,26 @@ var _job_start_msec:int = 0
 var _job_last_pct:float = 0.0
 #清空世界时自增：正在 await 的任务发现代数变了就自行退出
 var _job_epoch:int = 0
+#删除善后（重建电路 + 清时钟）分帧进行中：期间挡掉新的增删 / 复制 / 读存
+var _remove_busy:bool = false
 
-#tag 放置是否允许（复制准备期间禁止；放置任务进行中允许继续放置）
+#tag 放置是否允许（复制准备 / 删除善后期间禁止；放置任务进行中允许继续放置）
 func can_place() -> bool:
-	return not _clipboard_busy
+	return not _clipboard_busy and not _remove_busy
 
 #tag 擦除是否允许（后台任务期间禁止：会打断分阶段的电路重建）
 func can_erase() -> bool:
-	return not _clipboard_busy and not _place_running
+	return not _clipboard_busy and not _place_running and not _remove_busy
 
 #tag 复制/剪切/粘贴是否允许
 func can_edit_clipboard() -> bool:
-	return not _clipboard_busy and not _place_running
+	return not _clipboard_busy and not _place_running and not _remove_busy
 
 func is_clipboard_busy() -> bool:
 	return _clipboard_busy
 
 func is_job_running() -> bool:
-	return _clipboard_busy or _place_running
+	return _clipboard_busy or _place_running or _remove_busy
 
 func set_hud_view(hud:SWHudLayer) -> void:
 	_hud_view = hud
@@ -385,6 +400,8 @@ func _run_place_loop() -> void:
 			await _run_place_slice(tree)
 			if epoch != _job_epoch:
 				return
+		#拆下来的旧元件先做电路善后（拆电路 + 清时钟注册 + 刷区块），再对新元件求值
+		_flush_replaced_removed()
 		if _pendingPlacedBuilds.is_empty():
 			break
 		var batch:Array[SWBuildItemDefine] = _pendingPlacedBuilds.keys()
@@ -420,6 +437,8 @@ func _run_place_slice(tree:SceneTree) -> void:
 				var new_build := SwDefine.SWBuildCreator(tmpl.buildAxisPos + grid_pos, tmpl.buildDefine, tmpl.rotation)
 				if _clip_states.has(tmpl):
 					new_build.load_state(_clip_states[tmpl])
+				if job.get("replace", false):
+					_remove_for_replace(new_build.buildAxisPos)
 				if build_manager.addBuild(new_build):
 					created.append(new_build)
 					_pendingPlacedBuilds[new_build] = true
@@ -440,6 +459,32 @@ func _run_place_slice(tree:SceneTree) -> void:
 	_report_place_progress("放置 %d/%d" % [_place_created, _place_total])
 	if not _place_jobs.is_empty():
 		await tree.process_frame
+
+# replace 作业：落点这一格已经有元件就先拆下来（一格一建筑，不拆 addBuild 直接失败）。
+# 拆下来的旧元件不马上重建电路，只先记账：分片循环可能跨好几帧，逐格重建会把同一批
+# 邻居重算十几遍；本批新件全部入图后再统一善后一次
+func _remove_for_replace(axis_pos:Vector2i) -> void:
+	var old:SWBuildItemDefine = build_manager.getBuild(axis_pos)
+	if old == null:
+		return
+	build_manager.setBuildState(old,SwDefine.BuildState.TO_BE_REMOVED)
+	var olds:Array[SWBuildItemDefine] = [old]
+	build_manager.delBuilds(olds)
+	_pendingReplacedBuilds[old] = true
+
+# 把拆下来的旧元件走一遍删除善后（与擦除释放走同一条路径：重建电路 + 清时钟注册）。
+# 这里固定走同步版：每次 replace 只拆一格，量很小；同一个放循环里再排一个分帧任务
+# 会跟进度条口径（_place_created/_place_evaluated）互相污染
+func _flush_replaced_removed() -> void:
+	if _pendingReplacedBuilds.is_empty():
+		return
+	var v := _get_view()
+	var gone:Array[SWBuildItemDefine] = _pendingReplacedBuilds.keys()
+	_pendingReplacedBuilds.clear()
+	var notifyChunkPosArr:Array = getNotifyChunkPosArr(gone)
+	_notify_circuit_after_removed(gone, notifyChunkPosArr)
+	if v != null:
+		v.sw_draw_manager.updataChunks(notifyChunkPosArr)
 
 # 对一批已入图的建筑分阶段重建电路；求值阶段按 0..8 折算成批次内进度
 func _eval_placed_batch(batch:Array[SWBuildItemDefine], tree:SceneTree) -> void:
@@ -485,6 +530,8 @@ func _flush_place_jobs_sync() -> void:
 				var new_build := SwDefine.SWBuildCreator(tmpl.buildAxisPos + grid_pos, tmpl.buildDefine, tmpl.rotation)
 				if _clip_states.has(tmpl):
 					new_build.load_state(_clip_states[tmpl])
+				if job.get("replace", false):
+					_remove_for_replace(new_build.buildAxisPos)
 				if build_manager.addBuild(new_build):
 					created.append(new_build)
 					_pendingPlacedBuilds[new_build] = true
@@ -494,6 +541,7 @@ func _flush_place_jobs_sync() -> void:
 	_place_evaluated = 0
 	if not created.is_empty() and v != null:
 		v.refresh_builds(created)
+	_flush_replaced_removed()
 	if _pendingPlacedBuilds.is_empty():
 		return
 	var placed:Array[SWBuildItemDefine] = _pendingPlacedBuilds.keys()
@@ -513,6 +561,12 @@ func _flush_place_jobs_sync() -> void:
 #tag 设置手持系统
 func set_hold_system(hold_sys:SWHoldLayerSystem) -> void:
 	_hold_system = hold_sys
+	#手持层做电线拖拽时要预判「这一格有没有东西」，建筑表只在这里暴露一个只读入口
+	hold_sys.set_cell_probe(Callable(self, "get_build_at"))
+
+#tag 取某格上的建筑物（不做任何修改，供拖拽预览判占用）
+func get_build_at(grid_pos:Vector2i) -> SWBuildItemDefine:
+	return build_manager.getBuild(grid_pos)
 	
 #tag 清除地图上所有元件
 func clear_all_builds() -> void:
@@ -524,13 +578,22 @@ func clear_all_builds() -> void:
 	_place_evaluated = 0
 	_place_running = false
 	_clipboard_busy = false
+	_remove_busy = false
 	_job_hide()
 	_pendingRemovedBuilds.clear()
 	_pendingPlacedBuilds.clear()
+	_pendingReplacedBuilds.clear()
 	_selected_builds.clear()
 	_clip_states.clear()
 	clockBuildArr.clear()
 	build_manager.clearAllBuilds()
+	# netId 全局计数整体作废：全量清除后从 0 重新分配，防旧会话 id 与新 net 冲突；
+	# 帧槽（LED/寄存器/非门/按钮亮灭的 shader 帧选择）同步重置
+	if circuit_control:
+		circuit_control.resetNetIdCounter()
+	var tex := SWSignalTexture.instance
+	if tex != null:
+		tex.resetFrameSlots()
 	var v := _get_view()
 	if v != null:
 		v.sw_draw_manager.updataAllChunks()
@@ -602,6 +665,10 @@ func _report_progress(on_progress:Callable, pct:float, text:String) -> void:
 		on_progress.call(clampf(pct, 0.0, 1.0), text)
 
 func _refresh_after_load() -> void:
+	#首轮求值只把新电平写进 net.curSignal 与脏集，纹理要等下一次 tick 才刷；
+	#读档后先消费一次脏集，电线颜色才能和贴图一起立刻正确
+	var changed:Array[SWBuildItemDefine] = []
+	refresh_signal_chunks(changed)
 	var v := _get_view()
 	if v != null:
 		v.sw_draw_manager.updataAllChunks()
@@ -645,13 +712,190 @@ func _do_cut() -> void:
 	var builds:Array[SWBuildItemDefine] = _selected_builds.keys()
 	var center := _getSelectedBuildCenter()
 	_selected_builds.clear()
-	#源建筑立即删除：克隆只依赖定义/坐标/朝向，删除不影响后续分帧创建
 	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
-	build_manager.delBuilds(builds)
+	# 电路必须重建：不重建的话时钟注册表还留着被删的时钟，
+	# 每帧继续 tick → 已经删掉的电路还在跑（用户反馈的「删除后电路依旧在跑」）。
+	# 剪切还要接着做分帧克隆：两个异步任务会抢进度条，所以排到重建完之后再开工；
+	# 克隆只依赖定义/坐标/朝向/元件状态（源对象由 builds 持有，删表不影响）
+	_start_remove_and_followup(builds, notifyChunkPosArr,
+		func() -> void: _start_clipboard_job(builds, center))
+
+#tag buildLayer删除选中
+func _do_delete_selected() -> void:
+	if _selected_builds.size() == 0:
+		return
+	var builds:Array[SWBuildItemDefine] = []
+	for build in _selected_builds:
+		builds.append(build)
+	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
+	_selected_builds.clear()
+	# 标记与真正离表都交给善后任务：一次删 7w 时同步删要占住一帧 400+ms
+	_start_remove_and_followup(builds, notifyChunkPosArr)
+
+# 删除建筑后统一善后（同步版）：重建电路 + 从时钟注册表移除被删的时钟。
+# 把「重建电路」和「清时钟」绑在一起，避免任何删除路径漏掉其中一步
+# （历史上 _do_cut / _do_delete_selected 就漏了整段，导致删掉的时钟仍在驱动电路求值）。
+# removed 会被就地追加「受影响的建筑」，供调用方一起刷新区块。
+# 一次删上万个元件请走 _start_remove_followup（它会转成分帧版）。
+func _notify_circuit_after_removed(removed:Array[SWBuildItemDefine],
+		notifyChunkPosArr:Array) -> void:
+	# 1) 重建电路：只重建还活着的建筑，把受影响的区块并进通知集
+	if circuit_control != null:
+		var seeds:Array[SWBuildItemDefine] = circuit_control.collectRemoveSeeds(removed)
+		var affected:Array[SWBuildItemDefine] = circuit_control.updateBuildCircuit(seeds)
+		# 被删建筑独占的旧电路不会有活成员去 reset，必须在这里摘掉，
+		# 否则 circuits / 编译产物 / 求值后端 / 信号纹理槽位会一路泄漏
+		circuit_control.dropCircuits(circuit_control.detachRemoved(removed))
+		_append_affected_chunks(affected, notifyChunkPosArr)
+	# 2) 清时钟注册
+	_cleanup_clocks_after_removed(removed)
+
+# 把受影响的建筑并进通知区块集（去重用字典：affected 可能上万，在数组上 has() 是平方级）
+func _append_affected_chunks(affected:Array[SWBuildItemDefine], notifyChunkPosArr:Array) -> void:
+	var seen:Dictionary[Vector2i,bool] = {}
+	for cp:Vector2i in notifyChunkPosArr:
+		seen[cp] = true
+	for b:SWBuildItemDefine in affected:
+		if b == null:
+			continue
+		var cp:Vector2i = SwCommon.GetChunkPos(b.buildAxisPos)
+		if seen.has(cp):
+			continue
+		seen[cp] = true
+		notifyChunkPosArr.append(cp)
+
+# 从时钟注册表移除（含「被删的建筑本身是时钟」的情况）
+func _cleanup_clocks_after_removed(removed:Array[SWBuildItemDefine]) -> void:
+	for build in removed:
+		if build is SWBuildClockSiggen:
+			delClockBuild(build)
+	# 兜底：注册表里凡是已经不在建筑表内的时钟一律清掉。
+	# 只遍历注册表（通常只有几个时钟），代价可忽略；
+	# 这样可以覆盖「时钟被间接删除」等没走到上面分支的情况。
+	if clockBuildArr.is_empty():
+		return
+	var stale:Array[SWBuildItemDefine] = []
+	for build in clockBuildArr.keys():
+		if build == null or build.bIsToBeRemoved() or build_manager.getBuild(build.buildAxisPos) != build:
+			stale.append(build)
+	for build in stale:
+		delClockBuild(build)
+
+# 删除善后入口（建筑已经离表，比如右键擦除）：小批量同步跑完，大批量转分帧。
+# 需要「先标 TO_BE_REMOVED、再分帧真正离表」的路径（Delete / 剪切）请走 _start_remove_and_followup。
+# on_done 在善后全部做完后调：剪切的克隆任务靠它跟重建任务串行，不去抢进度条。
+func _start_remove_followup(removed:Array[SWBuildItemDefine], notifyChunkPosArr:Array,
+		on_done:Callable = Callable()) -> void:
+	_start_remove_common(removed, notifyChunkPosArr, on_done, false)
+
+# 删除入口（Delete / 剪切）：一次删 7w 时光 delBuilds 那一帧就要 400+ms。
+# 先把整批标成 TO_BE_REMOVED（纯状态赋值，电路当场就视作断开），
+# 再分帧离表 + 分帧善后，全程只吃 JOB_SLICE_USEC 量级的单帧时间。
+func _start_remove_and_followup(removed:Array[SWBuildItemDefine], notifyChunkPosArr:Array,
+		on_done:Callable = Callable()) -> void:
+	_start_remove_common(removed, notifyChunkPosArr, on_done, true)
+
+func _start_remove_common(removed:Array[SWBuildItemDefine], notifyChunkPosArr:Array,
+		on_done:Callable, do_delete:bool) -> void:
 	var v := _get_view()
+	var tree:SceneTree = v.get_tree() if v != null else null
+	# 四个入口都被闸门挡着，所以「善后进行中又被调」理论上走不到；
+	# 真走到也只跑同步版——删除已经在选择集里定下了，善后绝不能漏。
+	if removed.size() < BULK_REMOVE_THRESHOLD or tree == null \
+			or _remove_busy or _place_running or _clipboard_busy:
+		if do_delete:
+			build_manager.setBuildsState(removed, SwDefine.BuildState.TO_BE_REMOVED)
+			build_manager.delBuilds(removed)
+		_notify_circuit_after_removed(removed, notifyChunkPosArr)
+		if v != null:
+			v.sw_draw_manager.updataChunks(notifyChunkPosArr)
+		if on_done.is_valid():
+			on_done.call()
+		return
+	# 不 await：标记 → 分帧离表 → 分帧善后都在后面的帧里跑，当前帧立即交还给输入/绘制
+	_run_remove_job(removed, notifyChunkPosArr, tree, on_done, do_delete)
+
+# 分帧删除 + 善后：整批标 TO_BE_REMOVED → 分帧离表 → 抹画面 → 按预算取种子
+# → 9 阶段重建 → 摘旧电路 → 清时钟 → 补刷受影响区块。
+# epoch 变了（清空世界 / 读档）就自行退出，别把旧建筑写回电路。
+func _run_remove_job(removed:Array[SWBuildItemDefine], notifyChunkPosArr:Array,
+		tree:SceneTree, on_done:Callable, do_delete:bool = false) -> void:
+	_remove_busy = true
+	_job_start_msec = Time.get_ticks_msec()
+	var epoch:int = _job_epoch
+	var total:int = removed.size()
+	# 1) 整批标记待删除：一趟纯状态赋值，但意义是「电路当场视作断开」，
+	#    取种子与重建都靠它把这些建筑挡在重建集外
+	if do_delete:
+		build_manager.setBuildsState(removed, SwDefine.BuildState.TO_BE_REMOVED)
+	# 让当前帧的输入/绘制收尾，再开始吃预算
+	await tree.process_frame
+	if epoch != _job_epoch:
+		_remove_busy = false
+		return
+	var v := _get_view()
+	if do_delete:
+		# 2) 分帧离表：一次删 7w 时这里原本要占住一帧 400+ms
+		var j:int = 0
+		while j < total:
+			var t_del:int = Time.get_ticks_usec()
+			while j < total:
+				var next:int = mini(j + JOB_REMOVE_DEL_STEP, total)
+				var part:Array[SWBuildItemDefine] = []
+				part.assign(removed.slice(j, next))
+				build_manager.delBuilds(part)
+				j = next
+				if Time.get_ticks_usec() - t_del >= JOB_SLICE_USEC:
+					break
+			_job_report("删除元件 %d/%d" % [j, total], 0.02 + 0.23 * float(j) / float(total))
+			if j < total:
+				await tree.process_frame
+				if epoch != _job_epoch:
+					_remove_busy = false
+					return
+	# 3) 抹掉画面：重建还要跑好几帧，不能让删掉的元件一直留在屏幕上
 	if v != null:
 		v.sw_draw_manager.updataChunks(notifyChunkPosArr)
-	_start_clipboard_job(builds, center)
+	var affected:Array[SWBuildItemDefine] = []
+	if circuit_control != null:
+		# 4) 取重建种子：整片删除时种子只有周长量级
+		var state:Dictionary = circuit_control.beginRemoveSeeds()
+		var i:int = 0
+		while i < total:
+			var t_seed:int = Time.get_ticks_usec()
+			while i < total:
+				var next:int = mini(i + JOB_REMOVE_STEP, total)
+				circuit_control.collectRemoveSeedsStep(state, removed, i, next)
+				i = next
+				if Time.get_ticks_usec() - t_seed >= JOB_SLICE_USEC:
+					break
+			_job_report("整理删除 %d/%d" % [i, total], 0.25 + 0.1 * float(i) / float(total))
+			if i < total:
+				await tree.process_frame
+				if epoch != _job_epoch:
+					_remove_busy = false
+					return
+		var seeds:Array[SWBuildItemDefine] = circuit_control.endRemoveSeeds(state)
+		# 5) 9 阶段重建：活着的建筑每帧吃 JOB_CIRCUIT_BUDGET_USEC
+		affected = await circuit_control.updateBuildCircuitStaged(seeds, tree,
+			func(stage:int, p:float) -> void:
+				_job_report(LOAD_STAGE_TEXT[stage],
+					0.35 + 0.65 * (float(stage) + clampf(p, 0.0, 1.0)) / 9.0),
+			JOB_CIRCUIT_BUDGET_USEC, JOB_CIRCUIT_STEP)
+		if epoch != _job_epoch:
+			_remove_busy = false
+			return
+		# 6) 被删建筑独占的旧电路在这里摘掉（没人会替它们 reset）
+		circuit_control.dropCircuits(circuit_control.detachRemoved(removed))
+	# 7) 清时钟注册 + 补刷受影响区块
+	_cleanup_clocks_after_removed(removed)
+	_append_affected_chunks(affected, notifyChunkPosArr)
+	if v != null:
+		v.sw_draw_manager.updataChunks(notifyChunkPosArr)
+	_remove_busy = false
+	_job_hide()
+	if on_done.is_valid():
+		on_done.call()
 
 #tag buildLayer复制
 func _do_copy() -> void:
@@ -671,25 +915,11 @@ func _do_copy() -> void:
 		v.sw_draw_manager.updataChunks(notifyChunkPosArr, builds, {}, 250000, true)
 	_start_clipboard_job(builds, center)
 
-#tag buildLayer删除选中
-func _do_delete_selected() -> void:
-	if _selected_builds.size() == 0:
-		return
-	var builds:Array[SWBuildItemDefine] = []
-	for build in _selected_builds:
-		builds.append(build)
-	var notifyChunkPosArr = getNotifyChunkPosArr(builds)
-	_selected_builds.clear()
-	build_manager.delBuilds(builds)
-	var v := _get_view()
-	if v != null:
-		v.sw_draw_manager.updataChunks(notifyChunkPosArr)
-
 #tag buildLayer删除选中、剪切、复制
 func _on_event_key(event: InputEventKey) -> bool:
 	if event.is_pressed():
 		#后台任务期间的增删会打乱分阶段重建的中间态，也违反「任务未完成禁用复制/剪切」
-		if _clipboard_busy or _place_running:
+		if _clipboard_busy or _place_running or _remove_busy:
 			return false
 		if event.keycode == KEY_DELETE:
 			_do_delete_selected()
@@ -779,7 +1009,7 @@ func handle_input(event: InputEvent) -> bool:
 var clockBuildArr:Dictionary[SWBuildItemDefine,bool] = {}
 #时钟节拍 ≈ 1/30 秒。按挂钟时间判定，不用物理 delta：慢帧时物理会补跑多个子步，
 #照 delta 累加会让同一帧里叠出好几拍
-const CLOCK_GAP_USEC:int = 33333
+const CLOCK_GAP_USEC:int = 1
 #本帧是否已处理过电路拍：一帧最多一拍，切断「掉帧→传播次数翻倍→更卡」的正反馈
 var _last_tick_frame:int = -1
 var _last_clock_usec:int = 0
@@ -828,10 +1058,17 @@ func _repair_tunnel_pairs(unpaired:Array[SWBuildWireTunnel]) -> void:
 const RENDER_STRESS := false
 var _stressFlip:bool = false
 
+# 性能面板「电路时钟 tick」开关：false 时 tick 整个不执行（时钟不翻、寄存器不锁、
+# 不求值、不刷显示），用来分离「电路 tick 吃帧」与「渲染吃帧」两类开销。
+# 恢复时 _last_clock_usec 不重置：下一拍按正常间隔继续推进，不会补拍。
+var tick_enabled:bool = true
+
 func tick(_delta: float,_tick_index:int) -> void:
 	#return
-	#放置任务的电路重建是分帧进行的：中间态下跑时钟增量求值会把电路写坏
-	if _place_running:
+	if not tick_enabled:
+		return
+	#放置任务 / 删除善后的电路重建是分帧进行的：中间态下跑时钟增量求值会把电路写坏
+	if _place_running or _remove_busy:
 		return
 	var frame:int = Engine.get_process_frames()
 	if frame == _last_tick_frame:
@@ -852,35 +1089,27 @@ func tick(_delta: float,_tick_index:int) -> void:
 	clocks.assign(clockBuildArr.keys())
 	for build in clocks:
 		build.onPressed(true)
-	var changedBuilds := circuit_control.buildSignalsChanged(clocks)
-	#整屏冻结档位（LOD2）：补丁会被 _patch_chunk 直接丢弃，
-	#脏区块/脏 net/逐建筑标脏全都不必登记。求值照跑（寄存器不能停），
-	#回 LOD0 时 on_atlas_lod_changed 会整屏补齐颜色与图集帧
-	if SwAtlas.is_frame_updates_frozen():
-		return
+	# cull=true：这一拍的显示只刷视野内的东西（产品要求）。
+	# 视野外的电线与非门不刷显示，视野外且不含寄存器的电路连求值都跳过；
+	# 含寄存器的电路看不见也照算，Q 得跟着时钟继续走（计数器不能停在半路）。
+	var changedBuilds := circuit_control.buildSignalsChanged(clocks, true)
+	#for build in clocks:
+		#build.onPressed(true)
+	#changedBuilds = circuit_control.buildSignalsChanged(clocks)
+	# LOD 冻结由 shader signalFrozen 统一处理：冻结期间信号纹理照常更新
+	#（寄存器不能停），回 LOD0 时立即显示最新电平，无需整屏重染
 	refresh_signal_chunks(changedBuilds)
 
-# 每拍翻转全局信号值：写入各建筑 signal_state 与其所在 net 的 curSignal，
-# 再让所有建筑按新信号值刷新（颜色 + 图集帧），并整块重绘所有已加载区块（纯渲染压测）
+# 每拍翻转全局信号值：直接改写全部已分配 net 的电平并写信号纹理（纯渲染压测）
 func _stress_render_all() -> void:
-	var v := _get_view()
-	if v == null:
-		return
-	var dm = v.sw_draw_manager
-	var chunkPosArr:Array[Vector2i] = dm.get_loaded_chunk_positions()
 	_stressFlip = not _stressFlip
 	var sig:SwDefine.CircuitSignal = SwDefine.CircuitSignal.HIGH if _stressFlip else SwDefine.CircuitSignal.LOW
-	for cp in chunkPosArr:
-		for b:SWBuildItemDefine in build_manager.getBuildsByChunkPos(cp):
-			# 修改信号值：建筑自身状态（LED/非门/寄存器据此换图集帧）+ 所连 net 的电平
-			b.buildStateChanged(sig)
-			var cir:SWBuildCompoentCircuit = b.getCircuitCompoent()
-			if cir != null:
-				for net in cir.pinNetMap.values():
-					if net != null:
-						net.curSignal = sig
-			# 按新信号值刷新建筑：颜色重算 + 图集帧 rect 回写（不重建部件/几何）
-			b.markColorDirty()
-			b.markAtlasRectDirty()
-	dm.updataChunks(chunkPosArr)
+	var tex:SWSignalTexture = SWSignalTexture.instance
+	for net in circuit_control._netById:
+		if net != null:
+			net.curSignal = sig
+			if tex != null:
+				tex.set_level(net.netId, sig == SwDefine.CircuitSignal.HIGH)
+	if tex != null:
+		tex.flush()
 #endregion

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dotiwcjvok3uy"
+path="res://.godot/imported/sw_signal_compute_eval.glsl-7dc38a6d3dac5c26e9896a4a9fb326fa.res"
+
+[deps]
+
+source_file="res://render/sw_signal_compute_eval.glsl"
+dest_files=["res://.godot/imported/sw_signal_compute_eval.glsl-7dc38a6d3dac5c26e9896a4a9fb326fa.res"]
+
+[params]
+

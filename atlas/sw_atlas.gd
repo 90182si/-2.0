@@ -116,6 +116,9 @@ func _apply_to_meshes() -> void:
 		return
 	var tex: Texture2D = get_texture()
 	var sc: float = get_rect_scale()
+	# LOD 冻结：降级档位下连线统一 HIGH 色（等价旧「连线不随电路换色」语义），
+	# 由 shader 采样侧按 signalFrozen 强制 level=1，实例缓冲零改动
+	var frozen: float = 1.0 if is_lod_active() else 0.0
 	for node in get_tree().get_nodes_in_group(MESH_GROUP):
 		var ci := node as CanvasItem
 		if ci == null:
@@ -127,3 +130,5 @@ func _apply_to_meshes() -> void:
 			mat.set_shader_parameter("srcImg", tex)
 		if mat.get_shader_parameter("atlas_scale") != sc:
 			mat.set_shader_parameter("atlas_scale", sc)
+		if mat.get_shader_parameter("signalFrozen") != frozen:
+			mat.set_shader_parameter("signalFrozen", frozen)

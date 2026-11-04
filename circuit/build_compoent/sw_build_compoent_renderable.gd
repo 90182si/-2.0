@@ -21,11 +21,19 @@ var _partNet: Array = []
 var _geomDirty: bool = true
 
 # ========== 实例数据块缓存 ==========
-# 每个部件的 16 个 float 已按 MultiMesh buffer 布局烘培好（含世界坐标、颜色、图集 rect），
+# 每个部件的 16 个 float 已按 MultiMesh buffer 布局烘培好（含世界坐标、tint、style/net/palette 索引），
 # 区块绘制时对整个建筑只需 append_array 一次（一次 C++ memcpy）。
 # 上万建筑时这是主要开销：逐实例逐字段的脚本赋值会放大成数百万次数组写入。
-# [0]=x.x [1]=y.x [2]=0 [3]=x位移 [4]=x.y [5]=y.y [6]=0 [7]=y位移 [8..11]=颜色 [12..15]=图集rect
+# [0]=x.x [1]=y.x [2]=0 [3]=x位移 [4]=x.y [5]=y.y [6]=0 [7]=y位移
+# [8..11]=tint（白/选中底色/环路警示；信号色由 shader 从纹理绝对驱动，不再乘进这里）
+# [12..15]=[style_id, net_id, palette_id, flags]（图集 rect 改存 styleTex 索引，运行时信号翻转零写入）
 const INSTANCE_STRIDE: int = 16
+
+# ========== 缩远简化（LOD）缓存 ==========
+# _instanceBlockLod：简化档的实例块（只含主体部件，1 个实例）
+# _blockLodValid   ：当前简化档缓存对应的 lod 档位（-1 = 无效，需重烘）
+var _instanceBlockLod: PackedFloat32Array = PackedFloat32Array()
+var _blockLodValid: int = -1
 var _instanceBlock: PackedFloat32Array = PackedFloat32Array()
 var _geomValid: bool = false
 # 烘培时的输入参数，任一变化都需要重新烘培
@@ -33,31 +41,57 @@ var _blockBaseX: float = 0.0
 var _blockBaseY: float = 0.0
 var _blockGridX: float = 0.0
 var _blockGridY: float = 0.0
+# 环路状态也参与烘培（loop 警示部件的 net_id 要置 -1 不采样信号），变化需重烘培
+var _lastBakeInLoop: bool = false
 
 var _colorDirty: bool = true
 var _lastMaskColor: Color = Color(-1.0, -1.0, -1.0, -1.0)  # 哨兵：首帧必刷
 var _lastInLoop: bool = false
-# 上次染色时的图集 LOD 状态：LOD 档连线统一取 high 色，切换档位必须重染一次
-var _lastLodMode: bool = false
 
-# 连线类部件的颜色只由所连 net 的电平决定：缓存涉及的 net（按对象去重），
-# 区块重绘时比对 net 的电平版本号，翻转了才重刷颜色。
-# 这样一根线翻转不需要在电路层逐根打脏（连线数量是门的十几倍）
-var _colorNets: Array[SWNet] = []
-var _lastSigVersion: int = -1
-
-# 电线A/电线B：连线颜色用建筑自身线别。一个 net 里可能混接两线别，
-# net.wireGroup.wireName 只会记下最后一个写入者，不能作为 A/B 的取色依据。
-var _ownPalette: bool = false
-var _ownColorLow: Color = Color.WHITE
-var _ownColorHigh: Color = Color.WHITE
-# 分组键：用自身线别时取线名（电线A/电线B 各自一组），跟随 net 时为空串
-var _paletteKey: String = ""
-
-# 图集帧切换（开关/灯/寄存器等换贴图）只改 atlas 部件的 rect，
-# 不重建部件与几何。图集部件在 _buildRenderParts 中总是最后追加。
+# 图集帧切换（开关/灯/寄存器等换贴图）：纹理化后帧切换 shader 化——
+# 帧对 (off,on) 惰性登记进 styleTex，帧选择电平写入信号纹理「帧槽」，
+# 实例缓冲零写入。markAtlasRectDirty 保留为 no-op 兼容旧调用。
 var _atlasRectDirty: bool = false
 var _atlasPartIndex: int = -1
+# 帧状态（LED/寄存器/非门/按钮的亮灭）：信号纹理帧槽索引与当前状态。
+# 烘焙时分配帧槽；setFrameState 只写纹理，不再回写实例缓冲。
+var _frameSlot: int = -1
+var _frameHigh: bool = false
+
+func _is_frame_build() -> bool:
+	return buildRef != null and (buildRef is SWBuildLed or buildRef is SWBuildRegister1Bit \
+			or buildRef is SWBuildNot or buildRef is SWBuildButton)
+
+# 帧状态写入信号纹理帧槽（shader 据此选图集帧 on/off）。烘焙前调用只记录状态，
+# 首次烘焙分配帧槽后立即补写，防首帧显示旧电平。
+#
+# 性能（64x 存档读档卡顿治理）：一次求值里同一组件会被反复触达，而 set_level 每次都要
+# 走 SWSignalTextureGPU.instance 单例 getter（很贵）。求值期间把写入交给
+# SWCircuitControl.submitFrameState 按拍合并，同一帧槽一拍只写一次。
+func setFrameState(high: bool) -> void:
+	_frameHigh = high
+	if _frameSlot < 0:
+		return
+	var ctrl := _frameOwner()
+	if ctrl != null:
+		ctrl.submitFrameState(_frameSlot, high)
+		return
+	var tex := SWSignalTexture.instance
+	if tex != null:
+		tex.set_level(_frameSlot, high)
+
+# 找到当前求值轮的电路控制（未在求值中则返回 null，调用方直接写纹理）
+func _frameOwner() -> SWCircuitControl:
+	if buildRef == null:
+		return null
+	var cir: SwDefine.SWCircuitData = buildRef.circuit
+	if cir == null:
+		return null
+	return _activeOwner
+
+# 当前正在求值的 SWCircuitControl（求值开始时由控制方设置，结束时清空）。
+# 用静态变量而非逐建筑回溯 circuit->owner，省掉每组件一次对象跳转。
+static var _activeOwner: SWCircuitControl = null
 
 func markRenderPartsDirty() -> void:
 	_geomDirty = true
@@ -68,7 +102,9 @@ func markColorDirty() -> void:
 	pass
 
 func markAtlasRectDirty() -> void:
-	_atlasRectDirty = true
+	# 图集帧已由 styleTex 索引静态决定：换帧需要改 drawRect 并整块重建（markRenderPartsDirty）。
+	# 保留接口兼容旧调用，不再做实例级 rect 回写。
+	pass
 
 # 部件数量
 func _partCount() -> int:
@@ -86,138 +122,86 @@ func _ensureParts() -> void:
 		_geomDirty = false
 		_geomValid = false
 
-# 把本建筑「随 net 电平变色」的实例颜色列登记进区块的批量索引。
-# startInstance 是本建筑在区块 buffer 中的起始实例下标，部件顺序与平行数组一致。
-# entries 按 net+调色板分组；index 是本次区块构建期的去重表（net -> {调色板键: 条目}）。
-func registerNetColumns(startInstance: int, entries: Array, index: Dictionary) -> void:
-	#环路色覆盖整栋建筑，与 net 电平无关，不参与批量换色；预览建筑不挂电路
-	if buildRef.in_loop or buildRef.is_preview:
-		return
-	_ensureParts()
-	var cir: SWBuildCompoentCircuit = buildRef.getCircuitCompoent()
-	if cir == null:
-		return
-	var mask: Color = buildRef.buildState.mask_color
-	var isWhite: bool = mask == Color.WHITE
-	var col: int = startInstance * INSTANCE_STRIDE + 8
-	var n: int = _partCount()
-	for i in n:
-		var pinDir: int = _partPinDir[i]
-		if pinDir >= 0:
-			var net: SWNet = cir.pinNetMap.get(pinDir, null)
-			if net != null:
-				var e: SWNetColorEntry = _netEntryFor(entries, index, net)
-				if isWhite:
-					e.cols.append(col)
-				else:
-					e.mask_cols.append(col)
-					e.mask_colors.append(mask)
-		col += INSTANCE_STRIDE
-
-func _netEntryFor(entries: Array, index: Dictionary, net: SWNet) -> SWNetColorEntry:
-	var byPalette: Dictionary = index.get(net, {})
-	var e: SWNetColorEntry = byPalette.get(_paletteKey, null)
-	if e != null:
-		return e
-	e = SWNetColorEntry.new()
-	e.net = net
-	e.is_own = _ownPalette
-	if _ownPalette:
-		e.low = _ownColorLow
-		e.high = _ownColorHigh
-	else:
-		_resolveNetColor(net)
-		e.low = net.renderColorLow
-		e.high = net.renderColorHigh
-	byPalette[_paletteKey] = e
-	index[net] = byPalette
-	entries.append(e)
-	return e
-
-# 获取整块实例数据：世界坐标/颜色/图集均已烘培，参数未变时零计算直接复用
-# applyColor=false 用于 LOD 降级：只取几何与图集帧，跳过电平颜色重算。
-# 此时 _colorDirty / _lastSigVersion 都不动，下次带颜色的调用会把冻结期间的变化一次补齐。
-func getInstanceBlock(baseX: float, baseY: float, gridX: float, gridY: float, maskColor:Color, applyColor:bool = true) -> PackedFloat32Array:
+# 获取整块实例数据：世界坐标/tint/索引均已烘培，参数未变时零计算直接复用
+# applyColor 参数保留兼容旧调用（LOD 冻结改由 shader signalFrozen 处理，不再影响 tint 烘焙）。
+#
+# lod（缩远简化，见 SWDrawManager.on_view_rect_changed）：
+#   0/1 = 满精度，返回全部部件（主体 + 底板 + 端子）
+#   2   = 只保留「主体」部件（丢掉底板与端子）
+#   3   = 只保留「主体」部件，且跳过纯装饰（信号为空的端子在这里已经没了）
+# 缩远时一个建筑格只有几个像素，端子/底板都是亚像素点，丢掉后视觉几乎无损，
+# 但实例数能降 2~5 倍 —— 这是「越缩越卡」的主要解法。
+# _instanceBlockLod 缓存按 LOD 分档保存，切档时才重烘，同一档内零计算。
+func getInstanceBlock(baseX: float, baseY: float, gridX: float, gridY: float,
+		maskColor:Color, applyColor:bool = true, lod:int = 0) -> PackedFloat32Array:
 	# 手持预览克隆不进 ByContent 图层（它走 ByHold/HoldShadow 的 writeInstances 直写），
 	# 直接短路，跳过 _instanceBlock 烘焙与颜色重算，省掉每克隆 300+ bytes 的 PackedFloat32Array
 	if buildRef != null and buildRef.is_preview:
 		return PackedFloat32Array()
 	if not _geomValid or _geomDirty or _blockBaseX != baseX or _blockBaseY != baseY \
-			or _blockGridX != gridX or _blockGridY != gridY:
+			or _blockGridX != gridX or _blockGridY != gridY or buildRef.in_loop != _lastBakeInLoop:
 		_bakeGeometry(baseX, baseY, gridX, gridY)
-	# 图集帧变化：只回写该实例的 rect，几何/部件保持不动
-	if _atlasRectDirty:
-		_atlasRectDirty = false
-		if _atlasPartIndex >= 0 and _atlasPartIndex < _partCount():
-			var ai: int = _atlasPartIndex * INSTANCE_STRIDE
-			var r: Rect2 = drawRect
-			_instanceBlock[ai + 12] = r.position.x
-			_instanceBlock[ai + 13] = r.position.y
-			_instanceBlock[ai + 14] = r.size.x
-			_instanceBlock[ai + 15] = r.size.y
-	if not applyColor:
-		return _instanceBlock
-	# 只有本拍颜色可能变化的建筑才重算；其余直接复用上次烘好的颜色
-	var sigVersion: int = _netSigVersion()
-	var lodMode: bool = SwAtlas.is_lod_active()
-	if _colorDirty or sigVersion != _lastSigVersion \
-			or maskColor != _lastMaskColor or buildRef.in_loop != _lastInLoop \
-			or lodMode != _lastLodMode:
+		# 几何重烘后所有 LOD 档缓存都失效
+		_blockLodValid = -1
+	# tint 只由选中底色与环路警示决定（信号色在 shader 采样），与电平版本/LOD 无关。
+	# 必须在取简化档之前染：_bakeSimplified 是从 _instanceBlock 切片的，把它留在 lod 分支之后
+	# 就永远不执行 —— 新建筑带着 resize 出来的全 0 tint（alpha=0）上屏，表现为
+	# 「缩到 LOD 简化档后复制粘贴的电路完全看不见，放大并重进视野才出来」。
+	if _colorDirty or maskColor != _lastMaskColor or buildRef.in_loop != _lastInLoop:
 		_applyColors(maskColor)
 		_lastMaskColor = maskColor
 		_lastInLoop = buildRef.in_loop
-		_lastSigVersion = sigVersion
-		_lastLodMode = lodMode
 		_colorDirty = false
+		# 切片里的 tint 跟着过期，作废重切
+		_blockLodValid = -1
+	# 缩远简化档：只烘「主体」部件
+	if lod >= LOD_SIMPLIFY_LEVEL:
+		# 先染 tint 再切片：_bakeSimplified 从 _instanceBlock 拷 16 个 float，其中 8..11 是 tint。
+		# 染色段原本排在下面这个 return 之后，所以新建筑第一次就以简化档取块时拿到的是
+		# resize 出来的全 0 tint（alpha=0），上屏后完全透明 —— 这就是「缩到 LOD 简化档后
+		# 复制粘贴的电路永远不显示，放大并重进视野才出来」的根因。
+		if _colorDirty or maskColor != _lastMaskColor or buildRef.in_loop != _lastInLoop:
+			_applyColors(maskColor)
+			_lastMaskColor = maskColor
+			_lastInLoop = buildRef.in_loop
+			_colorDirty = false
+			_blockLodValid = -1
+		if _blockLodValid != lod:
+			_bakeSimplified(lod)
+			_blockLodValid = lod
+		return _instanceBlockLod
 	return _instanceBlock
 
-# 所连 net 的电平版本指纹：任一 net 翻转都会让它变化
-func _netSigVersion() -> int:
-	if _colorNets.is_empty():
-		return 0
-	var v: int = 0
-	for net in _colorNets:
-		v = v * 31 + net.sigVersion
-	return v
+# 缩远简化档阈值：>= 该值只画主体部件
+const LOD_SIMPLIFY_LEVEL: int = 2
 
-func _resolveNetColor(net: SWNet) -> void:
-	if net.renderColorResolved:
+# 简化档烘焙：只取「主体」那一件（atlas 部件），没有主体时退回第一件。
+# 复用已烘好的 _instanceBlock，按 INSTANCE_STRIDE 切片拷贝，避免重算世界坐标。
+func _bakeSimplified(_lod: int) -> void:
+	var count: int = _partCount()
+	var keep: int = _atlasPartIndex
+	if keep < 0 or keep >= count:
+		keep = count - 1
+	if keep < 0:
+		_instanceBlockLod = PackedFloat32Array()
 		return
-	var wireName: String = net.wireGroup.wireName if net.wireGroup != null else ""
-	var arr: Array[Color] = SwCommon.GetWireColor(wireName)
-	net.renderColorLow = arr[0]
-	net.renderColorHigh = arr[1]
-	net.renderColorResolved = true
+	var start: int = keep * INSTANCE_STRIDE
+	if _instanceBlock.size() < start + INSTANCE_STRIDE:
+		_instanceBlockLod = PackedFloat32Array()
+		return
+	_instanceBlockLod = _instanceBlock.slice(start, start + INSTANCE_STRIDE)
 
-# 连线部件取色：电线A/B 用自身线别调色板，其余（门/灯/按钮/桥梁/隧道）沿用所属 net。
-# 图集 LOD 档位下统一取 high 色，避免缩远时整屏连线随电路闪烁，颜色在此期间也不再跟随电路
-func _pinColor(net: SWNet) -> Color:
-	if _ownPalette:
-		if SwAtlas.is_lod_active():
-			return _ownColorHigh
-		return _ownColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else _ownColorLow
-	_resolveNetColor(net)
-	if SwAtlas.is_lod_active():
-		return net.renderColorHigh
-	return net.renderColorHigh if net.curSignal == SwDefine.CircuitSignal.HIGH else net.renderColorLow
-
+# 端子/底座/主体的 tint：maskColor（白/选中）乘环路警示色；信号色由 shader 从调色板纹理绝对驱动，
+# 这里不再乘任何绝对色（否则与 signalTex 双重乘法，历史 bug）。
 func _applyColors(maskColor: Color) -> void:
 	var inLoop: bool = buildRef.in_loop
 	var loopColor: Color = SwCommon.GetLoopColor() if inLoop else Color()
-	#预览建筑没有电路组件，整栋按底色绘制
-	var cir: SWBuildCompoentCircuit = null
-	if not buildRef.is_preview:
-		cir = buildRef.getCircuitCompoent()
 	var i: int = 8
 	var n: int = _partCount()
 	for j in n:
 		var c: Color = maskColor
 		if inLoop and _partLoopTint[j] != 0:
 			c = maskColor * loopColor
-		elif cir != null and _partPinDir[j] >= 0:
-			var net: SWNet = cir.pinNetMap.get(_partPinDir[j], null)   # 活引用，不靠缓存
-			if net != null:
-				c = maskColor * _pinColor(net)
 		_instanceBlock[i + 0] = c.r
 		_instanceBlock[i + 1] = c.g
 		_instanceBlock[i + 2] = c.b
@@ -232,6 +216,8 @@ func _bakeGeometry(baseX: float, baseY: float, gridX: float, gridY: float) -> vo
 		_instanceBlock.resize(count * INSTANCE_STRIDE)
 	var halfX: float = gridX * 0.5
 	var halfY: float = gridY * 0.5
+	var inLoopNow: bool = buildRef.in_loop
+	var styleTex: SWStyleTexture = SWStyleTexture.instance
 	var i: int = 0
 	for partIdx in count:
 		var angle: float = deg_to_rad(float(_partRot[partIdx] * 90))
@@ -248,21 +234,51 @@ func _bakeGeometry(baseX: float, baseY: float, gridX: float, gridY: float) -> vo
 		_instanceBlock[i + 5] = c
 		_instanceBlock[i + 6] = 0.0
 		_instanceBlock[i + 7] = baseY + float(oy) * gridY + halfY
-		var rect: Rect2
-		if partIdx == _atlasPartIndex:
-			rect = drawRect
+		var styleId: int = -1
+		var netId: float = -1.0
+		var palId: float = 0.0
+		var flags: float = 0.0
+		if partIdx == _atlasPartIndex and _is_frame_build():
+			# 帧建筑（LED/寄存器/非门/按钮）：帧切换 shader 化。
+			# styleTex 登记 (off, on) 帧对；帧选择电平写入信号纹理帧槽，实例缓冲零写入。
+			var frameOff: Rect2 = buildRef.buildDefine.atlasTextureOff.region
+			var frameOn: Rect2 = frameOff
+			if buildRef.buildDefine.atlasTextureOn != null:
+				frameOn = buildRef.buildDefine.atlasTextureOn.region
+			styleId = styleTex.register_frame(frameOff, frameOn)
+			var tex := SWSignalTexture.instance
+			if _frameSlot < 0 and tex != null:
+				_frameSlot = tex.alloc_frame_slot()
+				# 求值可能先于首烘：烘焙时立即把已定状态写入帧槽
+				tex.set_level(_frameSlot, _frameHigh)
+			if _frameSlot >= 0:
+				netId = float(_frameSlot)
+			flags = 1.0
 		else:
-			rect = Rect2(_partRect[partIdx*4], _partRect[partIdx*4+1],
-					_partRect[partIdx*4+2], _partRect[partIdx*4+3])
-		_instanceBlock[i + 12] = rect.position.x
-		_instanceBlock[i + 13] = rect.position.y
-		_instanceBlock[i + 14] = rect.size.x
-		_instanceBlock[i + 15] = rect.size.y
+			var rect: Rect2
+			if partIdx == _atlasPartIndex:
+				rect = drawRect
+			else:
+				rect = Rect2(_partRect[partIdx*4], _partRect[partIdx*4+1],
+						_partRect[partIdx*4+2], _partRect[partIdx*4+3])
+			# style_id 惰性登记（未登记 rect 自动扩容纹理，绝不出品红哨兵）
+			styleId = styleTex.register_rect(rect)
+			var net: SWNet = _partNet[partIdx]
+			if net != null:
+				# 环路警示部件不采样信号：net_id=-1 使 shader 跳过调色板，纯 tint 显示
+				if not (inLoopNow and _partLoopTint[partIdx] != 0):
+					netId = float(net.netId)
+					palId = float(net.paletteId)
+		_instanceBlock[i + 12] = float(styleId)
+		_instanceBlock[i + 13] = netId
+		_instanceBlock[i + 14] = palId
+		_instanceBlock[i + 15] = flags
 		i += INSTANCE_STRIDE
 	_blockBaseX = baseX
 	_blockBaseY = baseY
 	_blockGridX = gridX
 	_blockGridY = gridY
+	_lastBakeInLoop = inLoopNow
 	_geomValid = true
 	_colorDirty = true
 
@@ -274,9 +290,7 @@ func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float
 	var halfY: float = gridY * 0.5
 	var inLoop: bool = buildRef.in_loop
 	var loopColor: Color = SwCommon.GetLoopColor() if inLoop else Color()
-	var cir: SWBuildCompoentCircuit = null
-	if not buildRef.is_preview:
-		cir = buildRef.getCircuitCompoent()
+	var styleTex: SWStyleTexture = SWStyleTexture.instance
 	var written: int = 0
 	var n: int = _partCount()
 	for j in n:
@@ -299,38 +313,50 @@ func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float
 		var col: Color = color
 		if inLoop and _partLoopTint[j] != 0:
 			col = color * loopColor
-		elif cir != null and _partPinDir[j] >= 0:
-			var net: SWNet = cir.pinNetMap.get(_partPinDir[j], null)
-			if net != null:
-				col = color * _pinColor(net)
 		target[idx + 8] = col.r
 		target[idx + 9] = col.g
 		target[idx + 10] = col.b
 		target[idx + 11] = col.a
-		var rect: Rect2
-		if written == _atlasPartIndex:
-			rect = drawRect
+		var styleId: int = -1
+		var netId: float = -1.0
+		var palId: float = 0.0
+		var flags: float = 0.0
+		if j == _atlasPartIndex and _is_frame_build():
+			# 帧建筑：帧对 + 帧槽（与 _bakeGeometry 一致）
+			var frameOff: Rect2 = buildRef.buildDefine.atlasTextureOff.region
+			var frameOn: Rect2 = frameOff
+			if buildRef.buildDefine.atlasTextureOn != null:
+				frameOn = buildRef.buildDefine.atlasTextureOn.region
+			styleId = styleTex.register_frame(frameOff, frameOn)
+			var tex := SWSignalTexture.instance
+			if _frameSlot < 0 and tex != null:
+				_frameSlot = tex.alloc_frame_slot()
+				tex.set_level(_frameSlot, _frameHigh)
+			if _frameSlot >= 0:
+				netId = float(_frameSlot)
+			flags = 1.0
 		else:
-			rect = Rect2(_partRect[j*4], _partRect[j*4+1],
-					_partRect[j*4+2], _partRect[j*4+3])
-		target[idx + 12] = rect.position.x
-		target[idx + 13] = rect.position.y
-		target[idx + 14] = rect.size.x
-		target[idx + 15] = rect.size.y
+			var rect: Rect2
+			if j == _atlasPartIndex:
+				rect = drawRect
+			else:
+				rect = Rect2(_partRect[j*4], _partRect[j*4+1],
+						_partRect[j*4+2], _partRect[j*4+3])
+			styleId = styleTex.register_rect(rect)
+			var net: SWNet = _partNet[j]
+			if net != null:
+				if not (inLoop and _partLoopTint[j] != 0):
+					netId = float(net.netId)
+					palId = float(net.paletteId)
+		target[idx + 12] = float(styleId)
+		target[idx + 13] = netId
+		target[idx + 14] = palId
+		target[idx + 15] = flags
 		written += 1
 	return written
 
 func setBuildRef(build:SWBuildItemDefine) -> void:
 	buildRef = build
-	_ownPalette = false
-	_paletteKey = ""
-	if build != null and build.buildDefine != null \
-			and build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.WIRE:
-		_ownPalette = true
-		_paletteKey = build.buildDefine.buildName
-		var arr: Array[Color] = SwCommon.GetWireColor(build.buildDefine.buildName)
-		_ownColorLow = arr[0]
-		_ownColorHigh = arr[1]
 
 # 追加一个部件到平行数组
 func _appendPart(rect: Rect2, offset: Vector2i, rotation: int, pinDir: int, loopTint: bool, net: SWNet) -> void:
@@ -375,7 +401,7 @@ func _buildRenderParts() -> void:
 			var net:SWNet = cir.pinNetMap.get(posmod(p.pin_dir+buildRef.rotation,4),null) if cir != null else null
 			if net == null and wire:
 				continue
-			# pin_dir 存世界方向，供 _applyColors/registerNetColumns 现取 net
+			# pin_dir 存世界方向，供烘焙时现取 net
 			_appendPart(p.wire_pin.region, p.cell_offset,
 					posmod(p.pin_dir+buildRef.rotation,4),
 					posmod(p.pin_dir+buildRef.rotation,4),
@@ -386,11 +412,3 @@ func _buildRenderParts() -> void:
 		_atlasPartIndex = _partCount() - 1
 	else:
 		_atlasPartIndex = -1
-	#收集本建筑着色部件涉及的 net（同一 net 只存一次），供重绘时比对电平版本
-	_colorNets.clear()
-	_lastSigVersion = -1
-	var n: int = _partCount()
-	for i in n:
-		var net: SWNet = _partNet[i]
-		if net != null and not _colorNets.has(net):
-			_colorNets.append(net)

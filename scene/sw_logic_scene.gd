@@ -7,10 +7,23 @@ var camera_system: SWCameraSystem = null
 var render_system :SWRenderSystem = null
 
 func _init() -> void:
+	# 渲染纹理单例必须先于任何烘焙/补丁创建：styleTex 惰性注册、signalBits 电平纹理、
+	# paletteTex 调色板纹理。扩容/注册重建纹理后经回调刷新共享材质 uniform。
+	SWStyleTexture.instance = SWStyleTexture.new()
+	SWSignalTexture.instance = SWSignalTexture.create_backend()
+	SWSignalTexture.instance.init()
+	var refresh_cb := _refresh_texture_uniforms
+	SWStyleTexture._refresh_cb = refresh_cb
+	SWSignalTexture._palette_refresh_cb = refresh_cb
 	SWObjectPool.InitSWChunkDataObject()
 	system_manager = SWSystemManager.new()
 	camera_system = SWCameraSystem.new()
 	render_system = SWRenderSystem.new()
+
+# 纹理扩容/调色板重建后刷新全部共享材质 uniform（遍历 MESH_GROUP）
+func _refresh_texture_uniforms() -> void:
+	if is_inside_tree():
+		get_tree().call_group(SwAtlas.MESH_GROUP, "_resetShaderUniforms")
 
 func _ready() -> void:
 	camera_system.enable = true

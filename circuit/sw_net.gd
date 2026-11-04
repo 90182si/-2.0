@@ -5,6 +5,14 @@ var renderColorLow: Color = Color()
 var renderColorHigh: Color = Color()
 var renderColorResolved: bool = false
 
+# ========== 信号纹理（GPU 着色）索引 ==========
+# 全局唯一编号：signalBits 纹理的 texel 索引（T2.2，电路重建时由 SWCircuitControl 统一分配）
+var netId: int = -1
+# 所连线别的调色板索引（signalBits 采样后经 paletteTex 查低/高色；wireGroup 建立时确定）
+var paletteId: int = 0
+# 上次写入纹理的电平（-999 = 从未画过）：写纹理前比对，防止重复 set_level 标脏
+var paintedSignal: int = -999
+
 # net 当前电平（由驱动门统一解析后写入，是连线颜色的唯一真源）
 var curSignal:SwDefine.CircuitSignal
 # 电平最后一次变化的求值轮次：下游门据此判断要不要重新求值

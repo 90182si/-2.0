@@ -64,6 +64,45 @@ func refresh_hold_render(chunk_positions: Array) -> void:
 	if not chunk_positions.is_empty():
 		sw_draw_manager.updataChunks(chunk_positions)
 		sw_draw_manager_shadow.updataChunks(chunk_positions)
+# ---- 电线拖拽预览线 ----
+# 世界坐标下的折线（挂在手持层节点上，与 SelectRect 同一坐标系），
+# 合法=绿、非法=红：红色表示这一笔松手也不会落子（障碍跨不过去或端点被占）
+const PREVIEW_COLOR_OK := Color(0.35, 1.0, 0.5, 0.8)
+const PREVIEW_COLOR_BAD := Color(1.0, 0.22, 0.2, 0.85)
+var _wire_preview: Line2D = null
+
+func _ensure_wire_preview() -> Line2D:
+	if _wire_preview != null:
+		return _wire_preview
+	_wire_preview = Line2D.new()
+	#宽度按格子尺寸的一小半，看起来就像一根加粗的电线；世界坐标所以随缩放一起变
+	_wire_preview.width = float(SwDefine.GRID_SIZE.x) * 0.26
+	_wire_preview.joint_mode = Line2D.LINE_JOINT_ROUND
+	_wire_preview.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	_wire_preview.end_cap_mode = Line2D.LINE_CAP_ROUND
+	_wire_preview.antialiased = true
+	#预览要压住手持与地块，但不能盖住 HUD（HUD 在独立 CanvasLayer 上）
+	_wire_preview.z_index = 200
+	_wire_preview.visible = false
+	add_child(_wire_preview)
+	return _wire_preview
+
+func show_wire_preview(points: PackedVector2Array, valid: bool) -> void:
+	var line := _ensure_wire_preview()
+	line.points = points
+	line.default_color = PREVIEW_COLOR_OK if valid else PREVIEW_COLOR_BAD
+	line.visible = true
+
+func hide_wire_preview() -> void:
+	if _wire_preview != null:
+		_wire_preview.visible = false
+
+#预览线当前颜色与显隐（测试与排障用：红色 = 这一笔松手不会落子）
+func get_wire_preview_color() -> Color:
+	return _wire_preview.default_color if _wire_preview != null else Color.TRANSPARENT
+func is_wire_preview_visible() -> bool:
+	return _wire_preview != null and _wire_preview.visible
+
 # ---- 框选矩形 ----
 func set_select_rect_origin(pos: Vector2, color: Color) -> void:
 	select_rect.color = color

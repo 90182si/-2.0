@@ -78,6 +78,19 @@ var _color_resync_queue:Dictionary[Vector2i,bool] = {}
 # 补丁预算每帧会被消费两次（信号级联当帧一次、_process 补一次），所以按半帧的量给
 const BUILD_BUDGET_USEC:int = 8000
 const PATCH_BUDGET_USEC:int = 4000
+# 内容变化（放置/删除/连线/加载）整块重建前，先同步信号纹理的回调（由 SWBuildLayer 注入）：
+# 电路求值翻转的 net 电平必须写进纹理，否则几何重建后首帧读到旧 texel
+var signal_sync_cb: Callable = Callable()
+# 视口变化回调（由 SWBuildLayer 注入）：把当前视口范围交给电路侧做视野裁剪，
+# 只有视野内的电线与非门跟随电路刷新，视野外的不刷显示也不求值
+var view_rect_cb: Callable = Callable()
+
+# 当前视口覆盖的区块范围（世界像素，含卸载余量圈）：电路求值/显示按它做视野裁剪。
+# 用卸载余量而不是精确视口：相机在区块边界来回滑时不会忽算忽不算。
+func get_keep_rect() -> Rect2:
+	if unload_margin_chunks > 0:
+		return _curViewRect.grow(_chunkSize.x * unload_margin_chunks)
+	return _curViewRect
 
 # 上一帧需要重绘的区块数量
 func get_redraw_chunks_per_frame() -> int:
@@ -127,6 +140,9 @@ func updataAllChunks() -> void:
 #但选中高亮不随电路变化，任何档位都要即时生效。
 func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [], 
 	dirtyNets:Dictionary = {}, patchBudgetUsec:int = PATCH_BUDGET_USEC, forceColor:bool = false) -> void:
+	# 内容路径进入前先消费本轮求值翻转的 net：信号纹理先就位，几何重建后首帧即可显示正确电平
+	if signal_sync_cb.is_valid():
+		signal_sync_cb.call()
 	if not _pending_tasks.has(0):
 		_pending_tasks[0] = {}
 	var contentChanged:bool = changedBuilds.is_empty() and dirtyNets.is_empty()
@@ -158,20 +174,68 @@ func updataChunks(chunkPosArr:Array[Vector2i], changedBuilds:Array = [],
 	_flush_patches(patchBudgetUsec)
 
 # 图集 LOD 切换通知（SwAtlas 通过 DrawManager 组广播）：
-# 两个方向都要整屏重染一次——降级时连线统一取 high 色、之后不再跟随电路；
-# 回升到全分辨率时还原真实电平颜色。重染按帧预算分摊，不会一次性卡住。
+# 颜色已全部由 shader 采样（tint 静态 + 信号纹理 + signalFrozen），LOD 切换无需重染 buffer；
+# srcImg/atlas_scale/signalFrozen 由 SwAtlas._apply_to_meshes 统一刷材质参数。
 func on_atlas_lod_changed(_level:int) -> void:
 	# 手持阴影只在全分辨率显示：切档后已上屏的区块要立刻跟随显隐
 	if _drawMode == SwDefine.GridDrawMode.HoldShadow:
 		_apply_chunk_visible()
-	for chunkPos:Vector2i in _chunkInstance.keys():
-		var mi:SWMultiMeshInstance2D = _chunkInstance[chunkPos].mesh_instance
-		if mi != null and mi.hasCpuBuffer():
-			_color_resync_queue[chunkPos] = true
 	# 隐藏的软缓存区块：上屏时按当前档位整块重建，重染成本省掉
 	for chunkPos:Vector2i in _idleChunkCache.keys():
 		_idleChunkCache[chunkPos].mesh_instance.builtVersion = -1
-	_flush_patches(PATCH_BUDGET_USEC)
+
+# ========== 缩远简化档（内容 LOD） ==========
+# 「越缩越卡」的根因分析（实测数据，见 test_zoom_diag）：
+#   区块世界尺寸 = GRID_SIZE(128) * CHUNK_SIZE(16) * 8 = 16384，非常大。
+#   即使缩到 level=-36，1920x1080 视口也只覆盖 1~2 个区块 —— **区块数不是瓶颈**。
+#   真正的开销是：缩远触发 LOD 切档 → 把已上屏区块全部标记重建 →
+#   每个区块重跑 drawMap（几百个实例）→ 每缩一步卡一下。
+#
+# 因此策略调整：
+#   1. 切档时的重建分帧消化（_flush_patches 按预算分批），不一次全建；
+#   2. 内容简化档已按产品要求停用：任何 LOD 等级下都全量显示建筑物，
+#      基座与电线端子不得丢弃（停用前它能把实例数降到 1/2.35）。
+var content_lod:int = 0
+# 上一次应用的相机缩放档位：用于判定是否切档（避免每帧重复扫描）
+var _applied_scale_level:int = 999999
+# 相机档位 → 内容 LOD 的映射。
+# 产品要求：任何缩放档位都全量显示建筑部件，所以这里恒返 0。
+# 下面两个阈值曾经是简化档的触发点（对齐图集 LOD：-32 起中精度、-39 起最低精度），
+# 现在只作档位参照保留；_bakeSimplified / LOD_SIMPLIFY_LEVEL 那条休眠路径永远不会被走到，
+# 需要重新拿回远景省开销时，把下面的 return 改回按档位分档即可。
+const CONTENT_LOD_LEVEL_1:int = -32   # （已停用）原：开始只画主体
+const CONTENT_LOD_LEVEL_2:int = -40   # （已停用）原：只画主体（更高档位）
+
+func _content_lod_for(_scale_level:int) -> int:
+	return 0
+
+# 相机缩放档位变化时调用（SWCamera2D._on_zoomCom_zoom）。
+# 内容简化停用后 want 恒为 0，这里的档位变化再也不会触发已上屏区块重建。
+func set_scale_level(scale_level:int) -> void:
+	var want:int = _content_lod_for(scale_level)
+	if scale_level == _applied_scale_level:
+		return
+	_applied_scale_level = scale_level
+	if want == content_lod:
+		return
+	content_lod = want
+	_apply_content_lod()
+
+# 把内容 LOD 应用到软缓存与后续新建区块。
+#
+# ⚠ 关键决策：**不重建已上屏的区块**。
+#   实测（test_zoom_diag）：缩远时每次切档若把已上屏区块标记重建，
+#   即使只有 1~2 个区块，单次也要 3.59ms，连续缩放就是连续卡顿。
+#   而这些区块的几何本来就已经烘好了，重建只为把端子换成不画 —— 收益 2 倍实例，
+#   却要付一次完整重建的代价，在「区块数很少」的场景下完全是负收益。
+#   正确做法：已上屏的保持原样，只有当区块**重新进入视野**（软缓存复用/新加载）时
+#   才按最新档位烘培。随着平移/缩放，远景区块会自然被替换成简化版。
+func _apply_content_lod() -> void:
+	for chunkPos:Vector2i in _idleChunkCache.keys():
+		var mi_ref = _idleChunkCache[chunkPos].mesh_instance
+		if mi_ref != null:
+			mi_ref.builtVersion = -1
+			mi_ref.content_lod = content_lod
 
 # 按当前 LOD 档位重染某一区块；返回 false 表示需要整块重建
 func _resync_chunk_colors(chunkPos:Vector2i) -> bool:
@@ -230,13 +294,9 @@ func _flush_patches(budget_usec:int) -> void:
 		_rebuild_queue.erase(chunkPos)
 
 # 返回 false 表示该区块无法增量回写（无 CPU buffer / 槽位对不上），需要整块重建
-# force_color：选中底色补丁，LOD 冻结也要写颜色（但冻结档位只写颜色列，图集帧继续冻结）
+# force_color 参数保留兼容旧调用：纹理化后补丁只回写 8..11 tint 列（选中/环路底色），
+# 信号颜色与 LOD 冻结全由 shader 采样处理，不再受此参数影响。
 func _patch_chunk(chunkPos:Vector2i, builds:Dictionary, force_color:bool = false) -> bool:
-	# LOD2 起整屏冻结：信号变化的补丁直接丢弃。这里必须返回 true——返回 false 会让上层
-	# 退回整块重建，反而把新颜色写进 buffer。结构性变更走 _rebuild_queue，不受影响。
-	var frozen:bool = SwAtlas.is_frame_updates_frozen()
-	if frozen and not force_color:
-		return true
 	if not _chunkInstance.has(chunkPos):
 		return true
 	var chunkIns:SwDefine.SWDrawChunkData = _chunkInstance[chunkPos]
@@ -247,10 +307,8 @@ func _patch_chunk(chunkPos:Vector2i, builds:Dictionary, force_color:bool = false
 		return false
 	var touched:bool = false
 	if not builds.is_empty():
-		if not mi.patchBuilds(builds.keys(), force_color, frozen):
+		if not mi.patchBuilds(builds.keys(), force_color):
 			return false
-		touched = true
-	if not frozen and mi.patchNets():
 		touched = true
 	if touched:
 		mi.flushPatch()
@@ -275,8 +333,11 @@ func _refreshChunkContent(chunkPos:Vector2i) -> void:
 		# 主线程同步重建并提交 buffer，失败路径与新区块加载完全一致
 		_redraw_chunks_frame += 1
 		_full_rebuilds_frame += 1
+		# 缩远简化档：重建前必须把当前档位同步给 mesh，
+		# 否则切档后的重建仍然按旧档位烘培（表现为「切了档但画面没变」）
+		chunkIns.mesh_instance.content_lod = content_lod
 		chunkIns.mesh_instance.drawMap(dirtyBuilds)
-		chunkIns.mesh_instance.builtVersion = sw_build_manager.version
+		chunkIns.mesh_instance.builtVersion = sw_build_manager.version + SWMultiMeshInstance2D.BUFFER_LAYOUT_VERSION
 		# 之前可能因为区块被清空而隐藏，重建出内容后恢复上屏
 		chunkIns.mesh_instance.visible = _chunk_visible()
 	else:
@@ -462,17 +523,19 @@ func process_load_chunk(priority:int,remove:bool = true) -> void:
 		chunkIns.mesh_instance.setMeshSize(_blockSize)
 		chunkIns.mesh_instance.resetOffsetAndScale(swTf)
 		chunkIns.mesh_instance.setDrawMode(_drawMode)
+		# 缩远简化档：新区块按当前档位烘培（只画主体部件）
+		chunkIns.mesh_instance.content_lod = content_lod
 		# 来自软缓存且建筑内容自上次构建后没变：MultiMesh 里的 buffer 与实例数仍然有效，直接上屏，
 		# 不必重建 320+ 个实例数据，也不必回传 98KB buffer 到渲染服务器
 		var reuse_content:bool = fromCache \
 				and _drawMode == SwDefine.GridDrawMode.ByContent \
-				and chunkIns.mesh_instance.builtVersion == sw_build_manager.version
+				and chunkIns.mesh_instance.builtVersion == sw_build_manager.version + SWMultiMeshInstance2D.BUFFER_LAYOUT_VERSION
 		if not reuse_content:
 			_redraw_chunks_frame += 1
 			if _drawMode == SwDefine.GridDrawMode.ByContent and chunkIns.mesh_instance.multimesh:
 				chunkIns.mesh_instance.multimesh.visible_instance_count = 0
 			chunkIns.mesh_instance.drawMap(chunkMapDataArray)
-			chunkIns.mesh_instance.builtVersion = sw_build_manager.version if sw_build_manager else -1
+			chunkIns.mesh_instance.builtVersion = sw_build_manager.version + SWMultiMeshInstance2D.BUFFER_LAYOUT_VERSION if sw_build_manager else -1
 		
 		_chunkInstance[chunkPos] = chunkIns
 		var mi: SWMultiMeshInstance2D = chunkIns.mesh_instance
@@ -514,7 +577,7 @@ func _isCachedContentValid(chunkPos:Vector2i) -> bool:
 		return false
 	if not _idleChunkCache.has(chunkPos):
 		return false
-	return _idleChunkCache[chunkPos].mesh_instance.builtVersion == sw_build_manager.version
+	return _idleChunkCache[chunkPos].mesh_instance.builtVersion == sw_build_manager.version + SWMultiMeshInstance2D.BUFFER_LAYOUT_VERSION
 
 # 把卸载的区块放进软缓存；超过上限时按最久未使用顺序真正销毁。
 # 注意：这里保留 MultiMeshInstance2D 的 CPU buffer 与 GPU buffer 不变——
@@ -651,6 +714,9 @@ func on_view_rect_changed(viewRect:Rect2 = color_rect.get_rect(),speedVec:Vector
 	else:
 		var delShowInsRect = Rect2(showInsRect.position,showInsRect.size)
 		_curViewRect = delShowInsRect
+		# 把新的视口范围推给电路侧（只有 ByContent 层有建筑电路：ByHold 已提前 return，Tiling 走上面分支）
+		if view_rect_cb.is_valid():
+			view_rect_cb.call()
 		# 卸载判定向外扩一圈区块：相机在边界附近移动时不反复卸载/重建
 		var keepRect:Rect2 = delShowInsRect
 		if unload_margin_chunks > 0:

@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+# SCons 构建脚本：编译本项目的 GDExtension（表达式 DAG 求值器）。
+#
+# 用法（需要先激活 MSVC 环境，见 build.ps1）：
+#   python -m SCons platform=windows target=template_debug godot_cpp=J:/godot/godot-cpp-47
+#   python -m SCons platform=windows target=template_debug asan=yes     # AddressSanitizer 诊断构建
+#
+# 产物：
+#   bin/windows/template_debug/sw_expr_eval.dll              （正常构建）
+#   bin/windows/template_debug/sw_expr_eval_asan.dll         （asan=yes 构建）
+
+import os
+
+godot_cpp_path = ARGUMENTS.get("godot_cpp", "J:/godot/godot-cpp-47")
+use_asan = ARGUMENTS.get("asan", "no") in ("yes", "1", "true")
+
+# godot-cpp 的 SConstruct 返回共享环境
+env = SConscript(os.path.join(godot_cpp_path, "SConstruct"))
+
+env.Append(CPPPATH=["src/"])
+env["SHLIBPREFIX"] = ""
+# /FS：允许并行 cl.exe 写同一个 PDB（否则 /Zi 会报 C1041）
+env.Append(CCFLAGS=["/FS"])
+
+# ⚠ 关键：ASan 只作用于**本项目的源文件**，不给 godot-cpp 全局加 CCFLAGS。
+#   否则整个 godot-cpp（上千个文件）都要重编，且 ABI 不一致。
+#   做法：正常情况下直接用 env；ASan 模式下克隆一份 env 只给本项目源文件用，
+#   但依然链接 godot-cpp 已编好的 .lib。
+if use_asan:
+    lib_name = "sw_expr_eval_asan"
+    # ⚠ ASan 必须同时作用于 godot-cpp，否则链接时报 LNK2038
+    # （annotate_string/annotate_vector 元数据不匹配：ASan 编译单元会写入
+    #  _DISABLE_VECTOR_ANNOTATION/_DISABLE_STRING_ANNOTATION 相关的段标记）。
+    # 因此 asan=yes 时要在全局 env 上加编译选项，godot-cpp 会被重编（约几分钟）。
+    asan_env = env.Clone()
+    asan_env.Append(CCFLAGS=["/fsanitize=address", "/Zi", "/Od"])
+    asan_env.Append(LINKFLAGS=["/DEBUG", "/INCREMENTAL:NO"])
+    asan_runtime = os.path.join(env.subst("$VCToolsInstallDir"), "bin", "Hostx64", "x64")
+    asan_env.Append(LIBPATH=[asan_runtime])
+    asan_env.Append(LIBS=["clang_rt.asan_dynamic-x86_64"])
+    build_env = asan_env
+    # 让 godot-cpp 的源文件也用同一套选项（SConscript 返回的 env 是共享的，
+    # 上面 Clone 只影响本项目源；这里把 ASan 选项挂到基础 env 上驱动 godot-cpp 重编）
+    env.Append(CCFLAGS=["/fsanitize=address", "/Zi", "/Od"])
+else:
+    lib_name = "sw_expr_eval"
+    build_env = env
+
+sources = Glob("src/*.cpp")
+
+if env["target"] in ("editor", "template_debug"):
+    out_dir = "bin/" + env["platform"] + "/template_debug/"
+    if not use_asan:
+        env.Append(LINKFLAGS=["/DEBUG"])
+else:
+    out_dir = "bin/" + env["platform"] + "/template_release/"
+
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+
+library = build_env.SharedLibrary(target=out_dir + lib_name, source=sources)
+env.Default(library)

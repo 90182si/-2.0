@@ -1,0 +1,10 @@
+[configuration]
+
+entry_symbol = "sw_expr_eval_library_init"
+compatibility_minimum = "4.4"
+reloadable = false
+
+[libraries]
+
+windows.debug.x86_64 = "res://gdext/bin/windows/template_debug/sw_expr_eval.dll"
+windows.release.x86_64 = "res://gdext/bin/windows/template_release/sw_expr_eval.dll"

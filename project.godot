@@ -29,8 +29,6 @@ SwStaticFunction="*uid://b1gr0wrdpxh1c"
 [debug]
 
 file_logging/enable_file_logging=true
-settings/gdscript/always_track_call_stacks=true
-settings/gdscript/always_track_local_variables=true
 
 [display]
 
@@ -89,9 +87,8 @@ TEST_PERFORMANCE={
 
 [physics]
 
-common/physics_ticks_per_second=144
 3d/physics_engine="Jolt Physics"
 
 [rendering]
 
-rendering_device/driver.windows="d3d12"
+"#Windowsæ¸²æé©±å¨ï¼d3d12ï¼Vulkanä¸T1.10å¯¹æ16xçµè·¯å´©æºï¼D3D12ä¸create_local_rendering_device#å¨æ¸¸æå¤§å°å¾è¿è¡æ¶åå»ºå¤±è´¥ERR_CANT_CREATEâGPUæ±å¼åéCPUãä¸¤æ¹æ¡åæä¸å¯é ï¼å¾CPUä¼åååºï¼rendering_device/driver.windows"="d3d12"

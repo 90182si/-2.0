@@ -21,3 +21,10 @@ func attach_view(v:SWLayer) -> void:
 		hudLayer.load_requested.connect(func():
 			if enable:
 				self.load_requested.emit())
+
+#悬浮元件变了：把它的表达式推给右上角面板（build 为 null 就收起来）
+func on_hover_build_changed(build:SWBuildItemDefine) -> void:
+	var hudLayer := view as SWHudLayer
+	if hudLayer == null or not enable:
+		return
+	hudLayer.show_build_expr(build)

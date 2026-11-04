@@ -346,6 +346,11 @@ class SWCircuitData extends RefCounted:
 	#var buildIdArr:Array[int] = []
 	var buildArr:Array[SWBuildItemDefine] = []
 	var noticeMap = {}
+	# 本电路的世界像素包围盒（建组时算一次）：视野裁剪判据，
+	# 整条不可见的电路不再求值（见 SWCircuitControl._circuit_in_view）。
+	# 电路成员只增不减 —— 编辑会整条 dropCircuits 重建，所以这份缓存不会失效。
+	# size 为 0 表示尚未计算，视野裁剪按「可见」保守处理。
+	var cullRect:Rect2 = Rect2()
 	#var sourceSignalMap = {}
 	#var inputValues:Dictionary = {}
 	#var inputBuilds:Dictionary[SWBuildItemDefine,int] = {}

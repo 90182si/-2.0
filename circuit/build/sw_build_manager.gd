@@ -80,10 +80,14 @@ func delBuilds(builds:Array[SWBuildItemDefine]) -> bool:
 		return true
 	var success = true
 	var chunkBuildMap:Dictionary[Vector2i, Array] = {}
+	var seen:Dictionary[SWBuildItemDefine,bool] = {}
 	for build in builds:
 		if not build:
 			success = false
 			continue
+		if seen.has(build):
+			continue      # 同一批里重复传同一个建筑：只删一次，避免二次删除报错
+		seen[build] = true
 		var chunkPos = SwCommon.GetChunkPos(build.buildAxisPos)
 		if not chunkBuildMap.has(chunkPos):
 			chunkBuildMap[chunkPos] = []
@@ -94,16 +98,27 @@ func delBuilds(builds:Array[SWBuildItemDefine]) -> bool:
 		if not curChunk:
 			for build in chunkBuildMap[chunkPos]:
 				success = false
-				assert("在{},{}删除{}失败".format([build.buildAxisPos.x, build.buildAxisPos.y, build.buildDefine.buildName]))
+				assert("在{},{}删除{}失败".format([build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName]))
 			continue
-		for build in chunkBuildMap[chunkPos]:
-			var ok = curChunk.delBuild(build)
-			if ok:
-				build.on_deleted(self)
-				anyDeleted = true
-			else:
-				success = false
-				assert("在{},{}删除{}失败".format([build.buildAxisPos.x, build.buildAxisPos.y, build.buildDefine.buildName]))
+		# 成批删（区块内一趟压缩）：逐个 delBuild 的 erase 在万级删除下会退化成平方复杂度
+		var group:Array = chunkBuildMap[chunkPos]
+		var gone:Array[SWBuildItemDefine] = curChunk.removeBuilds(group)
+		if gone.size() != group.size():
+			success = false
+			for build:SWBuildItemDefine in group:
+				assert("在{},{}删除{}失败".format([build.buildAxisPos.x,build.buildAxisPos.y,build.buildDefine.buildName]))
+		if gone.is_empty():
+			continue
+		anyDeleted = true
+		for build:SWBuildItemDefine in gone:
+			# 隧道靠 on_deleted 清配对：必须在 erase(buildStoreManager) 之前，否则查不到配对端
+			build.on_deleted(self)
+			# 已出图的建筑一律标记成待删除：电路重建靠它把死建筑挡在重建集外
+			# （一次性删 7w 元件时，重建集里混进死建筑会白跑一遍完整重建）
+			build.buildState.state = SwDefine.BuildState.TO_BE_REMOVED
+			# 从 id 表里摘掉：不摘的话被删的建筑永远不会被释放
+			#（7w 删除 = 7w 个对象 + 它们的组件/网络引用永久驻留）
+			buildStoreManager.erase(build.id)
 	if anyDeleted:
 		cacheValid = false
 		version += 1

@@ -22,3 +22,27 @@ desktop.ini
 
 #测试产物
 test/*.xml
+
+# --- GDExtension 构建产物（由 gdext/build.ps1 生成，不入库）---
+# 只保留源码、SConstruct、build.ps1 与 .gdextension 清单；
+# 中间产物 / 调试符号 / SCons 缓存一律忽略。
+gdext/bin/
+gdext/*.pdb
+gdext/*.obj
+gdext/.sconsign.dblite
+gdext/.sconsign.dblite.bak
+gdext/src/*.obj
+gdext/src/*.import
+
+# --- SQLite / 内置数据库临时文件 ---
+*.db-journal
+*.db-wal
+
+# --- 第三方 MCP 工具插件（与游戏逻辑无关，本地安装即可）---
+addons/godot_mcp_toolkit/
+
+# --- 根目录调试日志 / 探针输出（测试与压测的临时产物，用完即删）---
+# 只约束根目录，不影响 test/ 下的源码；_run_*.ps1 是工具脚本，不在此列
+/_*.log
+/_*.log.err
+/_*.txt

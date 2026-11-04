@@ -19,6 +19,7 @@ func _ready() -> void:
 	if load_btn:
 		load_btn.pressed.connect(_on_load_pressed)
 	_build_job_panel()
+	_build_expr_panel()
 
 # ========== 左下角任务进度条（复制/剪切准备、放置队列） ==========
 var _job_panel: Control = null
@@ -83,6 +84,74 @@ func hide_job_progress() -> void:
 
 func is_job_progress_visible() -> bool:
 	return _job_panel != null and _job_panel.visible
+
+# ========== 右上角悬浮表达式面板（鼠标停在元件上时显示它在算什么） ==========
+# 表达式树是电路构建时递归建好的，这里只读出来排版（见 SWExprDescribe），不重建
+const EXPR_DESCRIBE := preload("res://circuit/sw_expr_describe.gd")
+var _expr_panel: Control = null
+var _expr_label: Label = null
+var _expr_build: SWBuildItemDefine = null
+var _expr_text: String = ""
+
+func _build_expr_panel() -> void:
+	var panel := PanelContainer.new()
+	# 纯展示，不能吃掉地图上的鼠标事件
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 贴右上角：左右都锚在右边，向左长；上下锚在顶部，向下长
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -352
+	panel.offset_right = -12
+	panel.offset_top = 12
+	panel.offset_bottom = 12
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	panel.grow_vertical = Control.GROW_DIRECTION_END
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.62)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(10)
+	panel.add_theme_stylebox_override("panel", style)
+	panel.visible = false
+	add_child(panel)
+
+	_expr_label = Label.new()
+	_expr_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 表达式会长，折行比横向撑爆屏幕好
+	_expr_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_expr_label.custom_minimum_size = Vector2(320, 0)
+	_expr_label.add_theme_font_size_override("font_size", 15)
+	panel.add_child(_expr_label)
+	_expr_panel = panel
+
+# 悬浮到某个元件就显示它的表达式；build 为 null 表示鼠标离开，收面板
+func show_build_expr(build: SWBuildItemDefine) -> void:
+	if _expr_panel == null:
+		return
+	if build == null:
+		hide_build_expr()
+		return
+	var text: String = EXPR_DESCRIBE.describe_build(build)
+	if text.is_empty():
+		hide_build_expr()
+		return
+	_expr_build = build
+	_expr_text = text
+	_expr_label.text = text
+	_expr_panel.visible = true
+
+func hide_build_expr() -> void:
+	_expr_build = null
+	_expr_text = ""
+	if _expr_panel != null:
+		_expr_panel.visible = false
+
+func is_build_expr_visible() -> bool:
+	return _expr_panel != null and _expr_panel.visible
+
+func get_build_expr_text() -> String:
+	return _expr_text
 
 # 把 HUD 图标用的 AtlasTexture 切到全局选中的图集
 func _apply_atlas() -> void:
