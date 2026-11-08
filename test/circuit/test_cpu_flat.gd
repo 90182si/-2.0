@@ -121,16 +121,32 @@ func test_flattened_render_tables_match() -> void:
 		var net = prog.net_list[i]
 		assert_eq(prog.net_to_slot[net], prog.net_slots[i],
 				"第 %d 项 net_list[i] 与其 slot 不匹配" % i)
-	# LED 扁平索引与 led_src_slots 展开一致
-	assert_eq(prog.led_src_offs.size(), prog.led_comps.size(), "led_src_offs 数量与 LED 数不一致")
-	assert_eq(prog.led_src_lens.size(), prog.led_comps.size(), "led_src_lens 数量与 LED 数不一致")
-	for li in prog.led_comps.size():
-		var off: int = prog.led_src_offs[li]
-		var ln: int = prog.led_src_lens[li]
-		var expect: PackedInt32Array = prog.led_src_slots[li]
-		assert_eq(ln, expect.size(), "LED %d 的 slot 数不一致" % li)
-		for k in ln:
-			assert_eq(prog.led_src_flat[off + k], expect[k], "LED %d 第 %d 个 slot 不一致" % [li, k])
+	# 灯泡分组表：组内的输入段与成员段必须与 led_src_slots / led_group_id 一致
+	assert_eq(prog.led_group_id.size(), prog.led_comps.size(), "led_group_id 数量与 LED 数不一致")
+	assert_eq(prog.led_group_prev.size(), prog.led_group_src_offs.size(), "led_group_prev 与组数不一致")
+	var covered := 0
+	for gi in prog.led_group_src_offs.size():
+		var off: int = prog.led_group_src_offs[gi]
+		var ln: int = prog.led_group_src_lens[gi]
+		assert_true(ln <= 4, "组 %d 的输入数超过 4" % gi)
+		var mo: int = prog.led_group_mem_offs[gi]
+		var mlen: int = prog.led_group_mem_lens[gi]
+		assert_gt(mlen, 0, "组 %d 没有任何成员" % gi)
+		for k in range(mo, mo + mlen):
+			var li: int = prog.led_group_members[k]
+			assert_eq(prog.led_group_id[li], gi, "灯泡 %d 的组号不符" % li)
+			var expect: PackedInt32Array = prog.led_src_slots[li]
+			assert_eq(ln, expect.size(), "组 %d 的输入数与灯泡 %d 不一致" % [gi, li])
+			for j in ln:
+				assert_eq(prog.led_group_src_flat[off + j], expect[j],
+						"组 %d 第 %d 个 slot 与灯泡 %d 不一致" % [gi, j, li])
+			covered += 1
+	assert_eq(covered, prog.led_comps.size(), "成员段未覆盖全部灯泡")
+	# slot 段已去重 + 升序：同一输入集合才算同一组（重复 slot 会让分组命中率下降）
+	for li in prog.led_src_slots.size():
+		var arr: PackedInt32Array = prog.led_src_slots[li]
+		for k in range(1, arr.size()):
+			assert_true(arr[k - 1] < arr[k], "LED %d 的 slot 段未去重/未升序" % li)
 	# 组合门扁平表：out_slots / refresh_comps / prev_level 三表等长
 	assert_eq(prog.gate_refresh_comps.size(), prog.gate_out_slots.size(), "gate_refresh_comps 与 gate_out_slots 不等长")
 	assert_eq(prog.gate_prev_level.size(), prog.gate_out_slots.size(), "gate_prev_level 与 gate_out_slots 不等长")

@@ -32,8 +32,28 @@ var enable_opt: bool = true
 # 公共子表达式消除（用户方案第一步）：同层同 (op,srcs) 的 gate 只算一次
 var enable_cse: bool = true
 
-# 编译一批建筑为 SWGateProgram；builds 里电线/无电路组件自动跳过
+# 编译入口：builds 里电线/无电路组件自动跳过。
+#
+# 两条实现，产物同一套口径（test_netlist_compile.gd 逐字段对拍）：
+#   use_netlist_path = true ：builds → SWNetlist → compile_netlist → 回接实体表（纯数据入口）
+#   use_netlist_path = false：直接读组件 pinNetMap 的老路径（默认，灰度期保守）
+# 切到网表路径的意义：编译期拓扑先落成纯整数表，之后离线工具 / 纯逻辑运行时
+# 可以用同一个 compile_netlist，不再需要一份世界实体。
+var use_netlist_path: bool = false
+
+
 func compile(builds: Array) -> SWGateProgram:
+	if use_netlist_path:
+		var ex := SWNetlistExport.new()
+		var nl: SWNetlist = ex.export_netlist(builds)
+		var prog_net: SWGateProgram = compile_netlist(nl)
+		ex.bind_program(prog_net)
+		return prog_net
+	return _compile_legacy(builds)
+
+
+# 编译一批建筑为 SWGateProgram；builds 里电线/无电路组件自动跳过
+func _compile_legacy(builds: Array) -> SWGateProgram:
 	var prog := SWGateProgram.new()
 	var comps: Array = []
 	var nets: Dictionary = {}
@@ -97,29 +117,22 @@ func compile(builds: Array) -> SWGateProgram:
 	# 回填缓存初值 -1（首拍必写一次，与 resetBuildState 后的贴图状态对齐）
 	prog.net_prev_bit.resize(net_list.size())
 	prog.net_prev_bit.fill(-1)
-	# 每个 LED 输入方向对应的 net slot（回填时按 slot 判亮灭，不走 SWNet 对象链）
+	# 每个 LED 输入方向对应的 net slot（回填时按 slot 判亮灭，不走 SWNet 对象链）。
+	# 去重 + 升序：OR 与顺序无关、重复 slot 无额外信息（一盏灯左右两口接同一根 net 很常见），
+	# 归并后「输入集合相同」才算同一组，分组命中率才高。
 	for led_comp in prog.led_comps:
 		var slots_arr := PackedInt32Array()
 		for d in 4:
 			var lnet: SWNet = led_comp.pinNetMap.get(d, null)
 			if lnet != null and net_slot.has(lnet):
 				slots_arr.append(net_slot[lnet])
-		prog.led_src_slots.append(slots_arr)
-	# LED 批量刷新扁平表：把「每 LED 读 1~4 个 slot」摊成全局一对 source/dest 数组，
-	# 回填时一趟前向扫描搞定（避免逐 LED inner loop 与 Array 取下标）。
-	#   led_src_flat = [s0, s1, ... | t0, t1, ...]  source 基址在 led_src_start
-	#   led_src_start[i] = 第 i 个 LED 的 source 段元素数（按 LED 顺序累计）
-	#   led_src_offs[i]  = 该 LED 段在 led_src_flat 里的起点
-	var src_off := PackedInt32Array()
-	var src_len := PackedInt32Array()
-	var flat_src := PackedInt32Array()
-	for slots_arr in prog.led_src_slots:
-		src_off.append(flat_src.size())
-		src_len.append(slots_arr.size())
-		flat_src.append_array(slots_arr)
-	prog.led_src_offs = src_off
-	prog.led_src_lens = src_len
-	prog.led_src_flat = flat_src
+		slots_arr.sort()
+		var uniq_slots := PackedInt32Array()
+		for s in slots_arr:
+			if uniq_slots.is_empty() or uniq_slots[uniq_slots.size() - 1] != s:
+				uniq_slots.append(s)
+		prog.led_src_slots.append(uniq_slots)
+	_build_led_groups(prog)
 	# 组合门显示刷新扁平表：每个驱动组件 → (输出 slot, 渲染组件)
 	for comp in comp_list:
 		if not comp_slot.has(comp):
@@ -148,34 +161,7 @@ func compile(builds: Array) -> SWGateProgram:
 	# 而 next_slot 是按值传进去的，外面这份副本不会增长。
 	var gate_records: Array = _build_raw(prog, comp_list, net_list, net_slot, comp_slot, next_slot)
 	prog.raw_gate_count = gate_records.size()
-
-	var t0 := Time.get_ticks_usec()
-	_compute_levels(prog, gate_records)
-	# 环上 slot 明细：既是诊断（loop_nets），也是后续任何重写（CSE / 化简器）的安全边界
-	var loop_slots: Array[bool] = []
-	loop_slots.resize(prog.slot_count)
-	loop_slots.fill(false)
-	if enable_opt:
-		# 环上 slot 统计（诊断用）：反馈环里的中间态是计数器时序的一部分，任何重写都不能动它。
-		# 无环的纯 DAG 电路（加法器等）这里会是 0，有寄存器的计数器反馈环会命中。
-		loop_slots = _detect_loops(prog, gate_records)
-		prog.loop_nets = 0
-		for s in loop_slots.size():
-			if loop_slots[s]:
-				prog.loop_nets += 1
-		# ===== 第一步：公共子表达式消除（CSE）=====
-		# 用户方案：把 (a&b)&(a&b) 里的 (a&b) 提成中间表达式 S2，只算一次。
-		# 这里在**求值层**做等价的事：同层内 (op, srcs) 完全相同的两条 gate 共用第一个结果。
-		if enable_cse:
-			_cse(prog, gate_records, loop_slots)
-	else:
-		# 关掉环检测就拿不到安全边界：全部当环处理，化简器一律不动（保守安全）
-		loop_slots.fill(true)
-	prog.loop_slot_flags.resize(loop_slots.size())
-	for s in loop_slots.size():
-		prog.loop_slot_flags[s] = 1 if loop_slots[s] else 0
-	prog.opt_usec = Time.get_ticks_usec() - t0
-	_flatten(prog, gate_records)
+	_finish(prog, gate_records)
 	return prog
 
 
@@ -531,3 +517,232 @@ func _compute_levels(prog: SWGateProgram, records: Array) -> void:
 			slot_level[rec["dst"]] = max_level
 			assigned[gi] = true
 	prog.level_count = max_level + 1
+
+
+# ==========================================================================
+# 灯泡分组（两条编译路径共用）：输入 slot 集合完全相同的灯泡亮灭必然同步
+# 编译期建好「组 → 输入段 + 成员段」三张平坦表，回填与 GPU 建表都只走下标访问。
+# ==========================================================================
+func _build_led_groups(prog: SWGateProgram) -> void:
+	var gid_of_key: Dictionary = {}
+	var gid_list := PackedInt32Array()
+	var g_src_off := PackedInt32Array()
+	var g_src_len := PackedInt32Array()
+	var g_src_flat := PackedInt32Array()
+	# 第一遍：按输入集合去重分组，记下每组的输入段与「第 i 盏灯属于哪组」
+	for li in prog.led_src_slots.size():
+		var led_srcs: PackedInt32Array = prog.led_src_slots[li]
+		var key := "|"
+		for s in led_srcs:
+			key += str(s) + ","
+		var gid: int = gid_of_key.get(key, -1)
+		if gid < 0:
+			gid = g_src_off.size()
+			gid_of_key[key] = gid
+			g_src_off.append(g_src_flat.size())
+			g_src_len.append(led_srcs.size())
+			g_src_flat.append_array(led_srcs)
+		gid_list.append(gid)
+	# 第二遍：成员段用「计数 + 前缀和 + 游标」铺平。
+	# 不能在第一遍直接 append li：不同组的灯泡会交错出现（组号如 0,1,0,1），
+	# 那样组的成员段就不连续，mem_off/mem_len 会扫到别的组的灯泡。
+	var g_mem_len := PackedInt32Array()
+	g_mem_len.resize(g_src_off.size())
+	g_mem_len.fill(0)
+	for gid in gid_list:
+		g_mem_len[gid] = g_mem_len[gid] + 1
+	var g_mem_off := PackedInt32Array()
+	var cursor := 0
+	for gi in g_src_off.size():
+		g_mem_off.append(cursor)
+		cursor += g_mem_len[gi]
+	var g_members := PackedInt32Array()
+	g_members.resize(gid_list.size())
+	var fill := g_mem_off.duplicate()
+	for li in gid_list.size():
+		var gid: int = gid_list[li]
+		g_members[fill[gid]] = li
+		fill[gid] = fill[gid] + 1
+	prog.led_group_id = gid_list
+	prog.led_group_src_flat = g_src_flat
+	prog.led_group_src_offs = g_src_off
+	prog.led_group_src_lens = g_src_len
+	prog.led_group_members = g_members
+	prog.led_group_mem_offs = g_mem_off
+	prog.led_group_mem_lens = g_mem_len
+	prog.led_group_prev.resize(g_src_off.size())
+	prog.led_group_prev.fill(-1)
+
+
+# ==========================================================================
+# 收尾（两条编译路径共用）：拓扑层 → 环检测 → CSE → 展平
+# ==========================================================================
+func _finish(prog: SWGateProgram, gate_records: Array) -> void:
+	var t0 := Time.get_ticks_usec()
+	_compute_levels(prog, gate_records)
+	# 环上 slot 明细：既是诊断（loop_nets），也是后续任何重写（CSE / 化简器）的安全边界
+	var loop_slots: Array[bool] = []
+	loop_slots.resize(prog.slot_count)
+	loop_slots.fill(false)
+	if enable_opt:
+		# 环上 slot 统计（诊断用）：反馈环里的中间态是计数器时序的一部分，任何重写都不能动它。
+		# 无环的纯 DAG 电路（加法器等）这里会是 0，有寄存器的计数器反馈环会命中。
+		loop_slots = _detect_loops(prog, gate_records)
+		prog.loop_nets = 0
+		for s in loop_slots.size():
+			if loop_slots[s]:
+				prog.loop_nets += 1
+		# ===== 第一步：公共子表达式消除（CSE）=====
+		# 用户方案：把 (a&b)&(a&b) 里的 (a&b) 提成中间表达式 S2，只算一次。
+		# 这里在**求值层**做等价的事：同层内 (op, srcs) 完全相同的两条 gate 共用第一个结果。
+		if enable_cse:
+			_cse(prog, gate_records, loop_slots)
+	else:
+		# 关掉环检测就拿不到安全边界：全部当环处理，化简器一律不动（保守安全）
+		loop_slots.fill(true)
+	prog.loop_slot_flags.resize(loop_slots.size())
+	for s in loop_slots.size():
+		prog.loop_slot_flags[s] = 1 if loop_slots[s] else 0
+	prog.opt_usec = Time.get_ticks_usec() - t0
+	_flatten(prog, gate_records)
+
+
+# ==========================================================================
+# 网表 → prog（纯数据入口）
+#
+# 只读 SWNetlist 的整数表，全程不碰任何 SWBuild* / SWNet 对象。
+# 与 _compile_legacy 的差别只有「拓扑从哪读」：那里是组件 pinNetMap / net._driverComps，
+# 这里是 dev_pins / net_driver_flat。其余（slot 分配顺序、LED 分组、层/环/CSE/展平）
+# 走同一套函数，产物逐字段一致（由 test_netlist_compile.gd 对拍）。
+#
+# 产物里 net_list / all_comps / *_comps 这些**对象表留空**：
+# 需要表现层的调用方自己走 SWNetlistExport.bind_program 回接；
+# 纯逻辑运行时只读 slot 空间，完全不需要它们。
+# ==========================================================================
+func compile_netlist(nl: SWNetlist) -> SWGateProgram:
+	var prog := SWGateProgram.new()
+	var dev_n: int = nl.dev_count()
+	var net_n: int = nl.net_count()
+	# net slot：网表的 net 已按 netId 升序，下标即 slot（net_slots[i] == i）
+	prog.net_count = net_n
+	prog.net_slots.resize(net_n)
+	prog.net_prev_bit.resize(net_n)
+	for i in net_n:
+		prog.net_id_to_slot[nl.net_ids[i]] = i
+		prog.net_slots[i] = i
+		prog.net_prev_bit[i] = -1
+	# comp slot：只给「驱动了某 net」的元件（与 _is_driver 同判据）
+	var dev_slots := PackedInt32Array()
+	dev_slots.resize(dev_n)
+	dev_slots.fill(-1)
+	var next_slot: int = net_n
+	for dev in dev_n:
+		if _nl_is_driver(nl, dev):
+			dev_slots[dev] = next_slot
+			next_slot += 1
+	prog.dev_slots = dev_slots
+	prog.comp_count = next_slot - net_n
+	# 灯泡输入 slot（去重 + 升序，与实体路径同口径：OR 与顺序无关）
+	for k in nl.led_devs.size():
+		var ld: int = nl.led_devs[k]
+		var arr := PackedInt32Array()
+		for d in 4:
+			var lslot: int = _nl_net_slot(prog, nl.pin_net(ld, d))
+			if lslot >= 0:
+				arr.append(lslot)
+		arr.sort()
+		var uniq := PackedInt32Array()
+		for s in arr:
+			if uniq.is_empty() or uniq[uniq.size() - 1] != s:
+				uniq.append(s)
+		prog.led_src_slots.append(uniq)
+		prog.led_devs.append(ld)
+	_build_led_groups(prog)
+	# 显示刷新三张表（顺序 = 元件序，与实体路径一致）
+	for dev in dev_n:
+		var kind: int = nl.dev_kind[dev]
+		if kind != SWNetlist.DEV_REG:
+			prog.display_devs.append(dev)
+		if dev_slots[dev] < 0:
+			continue
+		if kind == SWNetlist.DEV_REG or kind == SWNetlist.DEV_SOURCE:
+			continue
+		prog.gate_out_slots.append(dev_slots[dev])
+		prog.gate_devs.append(dev)
+		prog.gate_prev_level.append(-1)
+		prog.gate_display_invert.append(1 if kind == SWNetlist.DEV_NOT else 0)
+	for dev in dev_n:
+		var kind2: int = nl.dev_kind[dev]
+		if kind2 == SWNetlist.DEV_REG or kind2 == SWNetlist.DEV_LED:
+			continue
+		if dev_slots[dev] >= 0:
+			continue
+		prog.fallback_display_devs.append(dev)
+	# gate 记录：元件驱动（源/寄存器只登记 slot，不产 gate）+ 每根 net 的线与
+	var gate_records: Array = []
+	for dev in dev_n:
+		var slot: int = dev_slots[dev]
+		if slot < 0:
+			continue
+		var kind3: int = nl.dev_kind[dev]
+		if kind3 == SWNetlist.DEV_SOURCE:
+			prog.input_slots.append(slot)
+			prog.input_devs.append(dev)
+			continue
+		if kind3 == SWNetlist.DEV_REG:
+			prog.reg_slots.append(slot)
+			prog.reg_devs.append(dev)
+			prog.reg_clk_slots.append(_nl_net_slot(prog, nl.dev_clk_net[dev]))
+			prog.reg_d_slots.append(_nl_net_slot(prog, nl.dev_d_net[dev]))
+			continue
+		var srcs: Array[int] = []
+		var im: int = nl.dev_in_mask[dev]
+		for d in 4:
+			if (im & (1 << d)) != 0:
+				var s_in: int = _nl_net_slot(prog, nl.pin_net(dev, d))
+				if s_in >= 0:
+					srcs.append(s_in)
+		var op: int = SWGateProgram.OP_NOT if kind3 == SWNetlist.DEV_NOT else SWGateProgram.OP_AND
+		gate_records.append({"op": op, "dst": slot, "srcs": srcs, "synthetic": false})
+	for ni in net_n:
+		var dst: int = ni
+		var drv: Array[int] = []
+		var e: int = nl.net_driver_offs[ni + 1]
+		for k in range(nl.net_driver_offs[ni], e):
+			var dv: int = nl.net_driver_flat[k]
+			if dev_slots[dv] >= 0:
+				drv.append(dev_slots[dv])
+		if drv.size() <= 4:
+			gate_records.append({"op": SWGateProgram.OP_AND, "dst": dst, "srcs": drv, "synthetic": false})
+		else:
+			# >4 驱动折叠成 AND 链（中间 slot 追加在末尾，与实体路径同一编号顺序）
+			var pending: Array[int] = drv.duplicate()
+			while pending.size() > 4:
+				var batch: Array[int] = []
+				for i in 4:
+					batch.append(pending.pop_front())
+				var tmp: int = next_slot
+				next_slot += 1
+				gate_records.append({"op": SWGateProgram.OP_AND, "dst": tmp, "srcs": batch, "synthetic": true})
+				pending.append(tmp)
+			gate_records.append({"op": SWGateProgram.OP_AND, "dst": dst, "srcs": pending, "synthetic": false})
+	prog.raw_gate_count = gate_records.size()
+	prog.slot_count = next_slot
+	_finish(prog, gate_records)
+	return prog
+
+
+# 网表元件是否驱动了某根受本电路关注的 net（与 _is_driver 同判据）
+func _nl_is_driver(nl: SWNetlist, dev: int) -> bool:
+	var om: int = nl.dev_out_mask[dev]
+	for d in 4:
+		if (om & (1 << d)) != 0:
+			var nid: int = nl.pin_net(dev, d)
+			if nid >= 0 and nl.net_id_to_index.has(nid):
+				return true
+	return false
+
+
+# netId → net slot（-1 = 不在本电路里）
+func _nl_net_slot(prog: SWGateProgram, net_id: int) -> int:
+	return int(prog.net_id_to_slot.get(net_id, -1))

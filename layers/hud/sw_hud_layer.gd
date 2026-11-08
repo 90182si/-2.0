@@ -125,9 +125,18 @@ func _build_expr_panel() -> void:
 	panel.add_child(_expr_label)
 	_expr_panel = panel
 
+# 表达式面板是否允许显示：与性能面板的「建筑信息」开关联动，
+# 关掉建筑信息时右上角也不该再冒出一个同样面积的表达式面板
+var expr_enabled:bool = true
+
+func set_expr_enabled(enabled:bool) -> void:
+	expr_enabled = enabled
+	if not enabled:
+		hide_build_expr()
+
 # 悬浮到某个元件就显示它的表达式；build 为 null 表示鼠标离开，收面板
 func show_build_expr(build: SWBuildItemDefine) -> void:
-	if _expr_panel == null:
+	if _expr_panel == null or not expr_enabled:
 		return
 	if build == null:
 		hide_build_expr()

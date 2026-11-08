@@ -131,10 +131,14 @@ func set_switch(grid_pos: Vector2i, on: bool) -> bool:
 
 # 读取某位置建筑物当前的信号状态（CircuitSignal）。
 # 对灯泡(SWBuildLed)而言，signal_state 即其亮灭：HIGH=亮，LOW=灭。
+# 灯泡走 currentSignal() 现场推导：GPU LED resolve 下 CPU 不再遍历灯泡，
+# signal_state 只在 CPU 路径更新，直接读会在带渲染设备跑测试时拿到旧值。
 func get_signal_state(grid_pos: Vector2i) -> SwDefine.CircuitSignal:
 	var build := get_build(grid_pos)
 	if build == null:
 		return SwDefine.CircuitSignal.NONE
+	if build is SWBuildLed:
+		return (build as SWBuildLed).currentSignal()
 	return build.signal_state as SwDefine.CircuitSignal
 
 func _notify_signal_changed(build: SWBuildItemDefine) -> void:

@@ -28,3 +28,10 @@ func on_hover_build_changed(build:SWBuildItemDefine) -> void:
 	if hudLayer == null or not enable:
 		return
 	hudLayer.show_build_expr(build)
+
+#「建筑信息」开关同时控制右上角表达式面板的显隐
+func set_expr_enabled(enabled:bool) -> void:
+	var hudLayer := view as SWHudLayer
+	if hudLayer == null:
+		return
+	hudLayer.set_expr_enabled(enabled)

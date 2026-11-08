@@ -10,6 +10,19 @@ func getCircuitCompoent() -> SWBuildCompoentCircuit:
 func rotOnce() -> void:
 	pass
 
+# 当前亮灭（现场推导）= 任一输入 net 为高。
+# GPU LED resolve 下亮灭由 compute shader 算进信号纹理，CPU 不再遍历灯泡，
+# 所以 signal_state 可能滞后；低频调用方（存档/探针/测试）用这个取准确值。
+func currentSignal() -> SwDefine.CircuitSignal:
+	var comp := getCircuitCompoent() as SWBuildCompoentCircuitLed
+	if comp == null:
+		return signal_state as SwDefine.CircuitSignal
+	for dir in 4:
+		var net: SWNet = comp.pinNetMap.get(dir, null)
+		if net != null and net.curSignal == SwDefine.CircuitSignal.HIGH:
+			return SwDefine.CircuitSignal.HIGH
+	return SwDefine.CircuitSignal.LOW
+
 func buildStateChanged(signalValue:SwDefine.CircuitSignal) -> void:
 	super.buildStateChanged(signalValue)
 	# 亮灭已 shader 化：只写信号纹理帧槽选 on/off 帧，实例缓冲零写入。

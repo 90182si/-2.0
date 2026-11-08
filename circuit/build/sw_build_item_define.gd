@@ -13,15 +13,33 @@ var rotation:SwDefine.SW_Dir = 0:
 		#旋转会改变部件朝向，直接失效渲染缓存
 		if _renderableCompoent:
 			_renderableCompoent.markRenderPartsDirty()
-var compoent:Dictionary[SwDefine.BuildCompoentType,SWBuildCompoent] = {}
 #性能优化：缓存 CIRCUIT 组件引用，避免热点端口判断反复走 getCompoent 字典查找
 var _circuitCompoent:SWBuildCompoentCircuit = null
 var _renderableCompoent:SWBuildCompoentRenderable = null
+# 电路组件实际类型：用于 getCompoent 判定「是不是同一个组件」，避免多类型共享错实例
+var _circuitCompoentType:int = -1
+# 同一建筑请求第二种组件时的兵分：正常每种建筑只有一份电路组件，
+# 所以这个字典只有在极端情况下才会被分配（空字典不占内存）
+var _extraCompoent:Dictionary = {}
 
+# 组件获取（内存优化）：不再为每个建筑分配一个 compoent 字典。
+# 17 万建筑 × 一个 2 条目的 Dictionary（~150B）纯容器就是几十 MB，
+# 而实际上每个建筑只会用到「一份电路组件 + 一份渲染组件」。
 func getCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCompoent:
-	if not compoent.has(compoentType):
-		compoent[compoentType] = SwCommon.CreateCompoent(compoentType)
-	return compoent[compoentType]
+	if compoentType == SwDefine.BuildCompoentType.RENDER_ABLE:
+		if _renderableCompoent == null:
+			_renderableCompoent = SwCommon.CreateCompoent(compoentType) as SWBuildCompoentRenderable
+		return _renderableCompoent
+	if _circuitCompoent == null:
+		_circuitCompoent = SwCommon.CreateCompoent(compoentType) as SWBuildCompoentCircuit
+		_circuitCompoentType = compoentType
+		return _circuitCompoent
+	if _circuitCompoentType == compoentType:
+		return _circuitCompoent
+	# 同一建筑请求第二种电路组件（当前没有这种建筑类型）：退到懒分配字典，不共享错类型
+	if not _extraCompoent.has(compoentType):
+		_extraCompoent[compoentType] = SwCommon.CreateCompoent(compoentType)
+	return _extraCompoent[compoentType]
 func getCircuitCompoent() -> SWBuildCompoentCircuit:
 	if _circuitCompoent == null:
 		_circuitCompoent = getCompoent(SwDefine.BuildCompoentType.CIRCUIT) as SWBuildCompoentCircuit

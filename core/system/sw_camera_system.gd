@@ -25,9 +25,11 @@ func handle_input(event:InputEvent) -> bool:
 		var vec:Vector2 = Vector2(0,0)
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			vec.y = 1
+			SWCamera2D.mark_view_moving()
 			_camera._on_zoomCom_zoom(vec)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			vec.y = -1
+			SWCamera2D.mark_view_moving()
 			_camera._on_zoomCom_zoom(vec)
 		elif event.button_index == MOUSE_BUTTON_MIDDLE:
 			_middleButtonPressed = event.pressed
@@ -35,6 +37,7 @@ func handle_input(event:InputEvent) -> bool:
 		if _middleButtonPressed:
 			var vec:Vector2 = -event.relative
 			if vec.length() > 0:
+				SWCamera2D.mark_view_moving()
 				_camera._on_moveCom_moveByMouse(vec)
 	return false
 var _target_velocity := Vector2.ZERO
@@ -78,6 +81,12 @@ func frame(_delta:float) -> void:
 		_current_velocity = Vector2.ZERO
 	
 	# 计算实际移动量
+	if _camera == null:
+		return
 	var vec = _current_velocity * _delta
 	if vec.length()>0:
+		SWCamera2D.mark_view_moving()
 		_camera._on_moveCom_move(vec)
+	# 帧末统一刷新视口：上面只累加逻辑位移，中键拖动的多个鼠标事件也攒在一起，
+	# 每帧最多过一遍 4 个 layer 的视口刷新流程
+	_camera.flush_view_update()

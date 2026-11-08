@@ -51,6 +51,17 @@ static func DelSWChunkDataObject(chunkData:SwDefine.SWDrawChunkData) -> void:
 	var used_pool := _get_pool(chunkDataObjectArr, mode)
 	var del_pool := _get_pool(delChunkDataObjectArr, mode)
 	used_pool.erase(chunkData)
+	# 池不设上限的话，长时间缩放/跳转会让空闲池无限长大：每个区块节点除了节点本身，
+	# 还带着一个 MultiMesh 实例缓冲（每块几十 KB），上千个就是几十 MB 纯闲置内存。
+	# 超过预热容量就直接销毁，下次需要时重新 new。
+	if del_pool.size() >= max_chunk_pool:
+		if chunkData.mesh_instance != null:
+			chunkData.mesh_instance.queue_free()
+		return
+	# 归还时释放 CPU 侧的烘焙结果（_cpuBuffer + 槽位表）：进池节点的 builtVersion 被置 -1，
+	# 下次取出必定重走 drawMap 整块重建，留着 buffer 只是白占内存。
+	if chunkData.mesh_instance != null:
+		chunkData.mesh_instance.freeCpuBuffer()
 	del_pool[chunkData] = true
 
 static func ClearSWChunkDataObject() -> void:

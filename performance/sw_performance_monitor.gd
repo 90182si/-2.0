@@ -50,6 +50,8 @@ var _tick_check: CheckButton = null
 var _tick_pending: int = -1
 # LOD 级别一行：图集精度档（SwAtlas）/ 内容简化档（区块烘培）/ 相机缩放档（触发源）
 var _lod_label: Label = null
+# 视口移动速度一行：世界单位/秒 + 屏幕像素/秒 + 低速通知阈值（每帧刷新，瞬时值即读数）
+var _speed_label: Label = null
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -72,6 +74,7 @@ func _ready() -> void:
 	_build_follow_check()
 	_build_tick_check()
 	_build_lod_label()
+	_build_speed_label()
 	if log_btn != null and crash_log_viewer != null:
 		log_btn.pressed.connect(_on_log_btn_pressed)
 		crash_log_viewer.visibility_changed.connect(_on_crash_log_viewer_visibility_changed)
@@ -91,6 +94,7 @@ func _process(delta: float) -> void:
 	fps_label.text = "FPS: %.1f  PhysFPS: %s/%d  (Process: %.2f ms | Physics: %.2f ms)" % [
 		fps, phys_fps_text, Engine.physics_ticks_per_second, process_ms, physics_ms]
 	_set_fps_label_color(fps_label, fps)
+	_update_speed_label()
 
 	# 内存 / 对象 / 渲染 按间隔更新，避免每帧读大量 Monitor
 	_stats_timer += delta
@@ -289,6 +293,15 @@ func _on_hover_info_toggled(toggled_on: bool) -> void:
 	_tooltip_enabled = toggled_on
 	if not toggled_on and build_info_label != null:
 		build_info_label.visible = false
+	# 表达式面板跟着同一个开关：关掉建筑信息时右上角也不该再冒出表达式
+	var lm := get_parent().get_node_or_null("SWLayerManager") as SWLayerManager
+	if lm == null or lm.hudSystem == null:
+		return
+	lm.hudSystem.set_expr_enabled(toggled_on)
+	# 重新打开时把当前悬停元件的表达式补推一次：
+	# 悬停目标没变时不会发信号，否则得先把鼠标移开再移回来才看得到
+	if toggled_on and lm.holdSystem != null:
+		lm.hudSystem.on_hover_build_changed(lm.holdSystem.get_hover_build())
 
 
 ## 建筑层系统：时钟开关与电路控制都经它取。
@@ -380,6 +393,40 @@ func _build_lod_label() -> void:
 	#放到 FPS 之后：LOD 是统计读数，不该跟下面一排开关混在一起
 	if fps_label != null:
 		box.move_child(_lod_label, fps_label.get_index() + 1)
+
+
+## 面板上的「视口速度」：世界单位/秒与屏幕像素/秒（后者才是「画面滑得多快」的直观量）
+func _build_speed_label() -> void:
+	var box := get_node_or_null("StatsContainer/StatsDisplay")
+	if box == null:
+		return
+	_speed_label = Label.new()
+	_speed_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_speed_label.tooltip_text = "低于阈值时不触发 layer 的 on_view_rect_changed（区块格枚举整个跳过）"
+	_speed_label.text = "视口速度: -"
+	box.add_child(_speed_label)
+	#插到 FPS 之后、LOD 之前：都是每帧刷新的读数
+	if fps_label != null:
+		box.move_child(_speed_label, fps_label.get_index() + 1)
+
+
+func _update_speed_label() -> void:
+	if _speed_label == null:
+		return
+	var cam := get_viewport().get_camera_2d() as SWCamera2D
+	if cam == null:
+		_speed_label.text = "视口速度: -"
+		return
+	#低于阈值 = 当前这帧不会通知 layer，灰度显示以便一眼区分
+	var below: bool = cam.view_speed < cam.view_speed_min
+	if below:
+		_speed_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	else:
+		_speed_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	_speed_label.text = "视口速度: %s (%.0f px/s)  阈值 %s%s" % [
+			_format_integer(int(cam.view_speed)), cam.view_speed_px,
+			_format_integer(int(cam.view_speed_min)),
+			"  已跳过" if below else ""]
 
 
 ## 手持为空且鼠标悬停在建筑物上时，显示建筑物基本信息
@@ -560,6 +607,8 @@ func expandMonitor(expand: bool) -> void:
 		hover_info_check.visible = expand
 	if not expand and build_info_label != null:
 		build_info_label.visible = false
+	if _speed_label != null:
+		_speed_label.visible = expand
 	if stats_container != null:
 		stats_container.custom_minimum_size = Vector2.ZERO
 		if expand:

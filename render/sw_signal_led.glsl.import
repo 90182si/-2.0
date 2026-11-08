@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://buhmhjw86aoji"
+path="res://.godot/imported/sw_signal_led.glsl-e355c3ae747ec28f52ca158741390cdf.res"
+
+[deps]
+
+source_file="res://render/sw_signal_led.glsl"
+dest_files=["res://.godot/imported/sw_signal_led.glsl-e355c3ae747ec28f52ca158741390cdf.res"]
+
+[params]
+

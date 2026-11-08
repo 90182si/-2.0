@@ -144,6 +144,10 @@ func _on_load_confirmed(name: String) -> void:
 	#恢复视口（缩放与偏移）
 	var camera := get_viewport().get_camera_2d() as SWCamera2D
 	SWSaveManager.apply_viewport(camera, data)
+	#存档 JSON 树立即释放：几十 MB 的文本解析出来的 Dictionary/Array 树大概是它体积的
+	#4~8 倍，而且里面有上万个嵌套 pos/state 子字典。建筑已经建完，留着只是白占内存。
+	#协程局部变量会活到函数返回，这里显式清空让内存在玩家开局前就退回去。
+	data.clear()
 	_hide_progress()
 	get_tree().paused = false
 	print("加载存档成功: ", name)

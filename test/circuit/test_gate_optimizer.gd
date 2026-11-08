@@ -1,7 +1,7 @@
 extends GutTest
 # gate 表化简器（SWGateOptimizer）契约：
 #   1. slot 空间、gate 条数、每条 dst / 拓扑层一律不变（slot 编号是回填契约，
-#      删 slot 或重排会让 net_slots / led_src_flat / gate_out_slots 全指向错的电平）；
+#      删 slot 或重排会让 net_slots / led_group_src_flat / gate_out_slots 全指向错的电平）；
 #   2. NOT(NOT(x)) → ALIAS(x)（用户点名的双非门抵消）；
 #   3. AND(x) → ALIAS(x)（单输入线与就是直通）、AND(a, a) → AND(a)（去重）；
 #   4. 线与里出现恒 0 项 → AND()（常量 0）；

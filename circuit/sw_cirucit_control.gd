@@ -27,7 +27,7 @@ var _shared_rd: RenderingDevice = null
 var _rd_probe_done: bool = false
 # gate 规模路由的预编译缓存：SWCircuitData -> SWGateProgram
 var _compiled_progs: Dictionary = {}
-# 化简版 gate 表缓存：SWCircuitData -> SWGateProgram（见 use_simplified_eval）
+# 化简后 gate 表缓存：SWCircuitData -> SWGateProgram（见 use_simplified_eval）
 var _simplified_progs: Dictionary = {}
 # 化简器（class_name 在 headless 下可能还没进 class cache，统一用 preload）
 const GATE_OPTIMIZER := preload("res://circuit/sw_gate_optimizer.gd")
@@ -86,8 +86,8 @@ func find1(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> Array[
 #从一栋建筑出发，把「会被电路连成一片的东西」整组收进本轮重建集合：
 #起点 → 起点所在电路的全员 → 它们的邻居 → 邻居所在电路的全员 → … 收敛到不动点。
 #必须收敛：电路一旦被劈成两半（成员分散在多个 circuit 里），只展开一层邻居的电路
-#只能覆盖其中一半，另一半继续挂着旧 circuit，成为 createCircuitRange BFS 里的屏障
-#（build.circuit != null 直接 continue），于是永远合并不回去 ——
+#只能覆盖其中一半，另一半继续挂着自己的 circuit，成为 createCircuitRange BFS 里的屏障
+#（build.circuit != null 直接 continue），于是永远合并不回来 ——
 #现场就是「同一根 net 上的灯泡和开关，hover 出两个电路 id」。
 func _expandAffected(start:SWBuildItemDefine) -> void:
 	if start == null:
@@ -146,6 +146,7 @@ func dropCircuits(forDelCircuit:Dictionary) -> void:
 		_simplified_progs.erase(circuit)
 		_cpu_backends.erase(circuit)
 		_gpu_backends.erase(circuit)
+		_pure_runtimes.erase(circuit)
 
 # 删除善后：算「真正需要重建的种子」，而不是把被删的建筑当种子。
 # 为什么不能直接拿被删建筑当种子：find1 会对每个种子做一次邻居展开（
@@ -165,12 +166,12 @@ func collectRemoveSeeds(removed:Array[SWBuildItemDefine]) -> Array[SWBuildItemDe
 	collectRemoveSeedsStep(state, removed, 0, removed.size())
 	return endRemoveSeeds(state)
 
-# 分帧版本的种子收集：逐个查 4 邻居 + 遍历原电路成员本身就是上百毫秒的主线程活，
+# 分帧版本的种子收集：逐个查 4 邻居 + 遍历原电路成员本身就是上百毫秒的主线程工作，
 # 所以拆成「建状态 → 按区间喂 → 收尾」三段，供删除善后按时间预算分批调用。
 func beginRemoveSeeds() -> Dictionary:
 	var seeds:Array[SWBuildItemDefine] = []
 	# seen 按建筑对象去重；seenPos 按坐标去重：同一格会被相邻的 4 个被删建筑各查一次
-	#（7w 元件是 28w 次查表，按坐标去重后降到 7w 次）
+	#（7w 元件 → 28w 次查表，按坐标去重后降到 7w 次）
 	# seenCircuit 按电路去重，这是最要紧的一条：一条电路的 buildArr 可能有上万个成员，
 	# 7w 个被删元件都挂在同一个电路上时，逐栋扫 buildArr 就是 7w × 上万 = 数十亿次
 	#（「删除 7w 元件花了五个小时」的根因就在这里）。每个电路只扫一遍，结果完全一样。
@@ -224,7 +225,7 @@ func _add_live_member(build:SWBuildItemDefine, seeds:Array[SWBuildItemDefine],
 	seen[build] = true
 	seeds.append(build)
 
-# 被删建筑身上的电路引用要显式摘掉：它们已经不在场，没人会替它们 reset，
+# 被删建筑身上的电路引用要显式摘掉：它们已经不在场，没人会替它们 reset。
 # 返回的集合会被调用方 dropCircuits，否则 circuits / 编译产物 / 求值后端
 # 会跟着每一批删除一路淤积（删 7w 元件就是几万个泄漏项）。
 # 必须在 collectRemoveSeeds + updateBuildCircuit 之后调：
@@ -303,7 +304,7 @@ func createCircuitRange(builds:Array[SWBuildItemDefine], from:int = 0, to:int = 
 					#dir 是「本栋→邻居」的方向，查邻居自己的 net 得用它的反向口；
 					#而桥/隧道的 net 是按物理口存的（隧道只有 rotation+1/+3 两个口有 net），
 					#方向差一格就查成 null、BFS 直接断在这里，退化成「取任意一根非空 net」：
-					#对电路划分足够，同一座桥的两半本来就该在同一个 circuit 里
+					#对电路划分足够，同一座桥的两半本来就该在同一个 circuit 里。
 					var net:SWNet = circuit.pinNetMap.get(SwDefine.getAntiDir(dir),null)
 					if not net:
 						for d in 4:
@@ -339,8 +340,8 @@ func createCircuitRange(builds:Array[SWBuildItemDefine], from:int = 0, to:int = 
 		var buildGroup = visited.keys()
 		var cir:SwDefine.SWCircuitData = SwDefine.SWCircuitData.new()
 		cir.buildArr = buildGroup
-		# 视野裁剪用的包围盒（世界像素）：建组时顺手算一次。
-		# 电路一旦建成就不再增删成员（任何编辑都会整条 dropCircuits 重建），所以不会失效。
+		# 视野裁剪用的包围盒（世界像素）：建组时顺手算一次，
+		# 电路一旦建成就不再增删成员（任何编辑都会整批 dropCircuits 重建），所以不会失效。
 		var cullMin := Vector2(INF, INF)
 		var cullMax := Vector2(-INF, -INF)
 		var cellSize := Vector2(SwDefine.GRID_SIZE.x, SwDefine.GRID_SIZE.y)
@@ -375,11 +376,11 @@ func createCircuitRange(builds:Array[SWBuildItemDefine], from:int = 0, to:int = 
 func evaluateCircuits(builds:Array[SWBuildItemDefine]) -> void:
 	#重建后的首轮求值优先走后端（GPU/CPU 数据驱动）：旧组件链是「逐组件递归解析」，
 	#大存档（16x 计数器等）在读档/编辑收尾页能卡出数百 ms 单帧；后端是扁平数组单循环 + 回填，
-	#语义一致（寄存器首轮 lastClk<0 只对齐不采样）。全量首轮时 net 都是新建（curSignal=NONE），
+	#语义一致（寄存器首拍 lastClk<0 只对齐不采样）。全量首轮时 net 都是新建（curSignal=NONE），
 	#回填必然按「变化」通知到每个负载，显示刷新覆盖面与旧路径（每元件求值一次）一致
 	if (cpu_backends_enabled or gpu_backend_enabled) and _eval_backends(builds):
 		return
-	#重建后的首轮求值：源先落一次，再让其余元件（浮空门、未接时钟的寄存器）各求值一次。
+	#重建后的首轮求值：源先落一次，再让其余元件（浮空门、未接时钟的寄存器）各求值一次，
 	#求值时按源输入递归解析上游，一轮足够，不需要反复跑到静止
 	_curEpoch = SwCommon.evalEpoch
 	_queue.clear()
@@ -419,7 +420,7 @@ func _compOut(comp:SWBuildCompoentCircuit) -> int:
 	#占位用上一轮电平：组合环回读自己的输出时看到的是上一轮值，不会形成无限递归
 	comp.evalOut = prevOut
 	comp.evalOut = comp.evaluate()
-	#只有显示电平或输出电平真的变了才进入重绘列表，否则整块重绘会被无谓拉满
+	#只有显示电平或输出电平真的变了才进入重绘列表，否则整块重绘会被无谓拉起
 	if _collectingNotify and (comp.evalOut != prevOut or comp.buildRef.signal_state != prevSig):
 		_notify[comp] = true
 	_publishComp(comp)
@@ -445,7 +446,7 @@ func _driverOut(comp:SWBuildCompoentCircuit) -> int:
 	return _compOut(comp)
 
 #net 最终电平 = 所有驱动门输出的线与（无驱动为低）。
-#按轮缓存：同一轮内重复读取不再重算驱动锥
+#按轮缓存：同一轮内重复读取不再重算驱动。
 func resolveNetSignal(net:SWNet) -> SwDefine.CircuitSignal:
 	if net == null:
 		return SwDefine.CircuitSignal.NONE
@@ -466,7 +467,7 @@ func prepareRebuild() -> void:
 	#开启新的求值轮次，令上一轮的表达式缓存失效
 	SwCommon.NextEvalEpoch()
 	_neighborsCache.clear()
-	#重建期由调用方按返回的建筑列表整体重绘，这里不保留 net 区块脏集
+	#重建期由调用方按返回的建筑列表整体重绘，这里不保存 net 区块脏集
 	_dirtyChunks.clear()
 	_dirtyNets.clear()
 	_find1BuildMap.clear()
@@ -503,22 +504,53 @@ func _assignNetIds(builds:Array[SWBuildItemDefine]) -> void:
 				continue
 			net.netId = counter
 			counter += 1
-			# 调色板索引：跟所连 net 的线别（wireGroup.wireName），shader 用它查低/高绝对色
+			# 调色板索引：跟所有 net 的线别（wireGroup.wireName），shader 用它查低/高绝对色
 			var wireName:String = net.wireGroup.wireName if net.wireGroup != null else ""
 			net.paletteId = SWSignalTexture.palette_id_for(wireName)
 			if _netById.size() <= net.netId:
 				_netById.resize(net.netId + 1)
 			_netById[net.netId] = net
-			# 新 net 先写一次初始电平（求值前的默认值→LOW），防几何重建后首帧读到旧 texel
+			# 给 net 先写一次初始电平（求值前的默认值→LOW），防几何重建后首帧读到空 texel
 			if tex != null:
 				tex.set_level(net.netId, net.curSignal == SwDefine.CircuitSignal.HIGH)
 				net.paintedSignal = net.curSignal
 	_netIdCounter = counter
 
-# 全量清除/加载时调用：netId 计数整体作废重建（防上一会话的 id 与新 net 冲突）
+# 全量清除/加载时调用：netId 计数整体作废重建（防上一会话的 id 与新 net 冲突）。
 func resetNetIdCounter() -> void:
 	_netIdCounter = 0
 	_netById.clear()
+
+# 全量清图（换存档/清空地图）时调用：把上一份世界的电路与全部编译产物一起释放。
+# 只清 circuits 是不够的 —— _compiled_progs/_simplified_progs/_cpu_backends/_gpu_backends
+# 都以电路对象为 key，会把整套 gate 表与求值引擎钉在内存里（64x 寄存器存档一套就是
+# 几个 PackedArray × slot 数），而且电路的 buildArr 还反引用着上一份世界全部的建筑，
+# 不清就会随每次读档一路累加：三份存档 = 三份世界 + 三套程序，这是内存冲到 2GB 的主因。
+# 求值引擎（SWSignalEvalGPU/SWSignalTextureGPU）都实现了 NOTIFICATION_PREDELETE 释放 RID，
+# 直接丢掉引用即可，不用 free_rid 后重复释放。
+func clearAllCircuits() -> void:
+	circuits.clear()
+	_compiled_progs.clear()
+	_simplified_progs.clear()
+	_cpu_backends.clear()
+	_gpu_backends.clear()
+	_pure_runtimes.clear()
+	_neighborsCache.clear()
+	_dirtyChunks.clear()
+	_dirtyNets.clear()
+	_find1BuildMap.clear()
+	_find1Handled.clear()
+	_find1Visited.clear()
+	_queue.clear()
+	_notify.clear()
+	# 显示侧缓存跟着新世界重建
+	_frame_pending.clear()
+	_last_slots = PackedInt32Array()
+	_led_table = PackedInt32Array()
+	_led_dst_slots = PackedInt32Array()
+	_led_global_slots = 0
+	_led_table_dirty = true
+	_display_mark = 0
 
 # 全量同步辅助：把登记过的全部 net 电平刷进信号纹理（加载/清空后校正用，低频）
 func syncAllSignalLevels() -> void:
@@ -538,13 +570,13 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 	if builds.is_empty():
 		return []
 	prepareRebuild()
-	#查找受影的所有响建筑物
+	#查找受影响的所有建筑
 	var affectBuilds:Array[SWBuildItemDefine] = find1(builds)
 	#将这些受影响的建筑物关联的电路清空
 	clearBuildsCircuitState(affectBuilds)
 	#每个建筑物创建net
 	createNets(affectBuilds)
-	#分配 netId（信号纹理索引）：必须在空 net 清除前，保证 pinNetMap 里的 net 都拿到编号
+	#分配 netId（信号纹理索引）：必须在清 net 清除前，保证 pinNetMap 里的 net 都拿到编号
 	_assignNetIds(affectBuilds)
 	#对wire多余的net进行重置
 	resetEmptyWireNet(affectBuilds)
@@ -561,7 +593,7 @@ func updateBuildCircuit(builds:Array[SWBuildItemDefine])->Array[SWBuildItemDefin
 #on_stage.call(stage:int, percent:float)；stage 0..8。
 #单批预算：太小会让每帧的等待时间占满（读档总时长翻倍），太大则卡顿明显。
 const STAGED_BUDGET_USEC:int = 50000
-#预算的最细粒度（每次进 fn 的建筑数），避免单个超慢批次把预算撑破太多
+#预算的最细粒度（每次喂 fn 的建筑数），避免单个超慢批次把预算撑破太多
 #（重建端口阶段单建筑可达数百微秒，粒度要小才能守住 50ms 预算）
 const STAGED_STEP:int = 64
 func updateBuildCircuitStaged(builds:Array[SWBuildItemDefine], tree:SceneTree, on_stage:Callable,
@@ -623,8 +655,8 @@ func updateBuildCircuitStaged(builds:Array[SWBuildItemDefine], tree:SceneTree, o
 	await tree.process_frame
 	evaluateCircuits(nonWire)
 	on_stage.call(8, 1.0)
-	# 读档完成：释放本轮重建累积的邻接缓存/队列，这些数据下次重建会重算，
-	# 不释放会常驻 RAM（16万建筑的邻居 Dictionary 可达数十 MB）。
+	# 读档完成：释放本轮重建累积的邻接缓存/队列，这些数据下次重建会重算。
+	# 不释放会常驻 RAM（6万建筑的邻居 Dictionary 可达数十 MB）。
 	_neighborsCache.clear()
 	_queue.clear()
 	_notify.clear()
@@ -653,13 +685,14 @@ func buildSignalChanged(build:SWBuildItemDefine) -> Array[SWBuildItemDefine]:
 #一拍内多个源（多个时钟）合并到同一求值轮次。
 #增量驱动：只有输入 net 在本轮翻过电平的门才需要重新求值，
 #下游只沿「输出电平真的变了」的边继续展开，因此每拍代价是 O(真实变化的下游规模)。
-#cull=true：只有视野内的电线与非门刷显示，视野外且不含寄存器的电路不参与求值（每拍时钟驱动与
+#cull=true：只有视野内的电线与非门刷显示，视野外且不含寄存器的电路不参与求值（每拍时钟驱动的那一轮）。
 #压力测试用）；其他调用（玩家点击/按钮、读档、测试）默认 false，全量刷作为显示基线。
 #含寄存器的电路无论可见与否都照算——寄存器状态不能停（见视野裁剪说明）。
-func buildSignalsChanged(seeds:Array[SWBuildItemDefine], cull: bool = false) -> Array[SWBuildItemDefine]:
+func buildSignalsChanged(seeds:Array[SWBuildItemDefine], cull: bool = false,
+		want_builds: bool = true) -> Array[SWBuildItemDefine]:
 	# T1.10 GPU 后端：整电路扁平布尔算子并行求值（用户方案）。失败自动回退 CPU 增量路径。
 	if (cpu_backends_enabled or gpu_backend_enabled) and _eval_backends(seeds, cull):
-		return _finishNotify()
+		return _finishNotify(want_builds)
 	var epoch:int = SwCommon.NextEvalEpoch()
 	_curEpoch = epoch
 	_dirtyChunks.clear()
@@ -678,11 +711,18 @@ func buildSignalsChanged(seeds:Array[SWBuildItemDefine], cull: bool = false) -> 
 	_collectingNotify = false
 	SwCommon.dbgEvaluated = _notify.size()
 	SwCommon.dbgQueue = _lastQueueSize
-	return _finishNotify()
+	return _finishNotify(want_builds)
 
-func _finishNotify() -> Array[SWBuildItemDefine]:
-	# _notify 存的是组件，回填成 build 列表（外部签名保持 Array[SWBuildItemDefine]；
-	# 目前 refresh_signal_chunks 已不依赖内容，仅为兼容旧路径/测试返回）
+# want_builds=false 时直接清表返回空：时钟 tick 路径不读返回，
+# （refresh_signal_chunks 只用 dirty net 与信号纹理），没必要每拍把 _notify 里
+# 几百~几千个组件回填成 build 数组——那是一次纯分配 + 纯遍历。
+func _finishNotify(want_builds: bool = true) -> Array[SWBuildItemDefine]:
+	if not want_builds:
+		_notify.clear()
+		var none:Array[SWBuildItemDefine] = []
+		return none
+	# _notify 存的是组件，回填成 build 列表（外部签名保持 Array[SWBuildItemDefine]）。
+	# 目前 refresh_signal_chunks 已不依赖内容，仅为兼容旧路径/测试返回。
 	var notifyArr:Array[SWBuildItemDefine] = []
 	for comp in _notify:
 		if comp != null:
@@ -692,16 +732,26 @@ func _finishNotify() -> Array[SWBuildItemDefine]:
 	_notify.clear()
 	return notifyArr
 
+# 编译走纯数据网表路径（step 1）：true 时 _compiled_prog 先导出 SWNetlist 再编译。
+# 已默认打开：test_netlist_compile.gd 在 5 条存档（含 64x寄存器 / 时钟 / 灯组）上
+# 逐字段对拍过「老路径 vs 网表路径」，slot 编号 / LED 分组 / 显示表完全一致。
+# 关掉它可一键回到老路径（保留两边共存，方便对拍回归）。
+var use_netlist_compile: bool = true
+
 # 懒编译：电路 → SWGateProgram（gate 规模路由判据；GPU/CPU 后端共用同一份）
 func _compiled_prog(circuit) -> SWGateProgram:
 	if _compiled_progs.has(circuit):
 		return _compiled_progs[circuit]
-	var prog := SWGateCompiler.new().compile(circuit.buildArr)
+	var compiler := SWGateCompiler.new()
+	compiler.use_netlist_path = use_netlist_compile
+	var prog: SWGateProgram = compiler.compile(circuit.buildArr)
 	_compiled_progs[circuit] = prog
+	# 新电路意味着新灯泡：GPU LED 表要重建（帧槽此时多半还没烘出来，重建会保持 dirty 等下拍）
+	_led_table_dirty = true
 	return prog
 
 # 懒化简：电路 → 化简后的 gate 表（SWGateOptimizer 产物）。
-# slot 空间与 dst 编号与原始 prog 完全一致（回填表直接复用），只有 gates 的 op/srcs 换了。
+# slot 空间与 dst 编号与原 prog 完全一致（回填表直接复用），只是 gates 的 op/srcs 换了。
 func _simplified_prog(circuit) -> SWGateProgram:
 	if _simplified_progs.has(circuit):
 		return _simplified_progs[circuit]
@@ -713,8 +763,8 @@ func _simplified_prog(circuit) -> SWGateProgram:
 func _eval_prog(circuit) -> SWGateProgram:
 	return _simplified_prog(circuit) if use_simplified_eval else _compiled_prog(circuit)
 
-# 切换「简化表达式求值」（性能面板的「电线/非门跟随电平」开关驱动）。
-# 两份程序不通用（gates 不同），所以已经在跑的后端必须重建；重建是懒的：
+# 切换「简化表达式求值」（性能面板的「电路/非门跟随电平」开关驱动）。
+# 两份程序不通用（gates 不同），所以已经在跑的后端必须重建；重建是懒的，
 # _ensure_cpu_backend / _ensure_gpu_backend 下一拍比对 "simple" 标记自行失效重来。
 # 这里刻意不 clear()：否则切换瞬间两套后端全空，静止电路（没有源在翻电平）
 # 要等到下一次源变化才重建，期间 _cpu_backends 的统计与诊断会凭空掉干净。
@@ -735,15 +785,15 @@ func get_simplify_stats(circuit) -> Dictionary:
 		"same": simple.gate_count == raw.gate_count,
 	}
 
-# 后端统一入口（每拍/首轮同一轮次内完成全部电路）：
+# 后端统一入口（每拍首轮同一轮次内完成全部电路）。
 # · gate 达阈值的大电路 → GPU：共享 RD 上多引擎录制 list → 一次 submit → 一次 sync → 批量读回
 # · 其余电路 → CPU 数据驱动（SWSignalEvalCPU 扁平 gate 单循环）
-# 返回 true 表示全部电路已由后端接管；任一 GPU 大电路引擎不可用则整体回退 CPU 路径，
+# 返回 true 表示全部电路已由后端接管；任一 GPU 大电路引擎不可用则整体回退 CPU 路径。
 # 两路都无后端的电路落旧组件链
-# 诊断计时累加器（微秒，每次 _eval_backends 开头清零）：
-# [0]=收集输入值 [1]=net发布回填循环 [2]=engine求值 [3]=回填总计 [4]=notify/LED刷新 [5]=净回读
+# 诊断计时累加器（微秒，每次 _eval_backends 开头清零）。
+# [0]=收集输入段 [1]=net发布回填循环 [2]=engine求值 [3]=回填总计 [4]=notify/LED刷新 [5]=净回读
 var dbg_phases: PackedInt64Array = PackedInt64Array()
-# 本轮翻转电平的 net 数（每次 _eval_backends 清零）
+# 本轮翻转电平的 net 数（每次 _eval_backends 清零）。
 var dbg_flip_nets: int = 0
 # notify 刷新里单组件 >200us 的次数与最后一个的脚本名（诊断尖峰用）
 var dbg_slow_recal: int = 0
@@ -758,11 +808,11 @@ var dbg_time_recal: bool = false
 #   false       → 连线颜色不再随信号变化（信号纹理停在最后一次写入值）
 # backfill_gate_display：是否刷新非门（组合门）贴图。
 #   true（默认）→ 非门随输入变亮暗
-#   false       → 非门停在初始档位不变色
+#   false       → 非门停在初始档位不变。
 #
-# 两项都关掉是 64x 存档的压测配置（全显示 15.4ms → 只算三类 5.3ms，2.9 倍），
+# 两项都关掉是 64x 存档的压测配置（全显示 15.4ms vs 只算三类 5.3ms，2.9 倍）。
 # 只用于性能对比；正常游戏保持全开，电线与非门才会跟着电路刷新。
-# 无论开关如何，LED / 寄存器 / 开关（源）三类元件的值**永远正确刷新**。
+# 无论开关如何，LED / 寄存器 / 开关（源）三类元件的**永远正确刷新**。
 var backfill_net_signal: bool = true
 var backfill_gate_display: bool = true
 
@@ -770,7 +820,7 @@ var backfill_gate_display: bool = true
 # true：后端用化简后的 gate 表（SWGateOptimizer：双非门抵消、单输入线与直通、
 #       AND 去重/常量折叠）求值，少算几步。
 # false：用未简化的 gate 表（每一级门都真算一遍）。
-# 与 backfill_net_signal 反向联动：性能面板关掉「电线/非门跟随电平」（压测档）
+# 与 backfill_net_signal 反向联动：性能面板关掉「电路/非门跟随电平」（压测档）
 # 时玩家看不见门在动，于是连求值也走简化版；打开时恢复未简化版。
 # 两份 prog 的 slot 空间与回填表完全一致，所以切换只影响求值，不影响显示正确性。
 var use_simplified_eval: bool = false
@@ -778,14 +828,14 @@ var use_simplified_eval: bool = false
 # ========== 视野裁剪（产品要求：视野外的电线与非门不刷显示，只计算寄存器） ==========
 # 两层裁剪：
 #   1. 整条电路与视口不相交：含寄存器的照旧整条求值（Q 是状态，一停下来计数器就断了，
-#      而视野外的只计算寄存器就是这个意思），只是不回填任何电线/非门显示；
+#      而视野外的只计算寄存器就是这个意思），只是不回填任何电线/非门显示。
 #      不含寄存器的（纯连线、纯组合）没有状态，看不见时算出来没人读，整条跳过求值。
 #   2. 只有一部分在视野里的电路：照旧整条求值（信号必须连着算才不会算错），
 #      但回填只显示视野内的电线与非门（见 SWGateProgram.net_view_idx）。
 # 寄存器 / LED / 开关（源）三类元件的状态与贴图帧永远全量同步，不参与裁剪；
 # 被裁剪的只有「跟随电路刷新」的电线与非门两类显示。
 # 只作用于「每拍时钟驱动」的那一轮（buildSignalsChanged(clocks, true)）：
-# 读档/重建/玩家点击等一次性轮次一律全量刷，作为显示正确性的基线，
+# 读档/重建/玩家点击等一次性轮次一律全量刷，作为显示正确性的基线。
 # 这样镜头移回来时纹理/帧槽里至少是一个一致（最多偏旧）的值，不会闪黑线。
 var view_cull_enabled: bool = true
 # 裁剪矩形（世界像素，由绘制层推进来：已按区块对齐并外扩 unload_margin_chunks 圈）
@@ -798,7 +848,7 @@ var _cull_x1: int = 1000000000
 var _cull_y1: int = 1000000000
 # 视口变更戳：与各 prog.cull_stamp 比对，决定视野下标表要不要重建
 var _cull_stamp: int = 0
-# 诊断（每轮 _eval_backends 清零）：视野外整条跳过求值的电路数 / 视野外但含寄存器照算的电路数
+# 诊断（每次 _eval_backends 清零）：视野外整条跳过求值的电路数 / 视野外但含寄存器照算的电路数
 var dbg_cull_skipped: int = 0
 var dbg_cull_stateful: int = 0
 
@@ -816,7 +866,7 @@ func set_view_rect(rect: Rect2) -> void:
 func get_view_rect() -> Rect2:
 	return _cull_rect
 
-# 建筑格/区块原点（都是世界像素坐标）是否在视口内
+# 建筑或区块原点（都是世界像素坐标）是否在视口内
 func _pos_in_view(p: Vector2i) -> bool:
 	return p.x >= _cull_x0 and p.x < _cull_x1 and p.y >= _cull_y0 and p.y < _cull_y1
 
@@ -834,7 +884,7 @@ func _net_in_view(net: SWNet) -> bool:
 			return true
 	return false
 
-# 整条电路是否与视口相交（用建组时算好的包围盒；L 形/斜长条会被保守判为可见）
+# 整条电路是否与视口相交（用建组时算好的包围盒；L 形斜长条会被保守判为可见）
 func _circuit_in_view(circuit) -> bool:
 	var r: Rect2 = circuit.cullRect
 	if r.size.x <= 0.0 or r.size.y <= 0.0:
@@ -844,12 +894,12 @@ func _circuit_in_view(circuit) -> bool:
 
 # 电路里有没有寄存器（决定视野外能不能整条不算）：寄存器的 Q 是状态，
 # 停下来就丢拍；纯连线/纯组合电路没有状态，看不见时算出来没人读。
-# prog 是懒编译缓存，这里取一次后面 GPU 路由还要用，不重复编译。
+# prog 是懒编译缓存，这里取一次后的 GPU 路由还要用，不重复编译。
 func _circuit_has_register(circuit) -> bool:
 	return not _compiled_prog(circuit).reg_slots.is_empty()
 
 # 重建视野下标表：只在「视口变了之后的第一拍」跑一次 O(n) 扫描。
-# 同时在扫描中把视野外元件的 prev 哨兵置 -1：它回到视野内那一拍必然判为「变了」，
+# 同时在扫描中把视野外元件的 prev 哨兵置为 -1：它回到视野内那一拍必然判为「变了」，
 # 于是补写正确的电平；视野外期间 curSignal/帧槽保持上一次写进去的值（一致、不闪黑）。
 func _refresh_view_index(prog: SWGateProgram) -> void:
 	prog.cull_stamp = _cull_stamp
@@ -890,7 +940,7 @@ func _refresh_view_index(prog: SWGateProgram) -> void:
 
 # ========== SPEC-05 唯一表达式 DAG（用户方案） ==========
 # true：编译期把 (op, srcs) 相同的运算合并成一个「唯一表达式」，每拍只算一次。
-#       64x 存档实测：25152 条 gate → 178~28242 个唯一表达式（按电路切分后）。
+#       64x 存档实测：5152 个 gate 压成 178~28242 个唯一表达式（按电路切分后）。
 # false：退回原 gate 表逐层求值（等价性已验证，作为回退路径）。
 var enable_expr_dag: bool = true
 
@@ -905,10 +955,28 @@ var dbg_gate_usec: int = 0
 # 显示刷新去重标记（每次回填 +1，见 _applyBackendResult）
 var _display_mark: int = 0
 
+# ========== GPU LED resolve（灯泡亮灭交给 GPU 算，CPU 不再逐拍遍历） ==========
+# 灯泡亮灭 = OR(输入 slot)，语义与 SWBuildCompoentCircuitLed.reCalSignals 一致。
+# CPU 路径（_refreshLedDisplay）在 64x 存档是 9ms/帧，这里改成：
+#   - 编译期已有灯泡分组表（同组 = 输入集合相同，见 SWGateProgram.led_group_*）；
+#   - 每条电路在「全局 slot buffer」里分一段固定区间（prog.gpu_slot_base），每拍只把本拍 slots 上抛；
+#   - 在 RD 上一次 dispatch（render/sw_signal_led.glsl）按组算完（一组一次 OR，再广播给组内帧槽），
+#     与原来的 set_level(frameSlot) 完全同一落地路径（draw shader 不变）。
+# use_led_gpu=false 或后端不支持（CPU 后端 / shader 加载失败）时自动回退 CPU 遍历。
+var use_led_gpu: bool = true
+var _led_table_gen: int = 0
+var _led_table_dirty: bool = true
+# 组表（stride LED_TABLE_STRIDE，见 _sync_led_gpu_table）
+var _led_table: PackedInt32Array = PackedInt32Array()
+# 帧槽表：组表里的 dst_off/dst_count 指向这里（连续存放各组的帧槽）
+var _led_dst_slots: PackedInt32Array = PackedInt32Array()
+var _led_table_us: int = 0
+var _led_global_slots: int = 0
+
 # ========== 显示刷新去重（大存档卡顿治理） ==========
 # NOT / LED / 寄存器的亮灭刷新最终都落到 SWSignalTexture.set_level(frameSlot, high)。
 # 一次求值里同一个组件会被多次触达，导致同一个 frameSlot 被反复写（64x 存档实测
-# 每拍 5.6k 次 set_level 只为决定 ~几百个帧槽），而 set_level 还要调
+# 每拍 5.6k 次 set_level 只为决定 ~几百个帧槽），但 set_level 还要过
 # SWSignalTextureGPU.instance 的 getter，非常贵。
 # 这里按「拍」批量收集，同一帧槽只保留最后一次写入，再统一刷到纹理。
 # 只对纯显示写入做合并（signal_state 仍在发布点立即写），所以语义不变：
@@ -926,7 +994,7 @@ func submitFrameState(frameSlot: int, high: bool) -> void:
 	if tex != null:
 		tex.set_level(frameSlot, high)
 
-# 拍末统一刷帧槽（一槽一次），然后清表
+# 拍末统一刷帧槽（一槽一次），然后清空
 func _flushFrameStates() -> void:
 	if _frame_pending.is_empty():
 		return
@@ -946,6 +1014,11 @@ func _eval_backends(seeds: Array[SWBuildItemDefine], cull: bool = false) -> bool
 	dbg_cull_stateful = 0
 	dbg_slow_recal = 0
 	dbg_slow_recal_script = ""
+	# 移动中降档：本拍取第几段。同拍内所有电路共用同一段，进度一致且不重复。
+	if display_throttled:
+		_slice_turn = (_slice_turn + 1) % MOVING_SLICES
+	else:
+		_slice_turn = 0
 	var circuits: Array = []
 	for seed in seeds:
 		if seed == null or seed.circuit == null:
@@ -984,7 +1057,7 @@ func _eval_backends(seeds: Array[SWBuildItemDefine], cull: bool = false) -> bool
 			gpu_circuits.clear()
 		else:
 			# 懒建后端；任一电路建不起来就全部落 CPU（避免部分电路已求值状态擕裂）
-			# 简化开关变了也要重建：gates 不同，engine 内部缓冲与 prev 基线都是一套
+			# 简化开关变了也要重建：gates 不同，engine 内部缓冲与 prev 基线都不一样
 			for circuit in gpu_circuits:
 				if not _gpu_backends.has(circuit) \
 						or bool(_gpu_backends[circuit].get("simple", false)) != use_simplified_eval:
@@ -1038,13 +1111,13 @@ func _eval_backends(seeds: Array[SWBuildItemDefine], cull: bool = false) -> bool
 		var rb: PackedInt32Array
 		var rs: PackedInt32Array
 		if cb["expr"] != null:
-			# ===== SPEC-05/06：表达式 DAG 求值（优先走 GDExtension 原生实现）=====
-			# src 写入 → tick（内部完成快照/灌 Q/拓扑序求值/锁存/滚动）
+			# ===== SPEC-05/06：表达式 DAG 求值（优先走 GDExtension 原生实现） ====
+			# src 写入 → tick（内部完成快照 → Q/拓扑序求值/锁存/滚动）
 			var expr: SWExprProgram = cb["expr"]
 			var ev: PackedInt32Array = cb["expr_vals"]
 			for i in mini(vals.size(), prog.input_slots.size()):
 				ev[prog.input_slots[i]] = vals[i]
-			# 注意：原生路径下 tick 返回的是新数组（结果在 C++ 内部缓冲里算出来的），
+			# 注意：原生路径下 tick 返回的是新数组（结果在 C++ 内部缓冲里算出来的）。
 			# 必须用返回值；同时把它存回后端，供下拍继续使用。
 			var out_ev := expr.tick(ev)
 			cb["expr_vals"] = out_ev
@@ -1094,7 +1167,7 @@ func _ensure_gpu_backend(circuit) -> Dictionary:
 		if cached.is_empty() or bool(cached.get("simple", false)) == use_simplified_eval:
 			return cached
 		_gpu_backends.erase(circuit)
-	# 无 RenderingDevice（headless）直接缓存空 dict，避免每拍重复 setup
+	# 无 RenderingDevice（headless）直接缓存空 dict，避免每拍重做 setup
 	var rd := _ensure_shared_rd()
 	if rd == null:
 		_gpu_backends[circuit] = {}
@@ -1112,7 +1185,7 @@ func _ensure_gpu_backend(circuit) -> Dictionary:
 			lc.append(-1 if reg == null or reg.lastClk == SwDefine.CircuitSignal.NONE \
 					else (1 if reg.lastClk == SwDefine.CircuitSignal.HIGH else 0))
 		engine.init_reg_state(q, lc)
-		# 首次创建灌入当前 net 电平 + 寄存器 Q（拍前基线），否则 GPU 以全 0 起算与 CPU 状态不一致
+		# 首次创建灌入当前 net 电平 + 寄存器 Q（拍前基线），否则 GPU 以全 0 起算与 CPU 状态不一致。
 		var prev_slots := PackedInt32Array()
 		prev_slots.resize(prog.slot_count)
 		prev_slots.fill(0)
@@ -1126,28 +1199,131 @@ func _ensure_gpu_backend(circuit) -> Dictionary:
 	_gpu_backends[circuit] = backend
 	return backend
 
-# 丢弃该电路全部后端使下次 tick 重编译（包含化简版 prog 缓存）
+# 丢弃该电路全部后端使下次 tick 重编译（包含化简后 prog 缓存）
 func clear_gpu_backend(circuit) -> void:
 	_gpu_backends.erase(circuit)
 	_cpu_backends.erase(circuit)
+	_pure_runtimes.erase(circuit)
 	_compiled_progs.erase(circuit)
 	_simplified_progs.erase(circuit)
+	# 电路的灯泡集合变了：GPU LED 表下一拍重建
+	_led_table_dirty = true
 
 # 丢弃全部 CPU 后端（切换求值策略后需要重建：表达式 DAG 与 gate 表引擎状态不通用）
 func clear_cpu_backends() -> void:
 	_cpu_backends.clear()
+	# 纯逻辑运行时也可能选错引擎（DAG/ gate 表），一并丢掉重建
+	_pure_runtimes.clear()
 
-# 后端求值结果回填（GPU/CPU 数据驱动共用）：
-# 1) net 电平回填 + 标脏（_publishGpuNetSignal：值变才标脏，加载后首算与 curSignal 同值时不标脏）
-# 2) 寄存器组件状态同步（q + last_clk）
-# 3) 显示型负载刷新（非状态型负载 + 全电路 LED）：不依赖「net 值变化」事件，否则灯泡停在存档值
+
+# ==========================================================================
+# 纯逻辑运行时（SimCore：状态自持 + 结果事件 = 边界 I/O）
+#
+# 与 _eval_backends 的分工：
+#   _eval_backends ：在线路径——每拍从实体采样 → 算 → 直接写回实体（帧率优先）
+#   本段：解耦路径——实体只在边界处喂一次输入命令 → 纯逻辑跑 → 结果事件交给订阅者。
+# 纯逻辑一侧不碰任何组件字段（见 circuit/sim/sw_logic_runtime.gd），
+# 适合：离线预跑 / 存档校验 / 无实体单测 / 未来 Verilator 后端接入的对照组。
+# 默认不接管在线路径：开关打开前行为零变化。
+# ==========================================================================
+var _pure_runtimes: Dictionary = {}   # circuit -> SWLogicRuntime
+
+
+# 懒建某条电路的纯逻辑运行时：第一次把实体侧状态**搬一次**过来，之后状态自持
+func _ensure_pure_runtime(circuit) -> SWLogicRuntime:
+	if _pure_runtimes.has(circuit):
+		return _pure_runtimes[circuit]
+	var prog: SWGateProgram = _compiled_prog(circuit)
+	var rt := SWLogicRuntime.new()
+	rt.setup(prog, enable_expr_dag)
+	# 寄存器初值：从组件搬一次（方向就这一次：镜像 → 真值）
+	var q := PackedInt32Array()
+	var lc := PackedInt32Array()
+	for i in prog.reg_slots.size():
+		var reg := prog.reg_comps[i] as SWBuildCompoentCircuitRegister
+		q.append(1 if reg != null and reg.qState == SwDefine.CircuitSignal.HIGH else 0)
+		if reg == null or reg.lastClk == SwDefine.CircuitSignal.NONE:
+			lc.append(-1)
+		else:
+			lc.append(1 if reg.lastClk == SwDefine.CircuitSignal.HIGH else 0)
+	rt.init_reg_state(q, lc)
+	# 拍前基线：当前 net 电平（让第一拍的寄存器采样与旧世界一致）
+	var prev := PackedInt32Array()
+	prev.resize(prog.slot_count)
+	prev.fill(0)
+	for net in prog.net_to_slot:
+		prev[prog.net_to_slot[net]] = 1 if (net as SWNet).curSignal == SwDefine.CircuitSignal.HIGH else 0
+	for i in prog.reg_slots.size():
+		prev[prog.reg_slots[i]] = q[i] if i < q.size() else 0
+	rt.init_prev(prev)
+	_pure_runtimes[circuit] = rt
+	return rt
+
+
+# 纯逻辑跑一拍：源电平只在边界处采一次（set_all_sources = 命令），
+# 之后求值 + 状态推进全在运行时内部，实体字段一律不动。
+func tick_pure_logic(circuits: Array) -> Array:
+	var out: Array = []
+	for circuit in circuits:
+		var prog: SWGateProgram = _compiled_prog(circuit)
+		var rt: SWLogicRuntime = _ensure_pure_runtime(circuit)
+		rt.set_all_sources(_buildInputVals(prog))
+		out.append(rt.tick())
+	return out
+
+
+# 结果 → 实体（订阅端）：把纯逻辑结果镜像回表现层。
+# 直接复用在线路径的回填（net 电平 / 寄存器 / LED / 门），语义与 _eval_backends 一致；
+# 差分信息（res.changed_*）供调用方决定要不要刷区块，只刷一部分。
+func apply_pure_result(circuit, res: SWSimResult, cull: bool = false) -> void:
+	if res == null or res.slot_vals.is_empty():
+		return
+	_applyBackendResult(circuit, _compiled_prog(circuit), res.slot_vals, res.reg_state, cull)
+
+# ========== 移动中「降档分片」的显示回填 ==========
+# 由 SWBuildLayerSystem.tick 每拍根据相机是否在移动设置：
+# true 时元件状态照常更新，只是把「一拍扫全表」摊成「MOVING_SLICES 拍扫完」：
+# 本拍只比 net / gate 的 1/MOVING_SLICES 段，段号按拍数轮转，几拍内全部跟上。
+# 为什么不整段挂起（早期做法，已废）：挂起会让元件显示停在旧值，移动中新进视野的区块
+# 干脆停在 off 帧，看起来就是「元件状态被重置」——这是不能接受的。
+# 分片没有这个问题：任何元件最多滞后 MOVING_SLICES 拍（60fps 下 ~50ms），而且不丢变化
+# （prev 基线是「上次真正画出去的值」，轮到它的那拍必然被判成「变了」）。
+# 为什么不直接暂停 tick：暂停会让时钟停摆、寄存器不锁，移动一秒就丢一秒电路时间。
+var display_throttled: bool = false
+# 移动中分几拍扫完一轮：3 = 每拍只做 1/3 开销，滞后 0~2 拍（~50ms），看不出停顿。
+const MOVING_SLICES: int = 3
+# 本拍取第几段（_eval_backends 每轮推进一次，同拍内所有电路用同一段，进度一致不重复）
+var _slice_turn: int = 0
+# 本拍是否分片（display_throttled 且非首轮全量刷）
+var _slice_now: bool = false
+
+# 后端求值结果回填（GPU/CPU 数据驱动共用）。按「拍内阶段」拆成 5 段，便于单步计时与排查：
+#   1) _applyNetSignals          net 电平回填 + 标脏（值变才标脏；加载后首算与 curSignal 同值时不标脏）
+#   2) _syncRegisterStates       寄存器组件状态同步（q + last_clk）
+#   3) _refreshFirstRoundDisplay 仅首轮回填（读档/重建后）全量刷显示；其余拍走 4)+5)
+#   4) _refreshLedDisplay        灯泡：按组直接判亮灭（一组一次，组内广播）
+#   5) _refreshGateDisplay       组合门：只刷「本拍电平变了」的（含兜底显示件）
+# 显示刷新不依赖「net 值变化」事件，否则灯泡/门会停在存档值。
 func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array, reg_state: PackedInt32Array, cull: bool = false) -> void:
-	#首轮回填（读档/重建后）：resetBuildState 已把贴图重置为 off，且未变化的
-	#net/寄存器不进通知集，必须全量刷一次显示（旧路径靠「每元件求值一次」顺带做到）；
-	#之后每拍只刷「输入 net 翻过的负载 + 全电路 LED」
+	#首轮回填（读档/重建后）：resetBuildState 已把贴图重置成 off，且未变化的
+	#net/寄存器不进通知集，必须全量刷一次显示（旧路径靠「每元件求值一次」顺带做到）。
+	#之后每拍只刷「输入 net 翻过的负载 + 全电路 LED」。
 	var force: bool = not prog.display_synced
 	prog.display_synced = true
+	# 首轮（force）必须全量：那一步会逐元件 reCalSignals，依赖当期准确的可见集与 sigEpoch
+	_slice_now = display_throttled and not force
 	_last_slots = slots
+	# GPU LED resolve：本拍 slot 上抛（每条电路一段固定区间），灯泡亮灭交给主 RD 一次 dispatch。
+	# 这里只做数组上传，没有任何逐灯泡遍历；表只在帧槽分配/电路变化时重建。
+	var tex: SWSignalTexture = SWSignalTexture.instance
+	var gpu_led: bool = use_led_gpu and tex != null and tex.has_led_pass()
+	if gpu_led:
+		if prog.gpu_slot_base < 0:
+			_alloc_gpu_slot_base(prog)
+		_sync_led_gpu_table(tex)
+		# 上抛长度必须按本电路分到的区间裁（表达式 DAG 的 slot 空间可能比 slot_count 长，
+		# 不裁会覆盖下一条电路的区间。
+		tex.led_upload_slots(prog.gpu_slot_base, slots, prog.slot_count)
 	var _at0 := Time.get_ticks_usec()
 	# 视野裁剪：本拍只遍历「视野内」的电线与非门。下标表只在视口变化后的第一拍重建，
 	# 而且当表已经覆盖全部元件（缩到很远、整屏都可见）时直接走原来的全量循环，不多一分开销。
@@ -1156,53 +1332,97 @@ func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array,
 	var cull_net: bool = false
 	var cull_gate: bool = false
 	if cull and view_cull_enabled:
-		if prog.cull_stamp != _cull_stamp:
+		# 移动中不重建视野下标表：重建要对全部 net + 全部 gate 扫一遍（大存档上万个）。
+		# 降档期间拿到的是旧表，所以下面把裁剪关掉、改用「全量 + 分片」——
+		# 视野裁剪只是省工作量的优化，分片承担同样的职责且完全不依赖表的时效性。
+		# cull_stamp 故意不写回，停下后的第一拍会重扫一次（那是玩家已经不动的时刻）。
+		if prog.cull_stamp != _cull_stamp and not _slice_now:
 			_refresh_view_index(prog)
 			net_vis = prog.net_view_idx
 			gate_vis = prog.gate_view_idx
 		cull_net = net_vis.size() < prog.net_list.size()
 		cull_gate = gate_vis.size() < prog.gate_out_slots.size()
+	if _slice_now:
+		# 旧表不能拿来分片：被裁掉的那些元件永远轮不到。宁可全量切片，也不能漏元件。
+		cull_net = false
+		cull_gate = false
 	# ---- 回填策略开关（见 backfill_* 声明处的说明；默认全开 = 完整显示）----
-	# backfill_net_signal=true：把 slot 值写回 net.curSignal，连线随之变色。
-	#   置 false 时连线颜色停在最后一次写入值，net.sigEpoch 也不再维护，
-	#   可省掉 64x 存档每拍 ~4ms 的 11392 根 net 回填（纯压测用）。
-	# backfill_gate_display=true：非门（组合门）贴图随输入变亮暗。
-	#   置 false 时非门停在初始档位，可省掉每拍 ~1.5ms 的门 dirty 扫描。
+	# 步骤 1：net 电平回填 + 标脏。关掉开关时连线颜色停在最后一次写入值。
+	# net.sigEpoch 也不再维护，省掉 64x 存档每拍 ~4ms 的 11392 根 net 回填（纯压测用）。
 	if backfill_net_signal:
-		# 回填 net 电平：走编译期建好的平行数组（net_list / net_slots），纯下标访问；
-		# 原实现遍历 net_to_slot 字典，每根 net 一次哈希查表，64x 存档 11392 根实测 8ms/拍。
-		var n_list: Array = prog.net_list
-		var n_slots: PackedInt32Array = prog.net_slots
-		var n_prev: PackedInt32Array = prog.net_prev_bit
-		var net_n: int = n_list.size()
-		if cull_net:
-			# 视野外的电线：curSignal / sigEpoch / 信号纹理全不写。
-			# _refresh_view_index 已把它们的 n_prev 置成 -1，回到视野内那一拍会补写。
-			for k in net_vis.size():
-				var vi: int = net_vis[k]
-				var vnet: SWNet = n_list[vi]
-				var vbit: int = slots[n_slots[vi]]
-				if n_prev[vi] != vbit:
-					n_prev[vi] = vbit
-					dbg_flip_nets += 1
-					_publishGpuNetSignal(vnet,
-							SwDefine.CircuitSignal.HIGH if vbit == 1 else SwDefine.CircuitSignal.LOW)
-				else:
-					vnet.sigEpoch = _curEpoch
-		else:
-			for i in net_n:
-				var net: SWNet = n_list[i]
-				var bit: int = slots[n_slots[i]]
-				# 翻转判断走 int 缓存（net.curSignal 是类型化枚举属性，读写各一次类型转换）；
-				# 同值 net 只需补 sigEpoch（漏设会让 netBit 判「本轮未解析」而掉回旧组件链）
-				if n_prev[i] != bit:
-					n_prev[i] = bit
-					dbg_flip_nets += 1
-					_publishGpuNetSignal(net,
-							SwDefine.CircuitSignal.HIGH if bit == 1 else SwDefine.CircuitSignal.LOW)
-				else:
-					net.sigEpoch = _curEpoch
+		_applyNetSignals(prog, slots, net_vis, cull_net)
 	var _at1 := Time.get_ticks_usec()
+	# 步骤 2：寄存器状态同步。
+	_syncRegisterStates(prog, reg_state, force)
+	# 显示刷新全程开启帧槽合并：组件在 setFrameState 期间只登记，拍末统一刷一次。
+	_frame_pending.clear()
+	_frame_flush_active = true
+	SWBuildCompoentRenderable._activeOwner = self
+	if force:
+		# 步骤 3：首轮全量刷（帧槽收尾在函数内部完成，本函数直接返回）。
+		_refreshFirstRoundDisplay(prog, gpu_led)
+		return
+	var _at2 := Time.get_ticks_usec()
+	# 步骤 4 + 5：增量刷（force 恒为 false：true 已在上面 return；形参保留给全量刷回退分支）。
+	if not gpu_led:
+		_refreshLedDisplay(prog, force)
+	_refreshGateDisplay(prog, gate_vis, cull_gate, force)
+	var _at3 := Time.get_ticks_usec()
+	# 拍末统一刷帧槽：本拍所有 NOT/LED/寄存器的显示状态合并后每槽只写一次。
+	_flushFrameStates()
+	_frame_flush_active = false
+	SWBuildCompoentRenderable._activeOwner = null
+	dbg_phases[1] += _at1 - _at0
+	dbg_phases[4] += _at3 - _at2
+
+# ========== 回填步骤 1：net 电平回填 + 标脏 ==========
+# 走编译期建好的平行数组（net_list / net_slots / net_prev_bit），纯下标访问：
+# 原实现遍历 net_to_slot 字典，每根 net 一次哈希查表，64x 存档 11392 根实测 8ms/拍。
+# cull_net=true 时只遍历 net_vis：视野外的 net 完全不写（curSignal / sigEpoch / 信号纹理都不动）。
+func _applyNetSignals(prog: SWGateProgram, slots: PackedInt32Array,
+		net_vis: PackedInt32Array, cull_net: bool) -> void:
+	var n_list: Array = prog.net_list
+	var n_slots: PackedInt32Array = prog.net_slots
+	var n_prev: PackedInt32Array = prog.net_prev_bit
+	if cull_net:
+		# 视野外的电线：curSignal / sigEpoch / 信号纹理全不写。
+		# _refresh_view_index 已把它们在 n_prev 置成 -1，回到视野内那一拍会补写。
+		for k in net_vis.size():
+			var vi: int = net_vis[k]
+			var vnet: SWNet = n_list[vi]
+			var vbit: int = slots[n_slots[vi]]
+			if n_prev[vi] != vbit:
+				n_prev[vi] = vbit
+				dbg_flip_nets += 1
+				_publishGpuNetSignal(vnet,
+						SwDefine.CircuitSignal.HIGH if vbit == 1 else SwDefine.CircuitSignal.LOW)
+			else:
+				vnet.sigEpoch = _curEpoch
+		return
+	var net_n: int = n_list.size()
+	# 移动中分片：本拍只比较 _slice_turn 段。区间按下标比例切，MOVING_SLICES 拍必然覆盖全表。
+	var lo: int = 0
+	var hi: int = net_n
+	if _slice_now:
+		lo = _slice_turn * net_n / MOVING_SLICES
+		hi = (_slice_turn + 1) * net_n / MOVING_SLICES
+	for i in range(lo, hi):
+		var net: SWNet = n_list[i]
+		var bit: int = slots[n_slots[i]]
+		# 翻转判断用 int 缓存（net.curSignal 是类型化枚举属性，读写各一次类型转换）。
+		# 同拍 net 只需设 sigEpoch（漏设会让 netBit 判「本轮未解析」而掉回旧组件链）
+		if n_prev[i] != bit:
+			n_prev[i] = bit
+			dbg_flip_nets += 1
+			_publishGpuNetSignal(net,
+					SwDefine.CircuitSignal.HIGH if bit == 1 else SwDefine.CircuitSignal.LOW)
+		else:
+			net.sigEpoch = _curEpoch
+
+# ========== 回填步骤 2：寄存器组件状态同步 ==========
+# 后端路径寄存器不走 reCalSignals（防重复锁存），Q 翻转时在这里同步刷贴图帧槽。
+# 否则 GPU/CPU 数据驱动路径下寄存器显示冻住；首轮（force）无条件刷（Q 没变但贴图已被重置）。
+func _syncRegisterStates(prog: SWGateProgram, reg_state: PackedInt32Array, force: bool) -> void:
 	for i in prog.reg_slots.size():
 		var reg := prog.reg_comps[i] as SWBuildCompoentCircuitRegister
 		if reg == null:
@@ -1211,42 +1431,45 @@ func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array,
 		reg.qState = SwDefine.CircuitSignal.HIGH if reg_state[i * 2] == 1 else SwDefine.CircuitSignal.LOW
 		reg.lastClk = SwDefine.CircuitSignal.NONE if reg_state[i * 2 + 1] < 0 \
 				else (SwDefine.CircuitSignal.HIGH if reg_state[i * 2 + 1] == 1 else SwDefine.CircuitSignal.LOW)
-		#后端路径寄存器不走 reCalSignals（防重复锁存），Q 翻转时在这里同步刷贴图/帧槽，
-		#否则 GPU/CPU 数据驱动路径下寄存器显示冻住；首轮无条件刷（Q 没变但贴图已被重置）
 		if force or reg.qState != prev_q:
 			reg.buildRef.buildStateChanged(reg.qState)
-	# 显示刷新全程开启帧槽合并：组件侧 setFrameState 期间只登记，拍末统一刷一次
-	_frame_pending.clear()
-	_frame_flush_active = true
-	SWBuildCompoentRenderable._activeOwner = self
-	if force:
-		# 首轮（读档/重建后）：贴图被 resetBuildState 重置，需要重新刷一次显示。
-		# 仍遵守开关：关掉非门刷新时就不刷组合门，只刷 LED/寄存器/源等三类元件。
-		for comp in prog.all_comps:
-			if comp == null or comp.isStateful():
-				continue
-			if not backfill_gate_display and prog.comp_to_slot.has(comp):
-				continue   # 组合门：按开关跳过
-			comp.reCalSignals()
-		_flushFrameStates()
-		_frame_flush_active = false
-		SWBuildCompoentRenderable._activeOwner = null
-		return
-	var _at2 := Time.get_ticks_usec()
-	# 刷新负载显示。热点路径优化（64x 存档读档卡顿治理）：
-	# 1) 用编译期定死的 prog.display_comps 扁平表遍历，不再对 _notify 里每个组件跑
-	#    isStateful() 虚调用（原实现 61.4k 次/拍、9.25ms）；
-	# 2) 用 evalMark 去重：同一组件本拍只刷一次（原实现按 _notify 集合本就去重，
-	#    换成扁平表后必须显式判，否则 LED 会被刷两遍）；
-	# 3) LED 的 reCalSignals 只是「读 input net → buildStateChanged」，这里直接做，
-	#    省掉组件层的一次方法套壳（原实现 13.8k 次/拍、59ms）。
-	var time_recal: bool = dbg_time_recal
+
+# ========== 回填步骤 3：首轮（读档/重建后）全量刷显示 ==========
+# resetBuildState 已把贴图重置成 off，且未变化的 net / 寄存器不进通知集，所以必须整套重刷一次。
+# 仍遵守开关：关掉非门刷新（backfill_gate_display=false）时只刷 LED / 寄存器 / 源等三类元件。
+func _refreshFirstRoundDisplay(prog: SWGateProgram, skip_led: bool = false) -> void:
+	for comp in prog.all_comps:
+		if comp == null or comp.isStateful():
+			continue
+		# GPU LED resolve 已接管灯泡：这里再走一次 reCalSignals 只会写回旧的 CPU 帧槽。
+		if skip_led and comp is SWBuildCompoentCircuitLed:
+			continue
+		if not backfill_gate_display and prog.comp_to_slot.has(comp):
+			continue   # 组合门：按开关跳过
+		comp.reCalSignals()
+	# 帧槽收尾：force 分支直接在 _applyBackendResult 返回，收尾必须在这里做。
+	_flushFrameStates()
+	_frame_flush_active = false
+	SWBuildCompoentRenderable._activeOwner = null
+
+# ========== 回填步骤 4：灯泡显示（按组判亮灭，组内广播） ==========
+# 热点路径优化（64x 存档读档卡顿治理）：
+# 1) 用编译期定死的 prog.led_comps 扁平表遍历，不再对 _notify 里每个组件跑 isStateful()
+#    虚调用（原实现 61.4k 次/拍 ≈ 3.25ms）；
+# 2) 用 evalMark 去重：同一组件本拍只刷一次（原实现按 _notify 集合本就去重；
+#    换成扁平表后必须显式判，否则 LED 会被刷两遍）。
+# 3) LED 的 reCalSignals 只是「读 input net → buildStateChanged」，这里直接做，
+#    省掉组件层的一次方法套壳（原实现 13.8k 次/拍 ≈ 9ms）；
+# 4) 按编译期分好的组遍历：同组灯泡的输入集合完全相同、亮灭必然同步，
+#    所以每拍只需「一组一次 OR + 一次比帧」，只有亮灭真的翻了的组才回刷组内灯泡。
+#    绝大多数拍几乎没有灯泡翻转，这一步把「逐灯泡 O(N)」降为「逐组 O(G)」。
+func _refreshLedDisplay(prog: SWGateProgram, force: bool) -> void:
 	# 本拍显示刷新去重标记：用独立自增计数器，不复用 comp.evalMark（那是旧组件链的轮次语义，
 	# 后端路径不维护它，混用会让去重失效或误判）。
 	_display_mark += 1
 	if _display_mark >= 0x3FFFFFFF:
 		_display_mark = 1
-		# 回绕时清空所有组件的标记，避免撞上上一轮的值
+		# 回绕时清空所有组件的标记，避免撞上上一轮的。
 		for c in prog.display_comps:
 			if c != null:
 				c.evalMark = -1
@@ -1255,47 +1478,61 @@ func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array,
 	var led_start := Time.get_ticks_usec()
 	var led_refs: Array = prog.led_refresh_comps
 	var led_comps: Array = prog.led_comps
-	var flat_src: PackedInt32Array = prog.led_src_flat
-	var src_offs: PackedInt32Array = prog.led_src_offs
-	var src_lens: PackedInt32Array = prog.led_src_lens
-	var led_n: int = led_comps.size()
-	# 首轮强制刷（贴图被重建重置）；之后只刷亮灭真的变了的 LED
-	var led_prev: PackedInt32Array = prog.led_prev_level
-	if led_prev.size() != led_n:
-		led_prev.resize(led_n)
-		led_prev.fill(-1)
-	for li in led_n:
-		var off: int = src_offs[li]
-		var ln: int = src_lens[li]
+	var g_src: PackedInt32Array = prog.led_group_src_flat
+	var g_off: PackedInt32Array = prog.led_group_src_offs
+	var g_len: PackedInt32Array = prog.led_group_src_lens
+	var g_mem: PackedInt32Array = prog.led_group_members
+	var g_moff: PackedInt32Array = prog.led_group_mem_offs
+	var g_mlen: PackedInt32Array = prog.led_group_mem_lens
+	var g_n: int = prog.led_group_src_offs.size()
+	# 首轮强制刷（贴图被重建重置）；之后只刷亮灭真的变了的。
+	var g_prev: PackedInt32Array = prog.led_group_prev
+	if g_prev.size() != g_n:
+		g_prev.resize(g_n)
+		g_prev.fill(-1)
+	for gi in g_n:
+		var off: int = g_off[gi]
+		var ln: int = g_len[gi]
 		var bit := 0
-		# LED 输入数 1~4，直接比较 slot 值（cur_slots 是 PackedInt32Array，下标访问最快）
+		# 组的输入数 1~4（编译期已去重），直接比较 slot 值（PackedInt32Array 下标访问最快）
 		if ln > 0:
-			bit = cur_slots[flat_src[off]]
+			bit = cur_slots[g_src[off]]
 			if ln > 1:
-				bit = bit | cur_slots[flat_src[off + 1]]
+				bit = bit | cur_slots[g_src[off + 1]]
 				if ln > 2:
-					bit = bit | cur_slots[flat_src[off + 2]]
+					bit = bit | cur_slots[g_src[off + 2]]
 					if ln > 3:
-						bit = bit | cur_slots[flat_src[off + 3]]
+						bit = bit | cur_slots[g_src[off + 3]]
+		if not force and g_prev[gi] == bit:
+			continue
+		g_prev[gi] = bit
 		var high: bool = bit != 0
-		# 亮灭没变的 LED 不必重刷（buildStateChanged 会写 signal_state + setFrameState 走帧槽合并）
-		if force or led_prev[li] != bit:
-			led_prev[li] = bit
+		var sig: SwDefine.CircuitSignal = SwDefine.CircuitSignal.LOW
+		if high:
+			sig = SwDefine.CircuitSignal.HIGH
+		var mo: int = g_moff[gi]
+		var mh: int = mo + g_mlen[gi]
+		for k in range(mo, mh):
+			var li: int = g_mem[k]
 			var rr = led_refs[li]
-			rr.buildRef.buildStateChanged(
-					SwDefine.CircuitSignal.HIGH if high else SwDefine.CircuitSignal.LOW)
+			rr.buildRef.buildStateChanged(sig)
 			rr.setFrameState(high)
-		led_comps[li].evalMark = mark
-	var led_usec := Time.get_ticks_usec() - led_start
-	# ---- NOT 门显示：只按「本拍值变了」刷 ----
-	# NOT 的显示刷新（reCalSignals → evaluate → netBit → buildRef.buildStateChanged）
-	# 是 64x 存档最大的单点开销：13.8k 个非门 × 每次 4 层间接调用。但它的语义只是
-	# 「把本拍算出来的电平画到贴图上」，而**绝大多数非门一拍内电平根本没变**。
-	# 这里用编译期建好的扁平表（输出 slot / 显示取反标记 / 渲染组件）直接：
-	#   本拍 ≠ 上拍 才动手；动手时也不进组件层，直接写 signal_state + 帧槽。
+			led_comps[li].evalMark = mark
+	dbg_led_usec += Time.get_ticks_usec() - led_start
+
+# ========== 回填步骤 5：组合门（NOT 等）显示刷新 ==========
+# 只按「本拍值变了」刷。NOT 的显示刷新（reCalSignals → evaluate → netBit →
+# buildRef.buildStateChanged）是 64x 存档最大的单点开销（3.8k 个非门 × 每次 4 层间接调用）。
+# 但它的语义只是「把本拍算出来的电平画到贴图上」，而绝大多数非门一拍内电平根本没变。
+# 这里用编译期建好的扁平表（输入 slot / 显示取反标记 / 渲染组件）直接：
+#   本拍 ≠ 上拍 才动手；动手时也不进组件层，直接写 signal_state + 帧槽。
+func _refreshGateDisplay(prog: SWGateProgram, gate_vis: PackedInt32Array,
+		cull_gate: bool, force: bool) -> void:
+	var time_recal: bool = dbg_time_recal
 	var cur_slots0: PackedInt32Array = _last_slots
 	var refs_for_dirty: Array = prog.gate_refresh_comps
 	var prev_for_dirty: PackedInt32Array = prog.gate_prev_level
+	var mark: int = _display_mark
 	if not backfill_gate_display:
 		# 压测档：不刷非门贴图，只把兜底显示件刷掉，组合门完全跳过
 		for comp in prog.fallback_display_comps:
@@ -1309,7 +1546,7 @@ func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array,
 		dirty.clear()
 		var gate_start := Time.get_ticks_usec()
 		if cull_gate:
-			# 视野外的非门：prev 已被置 -1 且不进 dirty，这一拍不写帧槽也不写 signal_state
+			# 视野外的非门：prev 已被置 -1 且不算 dirty，这一拍不写帧槽也不写 signal_state
 			for k in gate_vis.size():
 				var cgi: int = gate_vis[k]
 				var cnv: int = cur_slots0[out_slots[cgi]]
@@ -1318,7 +1555,13 @@ func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array,
 				prev[cgi] = cnv
 				dirty.append(cgi)
 		else:
-			for gi in gcount:
+			# 移动中分片：同 _applyNetSignals，本拍只比较一段，几拍内覆盖全表。
+			var lo: int = 0
+			var hi: int = gcount
+			if _slice_now:
+				lo = _slice_turn * gcount / MOVING_SLICES
+				hi = (_slice_turn + 1) * gcount / MOVING_SLICES
+			for gi in range(lo, hi):
 				var os: int = out_slots[gi]
 				var nv: int = cur_slots0[os]
 				if nv == prev[gi]:
@@ -1332,18 +1575,19 @@ func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array,
 		var invert: PackedByteArray = prog.gate_display_invert
 		for gi in prog.dirty_gate_idx:
 			var rr2 = refs_for_dirty[gi]
-			# 显示位 = 输出位（非门再取反：它按输入电平选帧）
+			# 显示值 = 输出位（非门再取反：它按输入电平选帧）
 			var hv: bool = (prev_for_dirty[gi] == 1) != (invert[gi] == 1)
 			rr2.buildRef.buildStateChanged(
 					SwDefine.CircuitSignal.HIGH if hv else SwDefine.CircuitSignal.LOW)
 			rr2.setFrameState(hv)
 		dbg_gate_usec += Time.get_ticks_usec() - dirty_refs
-		# 兜底：既不是 LED、也不是组合门的显示件（通常只有时钟/按钮等源类，数量极少）
+		# 兜底：既不是 LED、也不是组合门的显示件（通常只有时钟/按钮等源类，数量极少）。
 		for comp in prog.fallback_display_comps:
 			if comp != null:
 				comp.reCalSignals()
 	else:
-		# 首轮（读档/重建后）：贴图被 resetBuildState 重置成 off，必须全量刷一次
+		# 注：当前调用顺序下不可达（force=true 已在 _applyBackendResult 里提前 return）。
+		# _refreshFirstRoundDisplay）。保留以配合 dbg_time_recal 的慢组件诊断。
 		for comp in prog.display_comps:
 			if comp == null or comp.evalMark == mark:
 				continue
@@ -1357,16 +1601,108 @@ func _applyBackendResult(_circuit, prog: SWGateProgram, slots: PackedInt32Array,
 					dbg_slow_recal_script = comp.get_script().resource_path.get_file()
 			else:
 				comp.reCalSignals()
-	var _at3 := Time.get_ticks_usec()
-	# 拍末统一刷帧槽：本拍所有 NOT/LED/寄存器 的显示状态合并后每槽只写一次
-	_flushFrameStates()
-	_frame_flush_active = false
-	SWBuildCompoentRenderable._activeOwner = null
-	dbg_phases[1] += _at1 - _at0
-	dbg_phases[4] += _at3 - _at2
-	dbg_led_usec += led_usec
 
-# 懒构建：电路 → SWGateProgram + CPU 数据驱动引擎（缓存；结构变化时 clear_gpu_backend 已一并清）
+# ========== GPU LED resolve 接入 ==========
+# 每条电路在「全局 slot buffer」里分一段固定区间（gpu_slot_base），局部 slot 下标不变。
+# LED 表里的 gs = base + local_slot，dispatch 时直接按 gs 取本拍 slot 值。
+# 电路销毁不回收基址（与帧槽分配策略一致），泄漏只表现为全局 buffer 缓慢变长。
+func _alloc_gpu_slot_base(prog: SWGateProgram) -> void:
+	if prog.gpu_slot_base >= 0:
+		return
+	prog.gpu_slot_base = _led_global_slots
+	_led_global_slots += maxi(prog.slot_count, 1)
+	_led_table_dirty = true
+
+# 按需重建并上传全局 LED 组表。
+# 表布局（stride 8，与 render/sw_signal_led.glsl 逐字对应）：
+#   [src_count, gs0..gs3, dst_off, dst_count, 0]
+#     src_count  = 本组输入数（0~4）。
+#     gs0..gs3   = 输入 slot 的全局下标（未接的位 = -1）。
+#     dst_off    = 本组帧槽段在 _led_dst_slots 里的起点
+#     dst_count  = 本组帧槽数（= 已烘焙的组内灯泡数；0 = 表尾填位，shader 跳过）。
+# 为什么要分组：一组 = 输入集合完全相同的灯泡（通常就是“多个灯泡接同一根 net”）。
+# 它们的亮灭必然相同。逐灯泡一条记录会让同一个 OR 被算 N 遍；这里一组算一次，
+# shader 直接把结果广播写到 dst_count 个帧槽。
+# 触发：帧槽分配（frame_slot_gen 变化）/ 电路增删 / 新 prog 编译。
+# 重建要扫全部灯泡（大存档 ~10ms 一次），而烘焙是分批的（视野内区块才烘），所以这里节流：
+# 最多 200ms 重建一次，没烘出来的灯泡直接跳过（它本来也没被渲染），下一次 gen 变化再补上。
+const LED_TABLE_REBUILD_US := 200000
+const LED_TABLE_STRIDE := 8
+
+# 供渲染层每拍（flush 之前）补一次表同步：烘焙是分批的，帧槽随区块加载陆续补进来。
+# 不能只依赖「有电路被求值」这个时机（静止画面里可能一条电路都不跑）。
+func sync_led_gpu_table() -> void:
+	var tex: SWSignalTexture = SWSignalTexture.instance
+	if tex != null and tex.has_led_pass():
+		_sync_led_gpu_table(tex)
+
+func _sync_led_gpu_table(tex: SWSignalTexture) -> void:
+	if tex.frame_slot_gen != _led_table_gen:
+		_led_table_gen = tex.frame_slot_gen
+		_led_table_dirty = true
+	if not _led_table_dirty:
+		return
+	# 移动中也要重建：灯泡亮灭完全由这张表决定，表里没有的帧槽在 GPU 端就是常暗的
+	# （烘焙时写入的 _frameHigh 默认 false）。早前「移动中延后重建」会让新加载区块的灯泡
+	# 灭着等停下，等于元件状态被重置，已回退。尖峰交给下面的 200ms 节流摊掉，不靠跳过。
+	var now: int = Time.get_ticks_usec()
+	if _led_table_us != 0 and now - _led_table_us < LED_TABLE_REBUILD_US:
+		return
+	_led_table_us = now
+	# 帧槽去重：resetFrameSlots（读档）会把帧槽从头再分配，而上一份世界的电路
+	# 可能还留在 _compiled_progs 里（clearAllBuilds 不清 circuits），于是同一个帧槽会被
+	# 两条记录同时写；compute 并发写同一 texel 是竞态的，所以每个帧槽只能落在一个组里。
+	# 遍历方向反过来（新电路在前）+ 「先占先得」：新世界盖掉旧世界（与旧版后写覆盖同语义）。
+	var claimed: Dictionary = {}
+	var recs := PackedInt32Array()
+	var dsts := PackedInt32Array()
+	var progs: Array = _compiled_progs.values()
+	for pi in range(progs.size() - 1, -1, -1):
+		var p := progs[pi] as SWGateProgram
+		if p == null or p.led_comps.is_empty():
+			continue
+		if p.gpu_slot_base < 0:
+			_alloc_gpu_slot_base(p)
+		var base: int = p.gpu_slot_base
+		var g_n: int = p.led_group_src_offs.size()
+		var g_src: PackedInt32Array = p.led_group_src_flat
+		var g_off: PackedInt32Array = p.led_group_src_offs
+		var g_len: PackedInt32Array = p.led_group_src_lens
+		var g_mem: PackedInt32Array = p.led_group_members
+		var g_moff: PackedInt32Array = p.led_group_mem_offs
+		var g_mlen: PackedInt32Array = p.led_group_mem_lens
+		for gi in g_n:
+			var dst_off: int = dsts.size()
+			var mo: int = g_moff[gi]
+			var mh: int = mo + g_mlen[gi]
+			for k in range(mo, mh):
+				var rc_obj = p.led_refresh_comps[g_mem[k]]
+				# 旧世界的渲染组件可能已随建筑释放：is_instance_valid 才是唯一可靠的判据。
+				if not is_instance_valid(rc_obj):
+					continue
+				var fs: int = (rc_obj as SWBuildCompoentRenderable)._frameSlot
+				# 未烘焙（fs<0）先跳过，下一次 gen 变化补进来；已被别的组占住则丢弃
+				if fs < 0 or claimed.has(fs):
+					continue
+				claimed[fs] = true
+				dsts.append(fs)
+			var dc: int = dsts.size() - dst_off
+			if dc <= 0:
+				continue   # 整组都没烘出来：不占一条记录（表尾填位就是 dst_count = 0）
+			var src_n: int = mini(g_len[gi], 4)
+			var w: int = recs.size()
+			recs.resize(w + LED_TABLE_STRIDE)
+			recs[w] = src_n
+			for k in 4:
+				recs[w + 1 + k] = base + g_src[g_off[gi] + k] if k < src_n else -1
+			recs[w + 5] = dst_off
+			recs[w + 6] = dc
+	_led_table = recs
+	_led_dst_slots = dsts
+	tex.led_set_table(recs, dsts)
+	_led_table_dirty = false
+
+# 懒构建：电路 → SWGateProgram + CPU 数据驱动引擎（缓存；结构变化时 clear_gpu_backend 已一并清掉）
 func _ensure_cpu_backend(circuit) -> Dictionary:
 	if _cpu_backends.has(circuit):
 		var cached: Dictionary = _cpu_backends[circuit]
@@ -1378,7 +1714,7 @@ func _ensure_cpu_backend(circuit) -> Dictionary:
 	var engine := SWSignalEvalCPU.new()
 	engine.setup(prog)
 	# SPEC-05：唯一表达式 DAG（用户方案）。表达式去重后每拍只算唯一表达式，
-	# 不再逐 gate 重复计算。enable_expr_dag=false 时退回原 gate 表逐层求值。
+	# 不再对 gate 重复计算。enable_expr_dag=false 时退回原 gate 表逐层求值。
 	var expr: SWExprProgram = null
 	var expr_vals := PackedInt32Array()
 	if enable_expr_dag:
@@ -1413,19 +1749,27 @@ func _ensure_cpu_backend(circuit) -> Dictionary:
 	_cpu_backends[circuit] = backend
 	return backend
 
-# 源值：按 input_comps 序读组件当前状态（时钟 curSig / 按钮 pressed）
+# 源值：按 input_comps 序读组件当前状态（时钟 curSig / 按钮 pressed）。
+# 复用成员数组：以前每拍每电路新建一个 PackedInt32Array，纯分配。
+# 安全性：所有调用点都在本拍内立即消费（write_sources_batch 立刻拷进自己的 byte 缓冲；
+# expr 路径只读，engine.write_sources 也是拷贝），不存在跨拍持有。
+var _input_vals: PackedInt32Array = PackedInt32Array()
+
 func _buildInputVals(prog: SWGateProgram) -> PackedInt32Array:
-	var vals := PackedInt32Array()
-	for comp in prog.input_comps:
+	var n: int = prog.input_comps.size()
+	var vals: PackedInt32Array = _input_vals
+	vals.resize(n)
+	for i in n:
+		var comp = prog.input_comps[i]
 		var ref = comp.buildRef
 		if comp is SWBuildCompoentCircuitClockSiggen:
 			var clk := ref as SWBuildClockSiggen
-			vals.append(1 if clk != null and clk.curSig == SwDefine.CircuitSignal.HIGH else 0)
+			vals[i] = 1 if clk != null and clk.curSig == SwDefine.CircuitSignal.HIGH else 0
 		elif comp is SWBuildCompoentCircuitSource:
 			var btn := ref as SWBuildButton
-			vals.append(1 if btn != null and btn.pressed else 0)
+			vals[i] = 1 if btn != null and btn.pressed else 0
 		else:
-			vals.append(0)
+			vals[i] = 0
 	return vals
 
 # GPU 回填用标脏：与 _publishNetSignal 的副作用一致，但不把负载排进 CPU 求值队列（GPU 已全量算完）
@@ -1437,7 +1781,7 @@ func _publishGpuNetSignal(net:SWNet, sig:SwDefine.CircuitSignal) -> void:
 		net.preSignal = net.curSignal
 	net.curSignal = sig
 	net.changedEpoch = _curEpoch
-	# 标记本轮已解析：netBit() 用 sigEpoch != _curEpoch 判断「本轮未解析」，
+	# 标记本轮已解析：netBit() 靠 sigEpoch != _curEpoch 判断「本轮未解析」，
 	# 漏设会让每次 net 读取触发 resolveNetSignal（旧增量全量重求值），GPU/CPU 数据驱动白算
 	net.sigEpoch = _curEpoch
 	net.sigVersion += 1
@@ -1495,14 +1839,14 @@ func _publishNetSignal(net:SWNet, sig:SwDefine.CircuitSignal) -> void:
 	SwCommon.netPatchStamp += 1
 	net.patchStamp = SwCommon.netPatchStamp
 	#连线颜色由 net 电平决定：把翻转的 net 交给渲染端批量换色
-	#（门/灯/寄存器在上游求值里已进了 notify 列表，无需在这里逐根展开连线）
+	#（门/灯/寄存器在上游求值里已进过 notify 列表，无需在这里逐根展开连线）
 	_dirtyNets[net] = true
-	#按覆盖区块标脏：真正需要重绘的区块集
+	#按覆盖区块标脏：真正需要重绘的区块：
 	for cp:Vector2i in net.chunkPosArr:
 		_dirtyChunks[cp] = true
 	_queue.append_array(net._loadComps)
 
-#取走本轮被翻转 net 标脏的区块（调用方负责合并去重）
+#取走本轮被翻转的 net 标脏的区块（调用方负责合并去重）
 func takeDirtyChunks() -> Array[Vector2i]:
 	var arr:Array[Vector2i] = _dirtyChunks.keys()
 	_dirtyChunks.clear()
@@ -1525,7 +1869,7 @@ func _netSignal(net:SWNet) -> int:
 			return 0
 	return 1
 
-#把电路控制挂到本轮所有 net 上：元件求值时经 net.signalNow() 拉取源输入
+#把电路控制挂到本轮所有 net 上：元件求值时通过 net.signalNow() 拉取源输入
 func bindNetOwner(builds:Array[SWBuildItemDefine], from:int = 0, to:int = -1) -> void:
 	if to < 0 or to > builds.size():
 		to = builds.size()

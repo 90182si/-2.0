@@ -10,12 +10,12 @@ var drawRect:Rect2
 # 原 Dictionary 数组每部件容器开销 ~500 bytes（9 个 string key + 哈希表），
 # 16万建筑 × 4 部件 ≈ 350MB 纯容器。改成平行 PackedArray 后每部件仅 ~28 bytes 数据。
 # 布局：_partRect[i*4+0..3] = (x,y,w,h)；_partOff[i*2+0..1] = (ox,oy)；
-#       _partRot[i] = 0-3；_partPinDir[i] = -1(无pin) 或 0-3(世界方向)；
-#       _partLoopTint[i] = 0/1；_partNet[i] = SWNet 引用或 null。
+#       _partRot[i] = 0-3；_partLoopTint[i] = 0/1；_partNet[i] = SWNet 引用或 null。
+# （原先还有一份 _partPinDir：只写不读，已删除——17 万建筑 × 一个空的 PackedInt32Array
+#   光分配头就是十几 MB）
 var _partRect: PackedFloat32Array = PackedFloat32Array()
 var _partOff: PackedInt32Array = PackedInt32Array()
 var _partRot: PackedInt32Array = PackedInt32Array()
-var _partPinDir: PackedInt32Array = PackedInt32Array()
 var _partLoopTint: PackedByteArray = PackedByteArray()
 var _partNet: Array = []
 var _geomDirty: bool = true
@@ -359,7 +359,7 @@ func setBuildRef(build:SWBuildItemDefine) -> void:
 	buildRef = build
 
 # 追加一个部件到平行数组
-func _appendPart(rect: Rect2, offset: Vector2i, rotation: int, pinDir: int, loopTint: bool, net: SWNet) -> void:
+func _appendPart(rect: Rect2, offset: Vector2i, rotation: int, loopTint: bool, net: SWNet) -> void:
 	_partRect.append(rect.position.x)
 	_partRect.append(rect.position.y)
 	_partRect.append(rect.size.x)
@@ -367,7 +367,6 @@ func _appendPart(rect: Rect2, offset: Vector2i, rotation: int, pinDir: int, loop
 	_partOff.append(offset.x)
 	_partOff.append(offset.y)
 	_partRot.append(rotation)
-	_partPinDir.append(pinDir)   # -1 = 无 pin
 	_partLoopTint.append(1 if loopTint else 0)
 	_partNet.append(net)
 
@@ -376,13 +375,12 @@ func _buildRenderParts() -> void:
 	_partRect.resize(0)
 	_partOff.resize(0)
 	_partRot.resize(0)
-	_partPinDir.resize(0)
 	_partLoopTint.resize(0)
 	_partNet.resize(0)
 
 	if buildHasBase:
 		#非门等符号在图集中为黑色像素，乘法混色无法变红；改染可着色的灰色底板
-		_appendPart(buildRef.buildDefine.atlasBuildBase.region, Vector2i.ZERO, 0, -1, true, null)
+		_appendPart(buildRef.buildDefine.atlasBuildBase.region, Vector2i.ZERO, 0, true, null)
 	if buildRef.buildDefine and buildRef.buildDefine.build_pin.size() > 0:
 		#预览建筑不挂电路：所有端口都按无 net 处理，也不去取电路组件
 		var cir: SWBuildCompoentCircuit = null
@@ -401,14 +399,12 @@ func _buildRenderParts() -> void:
 			var net:SWNet = cir.pinNetMap.get(posmod(p.pin_dir+buildRef.rotation,4),null) if cir != null else null
 			if net == null and wire:
 				continue
-			# pin_dir 存世界方向，供烘焙时现取 net
+			# 世界方向已烘进 rotation，烘焙时现取 net
 			_appendPart(p.wire_pin.region, p.cell_offset,
-					posmod(p.pin_dir+buildRef.rotation,4),
-					posmod(p.pin_dir+buildRef.rotation,4),
-					true, net)
+					posmod(p.pin_dir+buildRef.rotation,4), true, net)
 	if buildHasAtlas:
 		var rot: int = buildRef.rotation if buildAtlasRotable else 0
-		_appendPart(drawRect, Vector2i.ZERO, rot, -1, false, null)
+		_appendPart(drawRect, Vector2i.ZERO, rot, false, null)
 		_atlasPartIndex = _partCount() - 1
 	else:
 		_atlasPartIndex = -1

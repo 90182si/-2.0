@@ -195,10 +195,14 @@ func getSignalChangedChunkPosArr(changedBuilds:Array[SWBuildItemDefine]) -> Arra
 func refresh_signal_chunks(changedBuilds:Array[SWBuildItemDefine]) -> int:
 	var tex:SWSignalTexture = SWSignalTexture.instance
 	var nets:Dictionary = circuit_control.takeDirtyNets()
-	# 帧槽（LED/寄存器/非门/按钮亮灭）也可能独立标脏：nets 为空但纹理脏时也要 flush
-	if nets.is_empty() and (tex == null or not tex.is_dirty()):
-		return 0
 	if tex == null:
+		return 0
+	# 帧槽（LED/寄存器/非门/按钮亮灭）也可能独立标脏：nets 为空但纹理脏时也要 flush。
+	# GPU LED resolve 下灯泡每帧都要重算（GPU 端不做「变化才刷」），led_pending 也算待刷。
+	# 表同步必须放在早退判断之前：表里没灯泡时 led_pending 为假，早退会把「重建表」卡住。
+	if tex.has_led_pass():
+		circuit_control.sync_led_gpu_table()
+	if nets.is_empty() and not tex.is_dirty() and not tex.led_pending():
 		return 0
 	var count:int = 0
 	for net in nets:
@@ -586,6 +590,10 @@ func clear_all_builds() -> void:
 	_selected_builds.clear()
 	_clip_states.clear()
 	clockBuildArr.clear()
+	#上一份世界的电路/编译产物/求值引擎必须跟着一起释放：它们反引用着旧建筑，
+	#只清建筑表的话，换几次存档就残留几份完整世界（这是内存冲上 2GB 的主因）
+	if circuit_control:
+		circuit_control.clearAllCircuits()
 	build_manager.clearAllBuilds()
 	# netId 全局计数整体作废：全量清除后从 0 重新分配，防旧会话 id 与新 net 冲突；
 	# 帧槽（LED/寄存器/非门/按钮亮灭的 shader 帧选择）同步重置
@@ -596,6 +604,8 @@ func clear_all_builds() -> void:
 		tex.resetFrameSlots()
 	var v := _get_view()
 	if v != null:
+		# 区块上的建筑引用与 CPU 缓冲也属于旧世界，先彻底清掉再标记全量重建
+		v.sw_draw_manager.clearChunkCaches()
 		v.sw_draw_manager.updataAllChunks()
 
 #加载存档数据（同步版本；GUT/无 UI 场景用）
@@ -629,6 +639,8 @@ func load_save_data_async(data: Dictionary, on_progress:Callable = Callable()) -
 		return
 	_report_progress(on_progress, 0.0, "清空地图")
 	clear_all_builds()
+	if MEM_AUDIT_ON_LOAD:
+		print_memory_audit("清空后")
 	var builds_arr = data.get("builds", [])
 	if not builds_arr is Array:
 		return
@@ -648,11 +660,21 @@ func load_save_data_async(data: Dictionary, on_progress:Callable = Callable()) -
 		if i < total:
 			await tree.process_frame
 	_repair_tunnel_pairs(unpaired_tunnels)
+	if MEM_AUDIT_ON_LOAD:
+		print_memory_audit("建筑建完")
 	_report_progress(on_progress, 0.50, "连接电路")
 	await tree.process_frame
 	var allBuilds:Array[SWBuildItemDefine] = build_manager.getAllBuilds()
 	await circuit_control.updateBuildCircuitStaged(allBuilds, tree, func(stage:int, p:float) -> void:
 		_report_progress(on_progress, 0.50 + 0.45 * (float(stage) + p) / 9.0, LOAD_STAGE_TEXT[stage]))
+	if MEM_AUDIT_ON_LOAD:
+		print_memory_audit("电路建完")
+		# 单独看程序侧规模：这两张缓存每项都是「电路 → 整份 gate 表」，是除建筑外最大的候选
+		print("[MEM]prog compiled: gates=%d slots=%d | simplified: gates=%d slots=%d" % [
+				_sum_prog_field(circuit_control._compiled_progs, "gate_count"),
+				_sum_prog_field(circuit_control._compiled_progs, "slot_count"),
+				_sum_prog_field(circuit_control._simplified_progs, "gate_count"),
+				_sum_prog_field(circuit_control._simplified_progs, "slot_count")])
 	_report_progress(on_progress, 0.98, "刷新画面")
 	await tree.process_frame
 	#时钟注册放在最后一次让帧之后：注册即开始走拍，提前注册会多跑一拍计数器
@@ -673,6 +695,57 @@ func _refresh_after_load() -> void:
 	if v != null:
 		v.sw_draw_manager.updataAllChunks()
 		v.sw_draw_manager.on_view_rect_changed()
+	if MEM_AUDIT_ON_LOAD:
+		print_memory_audit("读档后")
+
+# 读档各阶段打一行 [MEM] 汇总（内存诊断开关，排查完可置 false）
+const MEM_AUDIT_ON_LOAD: bool = true
+# ========== 内存诊断 ==========
+# 读档结束后打一行汇总：静态内存总量 + 各主要容器的条目数。
+# 比对着看就能判断「内存是不是随读档次数上涨」（上涨 = 旧世界还被人引用着），
+# 也能看出大头在建筑侧、电路程序侧还是区块缓冲侧。不需要时把开关置 false。
+func print_memory_audit(tag: String = "") -> void:
+	if build_manager == null:
+		return
+	var builds:int = build_manager.getBuildCount()
+	var circuits:int = 0
+	var progs:String = "0/0/0/0"
+	var nets:int = 0
+	var neighbors:int = 0
+	if circuit_control != null:
+		circuits = circuit_control.circuits.size()
+		progs = "%d/%d/%d/%d" % [circuit_control._compiled_progs.size(),
+				circuit_control._simplified_progs.size(),
+				circuit_control._cpu_backends.size(),
+				circuit_control._gpu_backends.size()]
+		nets = circuit_control._netById.size()
+		neighbors = circuit_control._neighborsCache.size()
+	var chunks:int = 0
+	var idle_cache:int = 0
+	var chunk_buf_bytes:int = 0
+	var v := _get_view()
+	if v != null and v.sw_draw_manager != null:
+		var dm = v.sw_draw_manager
+		chunks = dm._chunkInstance.size()
+		idle_cache = dm._idleChunkCache.size()
+		for chunkIns:SwDefine.SWDrawChunkData in dm._chunkInstance.values():
+			if chunkIns.mesh_instance != null:
+				chunk_buf_bytes += chunkIns.mesh_instance._cpuBuffer.size() * 4
+	print("[MEM]%s static=%.1fMB obj=%d orphan=%d builds=%d circuits=%d prog(c/s/cpu/gpu)=%s nets=%d neighbors=%d chunks=%d idleCache=%d chunkBuf=%.1fKB" % [
+		tag,
+		float(OS.get_static_memory_usage()) / (1024.0 * 1024.0),
+		int(Performance.get_monitor(Performance.OBJECT_COUNT)),
+		int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)),
+		builds, circuits, progs, nets, neighbors, chunks, idle_cache,
+		float(chunk_buf_bytes) / 1024.0])
+
+# 汇总一张「电路 → SWGateProgram」缓存里某个字段的总和（内存诊断用，读档后跑一次）
+func _sum_prog_field(progs:Dictionary, field:String) -> int:
+	var total:int = 0
+	for prog in progs.values():
+		if prog != null:
+			total += int(prog.get(field))
+	return total
 
 #存档的一条建筑记录 -> 建筑对象并加入地图；失败返回 null
 func _add_build_from_save(b:Dictionary, unpaired_tunnels:Array[SWBuildWireTunnel]) -> SWBuildItemDefine:
@@ -1063,9 +1136,30 @@ var _stressFlip:bool = false
 # 恢复时 _last_clock_usec 不重置：下一拍按正常间隔继续推进，不会补拍。
 var tick_enabled:bool = true
 
+# 移动中是否连求值一起停：true 退回最早的「移动就停 tick」行为（时钟停摆、寄存器不锁）。
+# 默认 false = 求值/寄存器照跑，显示回填降档分片（见 SWCircuitControl.display_throttled）。
+var pause_tick_while_moving:bool = false
+
+# 把「移动中降档」落到电路控制上。每拍必调（包括早退分支），
+# 否则标志残留成 true 会让停下后的显示一直处于分片模式。
+func _set_display_throttled(throttled:bool) -> void:
+	if circuit_control != null and circuit_control.display_throttled != throttled:
+		circuit_control.display_throttled = throttled
+
 func tick(_delta: float,_tick_index:int) -> void:
 	#return
+	#相机在动（中键拖动 / 方向键 / 滚轮缩放）：这一拍照常推进电路，但显示回填降档成
+	#分片模式（每拍只比 1/MOVING_SLICES 的 net 与门，几拍内全部跟上）。
+	#元件状态照常更新：不冻结、不回退，移动中新进视野的区块也会在 2~3 拍内补上正确状态。
+	#为什么不直接暂停 tick：暂停会让时钟停摆、寄存器不锁，移动一秒就丢一秒电路时间。
+	#放置/删除善后期间强制退回全量（那段时间要看中间结果）。
+	var moving:bool = SWCamera2D.is_view_moving()
+	var throttle:bool = moving and tick_enabled and not _place_running and not _remove_busy
+	#降档标志必须在所有早退之前落定
+	_set_display_throttled(throttle)
 	if not tick_enabled:
+		return
+	if moving and pause_tick_while_moving:
 		return
 	#放置任务 / 删除善后的电路重建是分帧进行的：中间态下跑时钟增量求值会把电路写坏
 	if _place_running or _remove_busy:
@@ -1092,7 +1186,9 @@ func tick(_delta: float,_tick_index:int) -> void:
 	# cull=true：这一拍的显示只刷视野内的东西（产品要求）。
 	# 视野外的电线与非门不刷显示，视野外且不含寄存器的电路连求值都跳过；
 	# 含寄存器的电路看不见也照算，Q 得跟着时钟继续走（计数器不能停在半路）。
-	var changedBuilds := circuit_control.buildSignalsChanged(clocks, true)
+	# 第三个参数 want_builds=false：时钟 tick 不读返回值（refresh_signal_chunks 只用
+	# dirty net 与信号纹理），没必要每拍把 _notify 里几百上千个组件回填成 build 数组。
+	var changedBuilds := circuit_control.buildSignalsChanged(clocks, true, false)
 	#for build in clocks:
 		#build.onPressed(true)
 	#changedBuilds = circuit_control.buildSignalsChanged(clocks)

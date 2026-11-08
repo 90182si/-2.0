@@ -8,7 +8,7 @@ class_name SWGateOptimizer extends RefCounted
 # 玩家才能看到每一级门在动。
 #
 # ========== 为什么化简只能在 gate 层做、且不许动 slot ==========
-# slot 编号是**对外契约**：回填阶段按 net_slots / led_src_flat / gate_out_slots
+# slot 编号是**对外契约**：回填阶段按 net_slots / led_group_src_flat / gate_out_slots
 # 直接读 slots[i] 决定连线颜色、灯泡亮灭、门贴图。删 slot 或重排编号会让这些
 # 表全部指向错的电平。所以本文件只改「这一条 gate 怎么写这个 slot」，
 # dst 编号、gate 条数、拓扑层表、回填扁平表全部原样沿用，产物可以直接喂给
@@ -215,7 +215,7 @@ func _set_slot(s: int, new_op: int, new_srcs: Array,
 	_changed += 1
 
 # 只读字段全部共享引用：两份 prog 描述的是同一个 slot 空间，缓存（net_prev_bit /
-# gate_prev_level / led_prev_level 等）也该是同一份，否则切换开关时会白白全量重刷一屏。
+# gate_prev_level / led_group_prev 等）也该是同一份，否则切换开关时会白白全量重刷一屏。
 func _copy_shared(src: SWGateProgram, dst: SWGateProgram) -> void:
 	dst.slot_count = src.slot_count
 	dst.net_count = src.net_count
@@ -244,10 +244,14 @@ func _copy_shared(src: SWGateProgram, dst: SWGateProgram) -> void:
 	dst.led_comps = src.led_comps
 	dst.led_refresh_comps = src.led_refresh_comps
 	dst.led_src_slots = src.led_src_slots
-	dst.led_src_flat = src.led_src_flat
-	dst.led_src_offs = src.led_src_offs
-	dst.led_src_lens = src.led_src_lens
-	dst.led_prev_level = src.led_prev_level
+	dst.led_group_id = src.led_group_id
+	dst.led_group_src_flat = src.led_group_src_flat
+	dst.led_group_src_offs = src.led_group_src_offs
+	dst.led_group_src_lens = src.led_group_src_lens
+	dst.led_group_members = src.led_group_members
+	dst.led_group_mem_offs = src.led_group_mem_offs
+	dst.led_group_mem_lens = src.led_group_mem_lens
+	dst.led_group_prev = src.led_group_prev
 	dst.gate_out_slots = src.gate_out_slots
 	dst.gate_refresh_comps = src.gate_refresh_comps
 	dst.gate_prev_level = src.gate_prev_level

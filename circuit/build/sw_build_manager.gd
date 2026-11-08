@@ -230,6 +230,10 @@ func getBuildCount() -> int:
 
 func clearAllBuilds() -> void:
 	chunkMap.clear()
+	#内存：id 表必须一起清空。只清 chunkMap 的话，被清掉的建筑仍然被这张表强引用，
+	#永远不会释放 —— 连续读档 N 次就留下 N 份完整建筑图（17 万建筑 = 4 个 Object/栋，
+	#单份数百 MB）。读档流程在 clear_all_builds() 之后会整批重建，id 表无需跨清空保留。
+	buildStoreManager.clear()
 	cacheValid = false
 	version += 1
 	build_changed.emit()

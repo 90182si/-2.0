@@ -58,6 +58,13 @@ static func delete_save(name: String) -> bool:
 	var ok2: bool = dir.remove(thumb_file)
 	return ok1 == true and ok2 == true
 
+# 存档里的信号电平。GPU LED resolve 下灯泡的 signal_state 不再每拍更新（亮灭由信号纹理算，
+# CPU 不遍历灯泡），所以灯泡改为从输入 net 的当前电平现场推导，避免存进旧值。
+static func _save_signal_state(build: SWBuildItemDefine) -> int:
+	if build is SWBuildLed:
+		return (build as SWBuildLed).currentSignal()
+	return build.signal_state
+
 static func save_builds(name: String, builds: Array, viewport: Viewport, karnaugh_map_data: Dictionary = {}) -> bool:
 	_ensure_dir()
 	var save_path: String = _save_file_path(name)
@@ -78,7 +85,7 @@ static func save_builds(name: String, builds: Array, viewport: Viewport, karnaug
 		b["rot"] = build.rotation
 		b["comp_type"] = build.buildDefine.circuit_component_type
 		b["circuit_on"] = build.circuit_on
-		b["signal_state"] = build.signal_state
+		b["signal_state"] = _save_signal_state(build)
 		#元件内部状态（开关按下/时钟电平/寄存器锁存），加载时用于还原
 		b["state"] = build.save_state()
 		b["tunnel_pair_id"] = build.pairId if build is SWBuildWireTunnel else -1

@@ -71,6 +71,9 @@ func is_dirty() -> bool:
 # 从 MAX_NETS-1 向下分配，与 netId（0 向上）天然隔离，互不冲突。
 # 帧槽随全量清除/加载整体重置（与 netId 同步），增量删除不回收（耗尽有 warning + 回退 off 帧）。
 var _next_frame_slot: int = MAX_NETS - 1
+# 帧槽分配版本号：每次 alloc_frame_slot 自增。GPU LED resolve 的表里存帧槽，
+# 控制层靠它判断「表是否过期需要重建」，不需要逐建筑回溯。
+var frame_slot_gen: int = 0
 
 func alloc_frame_slot() -> int:
 	if _next_frame_slot < 0:
@@ -78,11 +81,35 @@ func alloc_frame_slot() -> int:
 		return -1
 	var slot: int = _next_frame_slot
 	_next_frame_slot -= 1
+	frame_slot_gen += 1
 	return slot
 
 # 全量清除/加载时调用（与 resetNetIdCounter 同步）：帧槽整体作废重建
 func resetFrameSlots() -> void:
 	_next_frame_slot = MAX_NETS - 1
+	frame_slot_gen += 1
+
+
+# ---------- GPU LED resolve（可选能力；不支持的 backend 返回 false，调用方走 CPU 遍历） ----------
+# 灯泡亮灭 = OR(输入 slot)，语义与 SWBuildCompoentCircuitLed.reCalSignals 一致。
+# 按组处理：同组灯泡的输入集合完全相同（典型情况就是多个灯泡接同一根 net），亮灭必然相同。
+# 组表格式（stride 8）：[src_count, gs0..gs3, dst_off, dst_count, 0]，gs = 全局 slot 下标；
+# dsts = 帧槽表，组记录的 dst_off/dst_count 指向它的连续一段（dst_count = 0 表示空/填位）。
+# 调用约定（每拍）：led_set_table（仅表变化时）→ led_upload_slots（每条电路一次）→ flush。
+func has_led_pass() -> bool:
+	return false
+
+# 上传全局 LED 组表 + 帧槽表；越界/空表由 backend 自行处理
+func led_set_table(_records: PackedInt32Array, _dst_slots: PackedInt32Array) -> void:
+	pass
+
+# 上传一条电路的 slot 值到全局 slot buffer 的 base 起；limit>0 时只传前 limit 个
+func led_upload_slots(_base: int, _slots: PackedInt32Array, _limit: int = -1) -> void:
+	pass
+
+# 本帧是否还有 LED 待算（有灯泡就必须每帧 dispatch 一次：GPU 端不做「变化才刷」）
+func led_pending() -> bool:
+	return false
 
 
 # ---------- 电平纹理（后端各自的产物） ----------

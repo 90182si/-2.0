@@ -412,7 +412,9 @@ class SWBuildStateSelected extends SWBuildStateStrategy:
 			buildState.mask_color = Color(0.157, 0.557, 0.906, 0.788)
 
 #建筑物内部数据
-class SWBuildState extends Resource:
+#内存优化：原来是 extends Resource（17 万建筑 × 一个 Resource 的基类开销，含资源路径/元数据/rid 表），
+#但这东西从不落盘、也不进编辑器，只用 state/mask_color/策略三个字段，改成 RefCounted 省下几十 MB。
+class SWBuildState extends RefCounted:
 	var mask_color:Color = Color(1.0, 1.0, 1.0, 1.0)
 	var buildStateStrategy:SWBuildStateStrategy = null
 	var state:BuildState = BuildState.IDLE:

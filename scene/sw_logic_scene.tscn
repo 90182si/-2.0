@@ -55,5 +55,6 @@ color = Color(0.5568628, 1, 1, 0.29803923)
 [node name="SWCamera2D" type="Camera2D" parent="." unique_id=891435687]
 anchor_mode = 0
 script = ExtResource("11_ahrpj")
+view_speed_min = 1000.0
 
 [node name="SWPerformanceMonitor" parent="." unique_id=1125474679 instance=ExtResource("12_n2bbv")]

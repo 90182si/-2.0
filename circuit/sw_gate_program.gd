@@ -70,15 +70,33 @@ var led_refresh_comps: Array = []
 # 每个 LED 读到哪些 net slot（编译期算好）：回填阶段直接按 slot 判亮灭，
 # 不再走「LED.reCalSignals → netBit → SWNet 对象」的逐 LED 对象链
 # （64x 存档实测 13.8k 次/拍、59ms）。
+# 已去重 + 升序：OR 与顺序无关，重复 slot 没有额外信息（一盏灯左右两口接同一根 net 很常见）。
 var led_src_slots: Array = []
-# LED 批量刷新的平坦索引（见编译器注释）：
-#   led_refresh_comps[i] 是第 i 个 LED 的渲染组件；
-#   led_src_flat / led_src_offs / led_src_lens 描述它读哪几个 net slot。
-var led_src_flat := PackedInt32Array()
-var led_src_offs := PackedInt32Array()
-var led_src_lens := PackedInt32Array()
-# 每拍真正发生电平变化的 net slot 数（回填时统计，供 LED 快速路径判空）
-var led_prev_level := PackedInt32Array()
+
+# ========== 灯泡分组（同一组 = 输入 slot 集合完全相同 → 亮灭必然同步） ==========
+# 「多个灯泡接同一根 net」是电路里最常见的接法：逐个灯泡各算一次 OR 是纯重复。
+# 编译期按输入集合归并成组，之后两个消费端都只按组算一次：
+#   - CPU 回填：一组一次比较，只有亮灭真的翻了的组才回刷组内灯泡；
+#   - GPU resolve：一个 dispatch 线程算一组，把结果广播写进组内全部帧槽。
+# led_group_id[i]：第 i 个灯泡（与 led_comps 同序）属于哪个组。
+var led_group_id := PackedInt32Array()
+# 每组的输入 slot 段（平坦数组 + 起点 + 长度，长度 ≤4）
+var led_group_src_flat := PackedInt32Array()
+var led_group_src_offs := PackedInt32Array()
+var led_group_src_lens := PackedInt32Array()
+# 每组的成员：灯泡下标（与 led_comps / led_refresh_comps 同序），按组连续排列
+var led_group_members := PackedInt32Array()
+var led_group_mem_offs := PackedInt32Array()
+var led_group_mem_lens := PackedInt32Array()
+# 每组上一次刷到贴图的亮灭（-1 = 尚未刷过，首拍必刷）
+var led_group_prev := PackedInt32Array()
+
+# ========== GPU LED resolve（可选后端，见 SWSignalTextureGPU 的 led_* 接口） ==========
+# 灯泡亮灭 = OR(输入 slot)。CPU「每拍遍历全量灯泡 + 比帧」在 64x 存档要 9ms/帧，
+# 这里改成编译期导出一张全局 LED 表，由主 RD 上一次 compute dispatch 算完整批灯泡。
+# gpu_slot_base：本 prog 的 slot 空间在「全局 slot buffer」里的基址（-1 = 未分配）。
+# 表里存 gs = base + 局部 slot；帧槽不在这里缓存，直接读渲染组件的 _frameSlot（烘焙后才有值）。
+var gpu_slot_base: int = -1
 
 # ========== 回填扁平表（64x 存档卡顿治理） ==========
 # 每拍要把「本拍 slot 值」写回 net.curSignal。原实现遍历 net_to_slot 这个 Dictionary，
@@ -92,6 +110,19 @@ var net_slots := PackedInt32Array()
 # 用它代替 net.curSignal（枚举属性，读写各一次类型转换）做同值判断，
 # 后者在大存档每拍上万次访问上是纯开销。
 var net_prev_bit := PackedInt32Array()
+
+# ========== 纯数据网表绑定（SimCore：slot 是唯一真值，下面只有下标） ==========
+# 上面那些 net_list / all_comps / *_comps 是给表现层回填用的**对象镜像**，
+# 由 SWNetlistExport.bind_program 填；纯逻辑运行时（SWLogicRuntime）一律不读。
+# dev_slots[dev]：网表元件下标 → comp slot（-1 = 该元件没有 slot：灯泡 / 不在本电路里的驱动者）
+var dev_slots := PackedInt32Array()
+# 下面几张表与对应的 slot 表同序，存的是网表元件下标（跨过对象层直接定位元件）
+var input_devs := PackedInt32Array()      # 与 input_slots 同序
+var reg_devs := PackedInt32Array()        # 与 reg_slots 同序
+var led_devs := PackedInt32Array()        # 与 led_comps / led_src_slots 同序
+var gate_devs := PackedInt32Array()       # 与 gate_out_slots / gate_display_invert 同序
+var display_devs := PackedInt32Array()    # 与 display_comps 同序
+var fallback_display_devs := PackedInt32Array()   # 与 fallback_display_comps 同序
 
 # ========== 组合门显示刷新扁平表（64x 存档卡顿治理） ==========
 # 组合门（主要是 NOT）的显示刷新本质是「本拍算出来的电平 → 贴图帧」，
