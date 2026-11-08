@@ -10,6 +10,15 @@ static var instance: SWStyleTexture = null
 # 扩容重建纹理后的刷新回调（主场景注入：遍历 MESH_GROUP 重设 shader uniform）
 static var _refresh_cb: Callable = Callable()
 
+
+# 纹理必须从构造起就非空：shader 里的 styleTex 是 sampler2D，绑 null 会让 GPU 后端在
+# uniform_set_create 阶段直接报「Texture is not a valid texture」并让整个材质失效（画面全空），
+# 而且这套失败的 uniform set 会一直失败到下一次成功刷新为止。
+# 刚从场景 _init 里 new 出来、还没登记任何 style 时，纹理是 1×2 的全零图：shader 取到
+# rect=(0,0,0,0)，退化成采样图集左上角一个像素，比整块材质失效好得多。
+func _init() -> void:
+	_rebuild_texture(false)
+
 # styleId 的键是「帧对 (off, on)」而非仅 off rect：图集里不同建筑物会复用同一个像素
 # region（通用底座 512,0 恰好也是灯泡的 off 帧），若只按 off 索引，静态登记会把已登记
 # 帧对的 row1 覆盖回 off 帧，shader 取哪一行都是灭帧（LED 读档后不随电路变化的根因）。
@@ -80,7 +89,9 @@ func style_count() -> int:
 	return _rects.size()
 
 
-func _rebuild_texture() -> void:
+# notify=false：构造时只建纹理，不广播刷新。此时 _refresh_cb 可能还指着上一个场景的
+# MESH_GROUP，广播过去会让那些正在退场的材质被换成本实例的 1×2 空纹理。
+func _rebuild_texture(notify: bool = true) -> void:
 	var n: int = _rects.size()
 	image = Image.create(maxi(n, 1), 2, false, Image.FORMAT_RGBAF)
 	for i in n:
@@ -89,7 +100,7 @@ func _rebuild_texture() -> void:
 		image.set_pixel(i, 0, Color(off.position.x, off.position.y, off.size.x, off.size.y))
 		image.set_pixel(i, 1, Color(on.position.x, on.position.y, on.size.x, on.size.y))
 	texture = ImageTexture.create_from_image(image)
-	if _refresh_cb.is_valid():
+	if notify and _refresh_cb.is_valid():
 		_refresh_cb.call()
 
 

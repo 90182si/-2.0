@@ -9,6 +9,8 @@ signal save_canceled()
 @onready var _cancel_btn: Button = $VBoxContainer/BtnHBox/CancelBtn
 
 var _allow_overwrite: bool = false
+#弹出前预填的存档名（SWLayerManager 回填「当前存档」）
+var _default_name: String = ""
 
 func _ready() -> void:
 	title = "保存"
@@ -19,7 +21,26 @@ func _ready() -> void:
 	_name_edit.text_changed.connect(_on_name_changed)
 	_confirm_btn.pressed.connect(_on_confirm_pressed)
 	_cancel_btn.pressed.connect(_on_cancel_pressed)
+	_apply_default_name()
 	_name_edit.grab_focus()
+
+#弹出前预填存档名。调用方在 instantiate 之后、popup 之前调用，
+#那时 @onready 还是 null，所以先存字段，等 _ready 再落到输入框
+func set_default_name(save_name: String) -> void:
+	_default_name = save_name.strip_edges()
+	if is_node_ready():
+		_apply_default_name()
+
+func get_default_name() -> String:
+	return _default_name
+
+func _apply_default_name() -> void:
+	if _default_name.is_empty():
+		return
+	_name_edit.text = _default_name
+	#必须再走一遍校验：否则确认按钮仍是禁用的，玩家以为回填失败
+	_on_name_changed(_default_name)
+	_name_edit.select_all()
 
 func _on_name_changed(new_text: String) -> void:
 	_allow_overwrite = false

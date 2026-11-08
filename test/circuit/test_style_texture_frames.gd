@@ -60,3 +60,15 @@ func test_empty_rect_not_registered() -> void:
 	assert_eq(_style.register_frame(Rect2(), RECT_LED_ON), -1, "off 帧非法仍登记了")
 	assert_eq(_style.style_count(), 0, "非法登记仍占了 styleId")
 	assert_eq(_style.get_style_id(Rect2(512, 0, 0, 128)), -1, "空 rect 不该查得到 id")
+
+
+# styleTex 是 shader 的 sampler2D，绑 null 会让 GPU 后端在 uniform_set_create 阶段报
+# 「Texture is not a valid texture」并让整个材质失效（而且不会自己重试）。
+# 所以纹理必须在构造时就有，而不是等第一次登记 style 才建：否则场景刚起来、建档之前
+# 那一小段时间里渲染的区块全部是废材质。
+func test_texture_exists_before_any_style_registered() -> void:
+	var fresh: SWStyleTexture = SWStyleTexture.new()
+	assert_eq(fresh.style_count(), 0, "新实例不该带任何 style")
+	assert_not_null(fresh.texture, "没登记任何 style 时 styleTex 也不能是 null，否则材质整块失效")
+	assert_eq(fresh.texture.get_width(), 1, "空表纹理应为 1×2 全零占位")
+	assert_eq(fresh.texture.get_height(), 2)

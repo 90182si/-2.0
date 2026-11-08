@@ -5,6 +5,7 @@ signal save_requested()
 signal load_requested()
 
 const selToolPath:String = "res://res/"
+const ROBOT_SCENE_PATH: String = "res://scene/sw_robot_scene.tscn"
 var selTools:Array = []
 
 func _ready() -> void:
@@ -18,10 +19,46 @@ func _ready() -> void:
 	var load_btn = get_node_or_null("HBoxContainer/MarginContainer/MarginContainer/HBoxContainer/加载")
 	if load_btn:
 		load_btn.pressed.connect(_on_load_pressed)
+	#机器人场景的 HUD 会在 super._ready() 之前把它关掉，避免两个场景互相冒按钮
+	if scene_switch_enabled:
+		_build_scene_switch()
 	_build_job_panel()
 	_build_expr_panel()
+	_build_io_panel()
+
+# ========== 左下角场景切换（只给电路场景用，机器人场景开关见下） ==========
+var scene_switch_enabled: bool = true
+var _robot_scene_btn: Button = null
+
+func _build_scene_switch() -> void:
+	var btn := Button.new()
+	btn.name = "机器人场景"
+	btn.text = "机器人场景"
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 18)
+	#贴左下角：底部工具栏在屏幕中下方，左下方原本只有任务进度条（已给它上移避让）
+	btn.anchor_left = 0.0
+	btn.anchor_right = 0.0
+	btn.anchor_top = 1.0
+	btn.anchor_bottom = 1.0
+	btn.offset_left = 12
+	btn.offset_right = 140
+	btn.offset_top = -52
+	btn.offset_bottom = -12
+	btn.pressed.connect(switch_to_robot_scene)
+	add_child(btn)
+	_robot_scene_btn = btn
+
+func switch_to_robot_scene() -> void:
+	if not is_inside_tree():
+		return
+	get_tree().change_scene_to_file(ROBOT_SCENE_PATH)
+
+func get_scene_switch_button() -> Button:
+	return _robot_scene_btn
 
 # ========== 左下角任务进度条（复制/剪切准备、放置队列） ==========
+# 位置在「机器人场景」切换按钮上方：两者都在左下角，不能让它们叠在一起
 var _job_panel: Control = null
 var _job_label: Label = null
 var _job_bar: ProgressBar = null
@@ -37,9 +74,9 @@ func _build_job_panel() -> void:
 	panel.anchor_right = 0.0
 	panel.anchor_bottom = 1.0
 	panel.offset_left = 12
-	panel.offset_top = -74
+	panel.offset_top = -128
 	panel.offset_right = 292
-	panel.offset_bottom = -12
+	panel.offset_bottom = -60
 	panel.visible = false
 	add_child(panel)
 
@@ -190,6 +227,86 @@ func _on_save_pressed() -> void:
 
 func _on_load_pressed() -> void:
 	load_requested.emit()
+
+# ========== 接口元件名称编辑面板（左键点击输入/输出接口时弹出） ==========
+# 名称是实例属性（建筑上的 io_name），下拉框固定三选，不开放自定义文本
+const IO_NAME_OPTIONS: Array[String] = ["clk", "move", "rotation"]
+var _io_panel: PanelContainer = null
+var _io_option: OptionButton = null
+var _io_build: SWBuildItemDefine = null
+
+func _build_io_panel() -> void:
+	var panel := PanelContainer.new()
+	# 屏幕上方居中：避开底部工具栏与右上角表达式面板
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -110
+	panel.offset_right = 110
+	panel.offset_top = 96
+	panel.offset_bottom = 96
+	panel.grow_vertical = Control.GROW_DIRECTION_END
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.72)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(12)
+	panel.add_theme_stylebox_override("panel", style)
+	panel.visible = false
+	add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+
+	var title := Label.new()
+	title.text = "接口名称"
+	title.add_theme_font_size_override("font_size", 18)
+	box.add_child(title)
+
+	_io_option = OptionButton.new()
+	_io_option.add_theme_font_size_override("font_size", 18)
+	for opt: String in IO_NAME_OPTIONS:
+		_io_option.add_item(opt)
+	_io_option.item_selected.connect(_on_io_name_selected)
+	box.add_child(_io_option)
+
+	var close_btn := Button.new()
+	close_btn.text = "关闭"
+	close_btn.add_theme_font_size_override("font_size", 16)
+	close_btn.pressed.connect(hide_io_name_panel)
+	box.add_child(close_btn)
+	_io_panel = panel
+
+# 点开某个接口元件的名称面板：当前名称不在三选里时先落到第一项
+func show_io_name_panel(build: SWBuildItemDefine) -> void:
+	if _io_panel == null or build == null:
+		return
+	_io_build = build
+	var current: String = str(build.get("io_name"))
+	var idx: int = IO_NAME_OPTIONS.find(current)
+	_io_option.select(idx if idx >= 0 else 0)
+	_io_panel.visible = true
+
+func hide_io_name_panel() -> void:
+	_io_build = null
+	if _io_panel != null:
+		_io_panel.visible = false
+
+func is_io_name_panel_visible() -> bool:
+	return _io_panel != null and _io_panel.visible
+
+# 面板当前编辑的是哪个元件（测试与排障用）
+func get_io_name_panel_build() -> SWBuildItemDefine:
+	return _io_build
+
+func get_io_name_options() -> Array[String]:
+	return IO_NAME_OPTIONS.duplicate()
+
+func _on_io_name_selected(index: int) -> void:
+	if _io_build == null or index < 0 or index >= IO_NAME_OPTIONS.size():
+		return
+	_io_build.set("io_name", IO_NAME_OPTIONS[index])
 
 func create_layer_system() -> SWLayerSystem:
 	return SWHudLayerSystem.new()

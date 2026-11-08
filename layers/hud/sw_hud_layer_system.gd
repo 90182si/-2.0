@@ -35,3 +35,16 @@ func set_expr_enabled(enabled:bool) -> void:
 	if hudLayer == null:
 		return
 	hudLayer.set_expr_enabled(enabled)
+
+#左键点到接口元件：弹出名称编辑面板（面板直接改实例上的 io_name）
+func show_io_name_panel(build:SWBuildItemDefine) -> void:
+	var hudLayer := view as SWHudLayer
+	if hudLayer == null or not enable:
+		return
+	hudLayer.show_io_name_panel(build)
+
+func hide_io_name_panel() -> void:
+	var hudLayer := view as SWHudLayer
+	if hudLayer == null:
+		return
+	hudLayer.hide_io_name_panel()

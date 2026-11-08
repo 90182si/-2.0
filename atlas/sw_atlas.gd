@@ -13,8 +13,8 @@ const ATLAS_PATHS: Array[String] = [
 ## 这样实例里的 rect 只需按尺寸比例缩放，不用重建任何区块。
 const ATLAS_LOD_PATHS: Dictionary = {
 	3: [
-		"res://atlas/图集6LOD1.png",
-		"res://atlas/图集7LOD2.png",
+		"res://atlas/图集4LOD1.png",
+		"res://atlas/图集8LOD2.png",
 	],
 }
 

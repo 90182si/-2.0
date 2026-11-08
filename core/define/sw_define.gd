@@ -12,6 +12,10 @@ const GRID_SIZE = Vector2i(128,128)
 const MAX_RENDER_PARTS:int = 6
 const MAX_TUNNEL_DIS:int = 4
 
+# 新建脚本的 class_name 要等编辑器重扫全局类缓存才认得，headless 跑测不重扫，
+# 所以建造工厂里一律走 preload，不在工厂里直接写类名
+const BUILD_EXT_INPUT := preload("res://circuit/build/sw_build_ext_input.gd")
+const BUILD_EXT_OUTPUT := preload("res://circuit/build/sw_build_ext_output.gd")
 const ORDER_CAMERA = 500-2
 const ORDER_RENDER = 500-1
 const ORDER_LAYER_MAP = 500
@@ -88,7 +92,9 @@ enum CircuitComponentType{
 	NOT_GATE,     #非门
 	WIRE_TUNNEL,  #地下隧道传送信号
 	AND_GATE,     #与门：所有输入HIGH才输出HIGH（脚手架示例）
-	ONE_BIT_REGISTER#1bit寄存器
+	ONE_BIT_REGISTER,#1bit寄存器
+	EXTERNAL_INPUT,  #外部输入接口（clk）：输出端口，电平由边界层写入
+	EXTERNAL_OUTPUT  #外部输出接口（move/rotation）：输入端口，只读不驱动
 }
 
 #建筑物状态
@@ -110,7 +116,9 @@ enum BuildCompoentType{
 	CIRCUIT_LED,
 	CIRCUIT_NOT,
 	CIRCUIT_REGISTER,
-	RENDER_ABLE
+	RENDER_ABLE,
+	CIRCUIT_EXT_INPUT,   #外部输入接口（复用信号源语义，电平来自实例字段）
+	CIRCUIT_EXT_OUTPUT   #外部输出接口（复用汇聚输入语义，不进 LED 分组）
 }
 
 #{
@@ -268,6 +276,9 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0,p
 		"电线隧道":return SWBuildWireTunnel.new(axisPos,buildDef,rot,preview)
 		"时钟":return SWBuildClockSiggen.new(axisPos,buildDef,rot,preview)
 		"1bit寄存器":return SWBuildRegister1Bit.new(axisPos,buildDef,rot,preview)
+		"输入接口":return BUILD_EXT_INPUT.new(axisPos,buildDef,rot,preview)
+		"输出接口move":return BUILD_EXT_OUTPUT.new(axisPos,buildDef,rot,preview)
+		"输出接口rotation":return BUILD_EXT_OUTPUT.new(axisPos,buildDef,rot,preview)
 		_:return SWBuildNone.new(axisPos,buildDef,rot,preview)
 	return null
 

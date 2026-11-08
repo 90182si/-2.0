@@ -1,5 +1,8 @@
 class_name SWBuildLayerSystem extends SWLayerSystem
 
+#左键点到接口元件（外部输入/输出）：请求 HUD 打开名称编辑面板
+signal edit_build_requested(build:SWBuildItemDefine)
+
 var build_manager:SWBuildManager = null
 var circuit_control:SWCircuitControl = null
 
@@ -1008,13 +1011,21 @@ func _on_event_key(event: InputEventKey) -> bool:
 	
 #tag buildLayer左键按下	
 func _on_left_pressed(v:SWBuildLayer) -> bool:
-	#任务期间点按钮会在半重建的电路上做增量求值，直接忽略这次点击
-	if _clipboard_busy or _place_running:
-		return false
 	var viewport := v.get_viewport()
 	var mouse_pos := viewport.get_mouse_position()
 	var world_pos = SwCommon.GetGlobalPosByViewPos(mouse_pos, viewport)
 	var grid_pos:Vector2i = SwCommon.GetGridPos(Vector2i(world_pos))
+	return click_build_at(grid_pos)
+
+#tag 点击某格上的元件（鼠标位置换算成格子后进这里；测试走同一入口，
+#不依赖真实鼠标位置——headless 下 viewport.get_mouse_position 拿不到坐标）
+func click_build_at(grid_pos:Vector2i) -> bool:
+	#任务期间点按钮会在半重建的电路上做增量求值，直接忽略这次点击
+	if _clipboard_busy or _place_running:
+		return false
+	var v := _get_view()
+	if v == null:
+		return false
 	var build = build_manager.getBuild(grid_pos)
 	#print("[Build] grid=", grid_pos, " build=", build, " total=", build_manager.getAllBuilds().size())
 	if build and (build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.SWITCH):
@@ -1028,6 +1039,12 @@ func _on_left_pressed(v:SWBuildLayer) -> bool:
 		refresh_signal_chunks(newBuilds)
 		if build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.BUTTON:
 			_pressed_button_pos = grid_pos
+		v.get_viewport().set_input_as_handled()
+		return true
+	if build and (build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.EXTERNAL_INPUT \
+			or build.buildDefine.circuit_component_type == SwDefine.CircuitComponentType.EXTERNAL_OUTPUT):
+		#tag 地图上的接口元件被点击：交给 HUD 改名，电路层本身没有行为
+		edit_build_requested.emit(build)
 		v.get_viewport().set_input_as_handled()
 		return true
 	return false

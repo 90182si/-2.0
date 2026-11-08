@@ -1,5 +1,18 @@
 class_name SWLayerManager extends Node
 
+#电路文件管理器：新建脚本的类名不在 headless 的全局类缓存里，一律走 preload
+const CIR_MANAGER := preload("res://circuit/sw_cir_manager.gd")
+#跨场景会话："当前是哪个存档"要跨场景活，场景切掉这一层的实例就没了
+const SESSION := preload("res://core/manager/sw_session.gd")
+
+#当前存档名：读档/存盘成功后更新，保存对话框用它回填。
+#存在 SWSession 的静态变量里，所以另一套场景的管理器也看得到同一个值
+var current_save_name: String:
+	get:
+		return SESSION.current_save_name
+	set(value):
+		SESSION.current_save_name = value
+
 var layers:Array[SWLayer] = []
 var hudLayer:SWHudLayer = null
 var holdLayer:SWHoldLayer = null
@@ -11,6 +24,10 @@ var holdSystem: SWHoldLayerSystem = null
 var buildSystem: SWBuildLayerSystem = null
 
 var _systemManager: SWSystemManager = null
+
+#图层节点名 -> 图层系统：新场景加了别的图层（比如机器人场景的实体层）时，
+#根节点靠名字取系统接信号，不用再往这里加字段
+var systems_by_view: Dictionary = {}
 
 func _ready() -> void:
 	# 逐帧系统排在固定 tick（TickDriver.process_priority = -100）之后
@@ -35,6 +52,7 @@ func _ready() -> void:
 		if system == null:
 			continue
 		system.attach_view(view)
+		systems_by_view[view.name] = system
 		if _systemManager != null:
 			_systemManager.add_system(system)
 		if system is SWHudLayerSystem:
@@ -59,6 +77,11 @@ func _exit_tree() -> void:
 	holdSystem = null
 	buildSystem = null
 	hudSystem = null
+	systems_by_view.clear()
+
+#按图层节点名取系统（取不到返回 null）
+func get_layer_system(node_name: String) -> SWLayerSystem:
+	return systems_by_view.get(node_name, null) as SWLayerSystem
 	
 #设置信号
 func _wire_systems() -> void:
@@ -70,6 +93,9 @@ func _wire_systems() -> void:
 			Callable(buildSystem, "can_erase"))
 		if hudLayer != null:
 			buildSystem.set_hud_view(hudLayer)
+		if hudSystem != null:
+			#左键点到接口元件 → HUD 名称编辑面板
+			buildSystem.edit_build_requested.connect(hudSystem.show_io_name_panel)
 		holdSystem.hold_idle_builds.connect(buildSystem.on_hold_idle_builds)
 		holdSystem.hold_remove_builds.connect(buildSystem.on_hold_remove_builds)
 		holdSystem.select_builds_by_rect.connect(buildSystem.on_select_by_rect)
@@ -95,6 +121,8 @@ func _on_save_requested() -> void:
 		buildSystem.notify_job_busy("任务进行中，请稍候再保存")
 		return
 	var dialog = preload("res://ui/sw_save_dialog.tscn").instantiate()
+	#回填当前存档名：覆盖保存不用每次重新敲一遍
+	dialog.call("set_default_name", current_save_name)
 	dialog.save_confirmed.connect(func (name: String):
 		print("[Save] 开始保存: ", name)
 		if buildSystem == null:
@@ -111,6 +139,12 @@ func _on_save_requested() -> void:
 		var ok = SWSaveManager.save_builds(name, builds, vp, {})
 		if ok:
 			print("[Save] 存档成功: ", name)
+			#存过一次就是当前存档，下次再存直接覆盖这个名字
+			current_save_name = name
+			#电路单独存同名 .swcir（机器人场景靠它加载）；没有接口电路时不生成文件
+			var cir_path: String = CIR_MANAGER.export_all(name, builds)
+			if cir_path != "":
+				print("[Save] 电路文件: ", cir_path)
 		else:
 			push_warning("[Save] 存档失败: " + name)
 	)
@@ -130,6 +164,11 @@ func _on_load_requested() -> void:
 	dialog.popup_centered()
 
 func _on_load_confirmed(name: String) -> void:
+	await load_save_by_name(name)
+
+#读档主流程：玩家点「加载」与机器人面板「修改电路」自动进电路场景都走这里。
+#成功时记下存档名，之后保存对话框可以直接回填它
+func load_save_by_name(name: String) -> bool:
 	_show_progress("读取存档…")
 	#让进度窗先画出来，再开始同步解析 JSON
 	await get_tree().process_frame
@@ -138,7 +177,7 @@ func _on_load_confirmed(name: String) -> void:
 		push_warning("无法加载存档: " + name)
 		_hide_progress()
 		get_tree().paused = false
-		return
+		return false
 	if buildSystem:
 		await buildSystem.load_save_data_async(data, _update_progress)
 	#恢复视口（缩放与偏移）
@@ -148,9 +187,12 @@ func _on_load_confirmed(name: String) -> void:
 	#4~8 倍，而且里面有上万个嵌套 pos/state 子字典。建筑已经建完，留着只是白占内存。
 	#协程局部变量会活到函数返回，这里显式清空让内存在玩家开局前就退回去。
 	data.clear()
+	#读档成功才算「当前存档」：失败时保留原来的名字，别把回填弄丢
+	current_save_name = name
 	_hide_progress()
 	get_tree().paused = false
 	print("加载存档成功: ", name)
+	return true
 
 var _progress_win: Window = null
 var _progress_label: Label = null

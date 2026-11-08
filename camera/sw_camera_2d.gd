@@ -11,39 +11,88 @@ var _logic_pos: Vector2 = Vector2.ZERO
 # 最近一次写入的渲染位置：用于发现外部直接改 position 的情况（读档、编辑器等）
 var _applied_pos: Vector2 = Vector2.ZERO
 
+# ===== 滚轮缩放过渡 =====
+# 滚轮一次改一档（1.1 倍），直接落地看着是一顿一顿地跳。
+# 过渡期间**只动相机**：不调 layer 的 on_view_rect_changed、不换图集、不广播
+# set_scale_level。因为动画每帧都在改 zoom 和位置，通知下去等于每帧把每个 layer 的
+# 区块表全枚举一遍（缩远时单层上千格），过渡本身反而更卡；等动画结束统一通知一次。
+@export var zoom_anim_sec: float = 0.18   # 一档过渡时长；0 = 关闭过渡（立即到位）
+var _zoom_from: float = 1.0
+var _zoom_to: float = 1.0
+# 0..1；1 = 没有过渡在跑（静态默认值，任何「还没缩过」的时候都是静止的）
+var _zoom_t: float = 1.0
+# 缩放支点（滚轮那一刻鼠标在屏幕上的位置，相对视口中心）
+var _zoom_pivot: Vector2 = Vector2.ZERO
+
 var _layerObjList = []
 func addLayerNotify(swLayer:SWLayer) -> void:
 	_layerObjList.append(swLayer)
 func delLayerNotify(swLayer:SWLayer) -> void:
 	_layerObjList.erase(swLayer)
 
-func _on_zoomCom_zoom(vec:Vector2,centerPos:Vector2 = Vector2.ZERO) -> void:
+func _on_zoomCom_zoom(vec:Vector2, instant:bool = false) -> void:
 	if view_scale_level < SwDefine.VIEW_MIN_LEVEL and vec.y < 0:
 		return
 	if view_scale_level > SwDefine.VIEW_MAX_LEVEL and vec.y > 0:
 		return
 	_sync_logic_from_external()
-	var old_zoom := zoom
 	if vec.y > 0:
 		view_scale_level += 1
 	elif vec.y < 0:
 		view_scale_level -= 1
-	var new_zoom := Vector2(pow(1.1,view_scale_level),pow(1.1,view_scale_level))
-	zoom = new_zoom
-	# 以鼠标为中心缩放：保持鼠标指向的世界坐标点在缩放前后不变
-	var mouse_screen := get_viewport().get_mouse_position()
-	var viewport_center := get_viewport_rect().position
-	var mouse_offset := mouse_screen - viewport_center
-	_logic_pos += mouse_offset * (Vector2(1.0,1.0)/old_zoom - Vector2(1.0,1.0)/new_zoom)
-	# 挂起的位移已经包含在 _logic_pos 里，下面这次 _apply_position 会一起落地
+	var lv: float = pow(1.1,view_scale_level)
+	var new_zoom := Vector2(lv,lv)
+	# 支点：滚轮那一刻鼠标在屏幕上的位置（相对视口中心）。
+	# 过渡期间每帧都要用它补位移，才能保证鼠标下的世界坐标点一直不动
+	_zoom_pivot = get_viewport().get_mouse_position() - get_viewport_rect().position
+	# 挂起的位移作废：下面的补位是按当前 zoom 现算的
 	_view_pending = false
 	_pending_view_speed = Vector2.ZERO
+	if instant or zoom_anim_sec <= 0.0:
+		_zoom_to = new_zoom.x
+		_zoom_t = 1.0
+		_apply_zoom_at(new_zoom)
+		_finish_zoom()
+		return
+	# 连续拨轮：从**当前** zoom 起跑（不是上一档目标值），
+	# 快速连拨才不会积压成一段很长的追赶动画
+	_zoom_from = zoom.x
+	_zoom_to = new_zoom.x
+	_zoom_t = 0.0
+
+# 有没有缩放过渡在跑（flush_view_update 用它决定要不要往下游通知）
+func is_zoom_animating() -> bool:
+	return _zoom_t < 1.0
+
+func _tick_zoom(delta: float) -> void:
+	# 过渡期间画面一直在动：电路 tick 等系统靠这个时间戳做「移动中暂停」，
+	# 光靠滚轮事件那一瞬的 mark 只能盖住 120ms，后面的过渡帧会漏
+	mark_view_moving()
+	_zoom_t = minf(1.0, _zoom_t + delta / maxf(zoom_anim_sec, 0.0001))
+	# 缓出（三次）：起手快、收尾稳，拨一格看着是「滑过去」而不是「弹一下」
+	var k: float = 1.0 - pow(1.0 - _zoom_t, 3.0)
+	var z: float = _zoom_to if _zoom_t >= 1.0 else lerpf(_zoom_from, _zoom_to, k)
+	_apply_zoom_at(Vector2(z, z))
+	if _zoom_t >= 1.0:
+		_finish_zoom()
+
+# 把 zoom 落到某个值，并按「鼠标下的世界点不动」补一次相机位移
+func _apply_zoom_at(z: Vector2) -> void:
+	var old_z: float = zoom.x
+	zoom = z
+	if old_z == 0.0 or z.x == 0.0:
+		return
+	_logic_pos += _zoom_pivot * (Vector2(1.0,1.0)/old_z - Vector2(1.0,1.0)/z.x)
+	# 位移已含在 _logic_pos 里，这次落地会把补位一起写进渲染位置
 	_apply_position()
+
+# 过渡结束（或直接到位）：这时才把视野变化真正告诉下游，只通知一次
+func _finish_zoom() -> void:
+	_zoom_t = 1.0
 	_update_atlas_lod()
 	# 缩远时切换到简化内容 LOD（只画主体部件），避免视野变大后实例数暴涨导致的持续卡顿
 	get_tree().call_group("DrawManager", "set_scale_level", view_scale_level)
 	view_rect_changed()
-	pass
 
 # ===== 帧末合并的位移 =====
 # 中键拖动时每个 InputEventMouseMotion 都会进来一次，125~1000Hz 的鼠标一帧能发 2~16 个
@@ -85,6 +134,9 @@ var _view_dirty: bool = false
 var _last_notify_logic: Vector2 = Vector2.ZERO
 
 func _process(delta: float) -> void:
+	# 缩放过渡：每帧只动相机（zoom + 补位），下游通知攒到过渡结束
+	if is_zoom_animating():
+		_tick_zoom(delta)
 	if delta <= 0.0:
 		return
 	if not _speed_seeded:
@@ -116,12 +168,21 @@ func flush_view_update() -> void:
 		var speed := _pending_view_speed
 		_pending_view_speed = Vector2.ZERO
 		_apply_position()
+		# 缩放过渡中：位移照常落地，但不惊动任何 layer。
+		# 动画每帧都在改可见范围，通知下去等于每帧重建一次区块表；
+		# 标记 _view_dirty，过渡结束时 _finish_zoom() 会统一通知一次。
+		if is_zoom_animating():
+			_view_dirty = true
+			return
 		# 低速：位置照常落地，但不惊动 layer（见 view_speed_min）。
 		# 积压位移到上限必须补通知，否则区块会跟不上。
 		if view_speed >= view_speed_min or _skip_drift() >= _skip_drift_max():
 			view_rect_changed(speed)
 		else:
 			_view_dirty = true
+		return
+	if is_zoom_animating():
+		_view_dirty = true
 		return
 	# 本帧没有新位移且速度也落下来了：把攒下的那次通知补上，保证视口最终一致。
 	# 只在「无 pending」时补：连续慢速拖动如果每帧都补，「低速不通知」就白设了。
@@ -153,7 +214,9 @@ func set_view(pos:Vector2, zoom_vec:Vector2, level:int) -> void:
 	zoom = zoom_vec
 	view_scale_level = level
 	_logic_pos = pos
-	# 位移已被这次直接设置覆盖，挂起的更新作废
+	# 读档是直接给最终视野：在跑的缩放过渡作废（否则会被它拽回来）
+	_zoom_t = 1.0
+	_zoom_to = zoom_vec.x
 	_view_pending = false
 	_pending_view_speed = Vector2.ZERO
 	# 读档跳位置不是「移动」：速度基准一起重置，否则面板会读出一下假峰值

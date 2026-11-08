@@ -1766,8 +1766,12 @@ func _buildInputVals(prog: SWGateProgram) -> PackedInt32Array:
 			var clk := ref as SWBuildClockSiggen
 			vals[i] = 1 if clk != null and clk.curSig == SwDefine.CircuitSignal.HIGH else 0
 		elif comp is SWBuildCompoentCircuitSource:
-			var btn := ref as SWBuildButton
-			vals[i] = 1 if btn != null and btn.pressed else 0
+			# 外部输入接口与按钮同属信号源，但电平来自建筑实例字段（levelOf 自报）
+			if comp.has_method("levelOf"):
+				vals[i] = int(comp.levelOf())
+			else:
+				var btn := ref as SWBuildButton
+				vals[i] = 1 if btn != null and btn.pressed else 0
 		else:
 			vals[i] = 0
 	return vals

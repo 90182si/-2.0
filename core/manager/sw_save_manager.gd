@@ -2,6 +2,8 @@ class_name SWSaveManager extends RefCounted
 
 const SAVE_VERSION: int = 1
 const SAVE_DIR_NAME: String = "saves"
+#同名电路文件（由 SWCirManager 导出）的扩展名
+const CIRCUIT_EXT: String = ".swcir"
 const THUMBNAIL_SIZE: Vector2i = Vector2i(1920, 1080)
 
 static func _get_save_dir() -> String:
@@ -56,6 +58,9 @@ static func delete_save(name: String) -> bool:
 	var thumb_file: String = name + ".png"
 	var ok1: bool = dir.remove(save_file)
 	var ok2: bool = dir.remove(thumb_file)
+	#同名 .swcir 一起删：否则机器人面板里会留下已经没有存档的电路
+	if FileAccess.file_exists(_get_save_dir() + "/" + name + CIRCUIT_EXT):
+		dir.remove(name + CIRCUIT_EXT)
 	return ok1 == true and ok2 == true
 
 # 存档里的信号电平。GPU LED resolve 下灯泡的 signal_state 不再每拍更新（亮灭由信号纹理算，

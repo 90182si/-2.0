@@ -1,5 +1,10 @@
 extends Node
 
+# 新建脚本的 class_name 要等编辑器重扫全局类缓存才认得，headless 跑测不重扫，
+# 所以组件工厂里一律走 preload，不在工厂里直接写类名
+const COMPONENT_EXT_INPUT := preload("res://circuit/build_compoent/sw_build_compoent_circuit_ext_input.gd")
+const COMPONENT_EXT_OUTPUT := preload("res://circuit/build_compoent/sw_build_compoent_circuit_ext_output.gd")
+
 static var id = 0
 static func GenNextBuildId() -> int:
 	id += 1
@@ -74,6 +79,10 @@ static func CreateCompoent(compoentType:SwDefine.BuildCompoentType) -> SWBuildCo
 			return SWBuildCompoentCircuitClockSiggen.new()
 		SwDefine.BuildCompoentType.CIRCUIT_REGISTER:
 			return SWBuildCompoentCircuitRegister.new()
+		SwDefine.BuildCompoentType.CIRCUIT_EXT_INPUT:
+			return COMPONENT_EXT_INPUT.new()
+		SwDefine.BuildCompoentType.CIRCUIT_EXT_OUTPUT:
+			return COMPONENT_EXT_OUTPUT.new()
 	return null
 
 # 提取所有 [] 内文本，返回数组

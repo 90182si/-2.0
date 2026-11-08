@@ -52,6 +52,11 @@ var _tick_pending: int = -1
 var _lod_label: Label = null
 # 视口移动速度一行：世界单位/秒 + 屏幕像素/秒 + 低速通知阈值（每帧刷新，瞬时值即读数）
 var _speed_label: Label = null
+# 排障开关「打印电路输出」（对应 SWEntityLayerSystem.debug_print_circuit）：
+# 开着时机器人每拍把 clk / move / rotation / 寄存器 Q 打到控制台
+var _print_circuit_check: CheckButton = null
+# 同 _tick_pending：面板可能比 SWLayerManager 先 ready，勾选意图先存着。-1 = 无待落地意图
+var _print_circuit_pending: int = -1
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -73,6 +78,7 @@ func _ready() -> void:
 		hover_info_check.toggled.connect(_on_hover_info_toggled)
 	_build_follow_check()
 	_build_tick_check()
+	_build_print_circuit_check()
 	_build_lod_label()
 	_build_speed_label()
 	if log_btn != null and crash_log_viewer != null:
@@ -121,6 +127,12 @@ func _process(delta: float) -> void:
 		if sys != null:
 			sys.tick_enabled = _tick_pending == 1
 			_tick_pending = -1
+	# 打印电路开关同理：实体层系统就绪后才落地
+	if _print_circuit_pending >= 0:
+		var esys = _get_entity_system()
+		if esys != null:
+			esys.debug_print_circuit = _print_circuit_pending == 1
+			_print_circuit_pending = -1
 
 
 ## 窗口到期才结算一次，读数滞后约 0.5s，换来不抖动的稳定值
@@ -379,6 +391,40 @@ func _on_tick_toggled(toggled_on: bool) -> void:
 		return
 	sys.tick_enabled = toggled_on
 	_tick_pending = -1
+
+
+## 面板上的「打印电路输出」：机器人每拍把 clk / move / rotation / 寄存器 Q 打到控制台。
+## 只影响日志，不改求值结果；关掉后 zero 开销（step_beat 里只多一次 bool 判断）。
+func _build_print_circuit_check() -> void:
+	var box := get_node_or_null("StatsContainer/StatsDisplay")
+	if box == null:
+		return
+	_print_circuit_check = CheckButton.new()
+	_print_circuit_check.text = "打印电路输出"
+	_print_circuit_check.tooltip_text = "机器人每拍在控制台打一行：电路名 / clk / move / rotation / 寄存器 Q"
+	_print_circuit_check.mouse_filter = Control.MOUSE_FILTER_PASS
+	var esys = _get_entity_system()
+	_print_circuit_check.set_pressed_no_signal(
+			false if esys == null else bool(esys.debug_print_circuit))
+	_print_circuit_check.toggled.connect(_on_print_circuit_toggled)
+	box.add_child(_print_circuit_check)
+
+func _on_print_circuit_toggled(toggled_on: bool) -> void:
+	var esys = _get_entity_system()
+	if esys == null:
+		# 系统还没建好（或本场景没有实体层）：先记下意图，等 _process 里能拿到系统再落地
+		_print_circuit_pending = 1 if toggled_on else 0
+		return
+	esys.debug_print_circuit = toggled_on
+	_print_circuit_pending = -1
+
+
+# 实体层系统（机器人场景才有；逻辑场景返回 null）
+func _get_entity_system():
+	var lm := get_parent().get_node_or_null("SWLayerManager") as SWLayerManager
+	if lm == null:
+		return null
+	return lm.get_layer_system("SWEntityLayer")
 
 
 ## 面板上的 LOD 一行：图集档 / 内容档 / 相机缩放档

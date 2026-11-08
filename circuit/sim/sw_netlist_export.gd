@@ -51,6 +51,10 @@ func export_netlist(builds: Array) -> SWNetlist:
 		dev_builds.append(b)
 		comps.append(comp)
 		dev_of_comp[comp] = dev
+		#接口元件：标出角色与接口名（.swcir 靠它把「clk / move / rotation」映射到 slot）
+		var role: int = _io_role(b)
+		if role != SWNetlist.ROLE_INTERNAL:
+			nl.set_role(dev, role, nl.add_label(_io_name(b)))
 		for d in 4:
 			var net: SWNet = comp.pinNetMap.get(d, null)
 			if net == null or net.netId < 0:
@@ -133,6 +137,25 @@ func _classify(comp) -> int:
 	if comp is SWBuildCompoentCircuitNot:
 		return SWNetlist.DEV_NOT
 	return SWNetlist.DEV_AND
+
+
+# 接口元件 →角色（只看定义上的 circuit_component_type，不看类名：
+# headless 下新建类名的全局缓存可能未刷新）
+func _io_role(b) -> int:
+	var def = b.buildDefine
+	if def == null:
+		return SWNetlist.ROLE_INTERNAL
+	if def.circuit_component_type == SwDefine.CircuitComponentType.EXTERNAL_INPUT:
+		return SWNetlist.ROLE_INPUT
+	if def.circuit_component_type == SwDefine.CircuitComponentType.EXTERNAL_OUTPUT:
+		return SWNetlist.ROLE_OUTPUT
+	return SWNetlist.ROLE_INTERNAL
+
+
+# 接口名（实例字段 io_name；报错一律落空串，不让导出直接炸）
+func _io_name(b) -> String:
+	var n = b.get("io_name")
+	return "" if n == null else str(n)
 
 
 func _comps_of(devs: PackedInt32Array) -> Array:

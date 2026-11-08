@@ -60,30 +60,47 @@ func _ready() -> void:
 	_resetShaderUniforms()
 
 # 设置/刷新全部 shader uniform。池化复用（reUse）必须重新调用——池化节点不会再触发 _ready。
+# 四个 sampler 一个都不能绑 null：GPU 后端会在 uniform_set_create 处直接报
+# 「Texture is not a valid texture」并让整个材质失效（还不重试，一直黑到下一次成功刷新）。
+# 这几张纹理都是惰性创建的，取不到时用全零兜底纹理顶上（shader 取到 rect=(0,0,0,0)）。
+static var _fallback_tex: ImageTexture = null
+
+static func _get_fallback_tex() -> ImageTexture:
+	if _fallback_tex == null:
+		var img := Image.create(1, 2, false, Image.FORMAT_RGBAF)
+		_fallback_tex = ImageTexture.create_from_image(img)
+	return _fallback_tex
+
 func _resetShaderUniforms() -> void:
 	var mat := material as ShaderMaterial
 	if mat == null:
 		return
 	var tex: Texture2D = SwAtlas.get_texture()
-	if tex and mat.get_shader_parameter("srcImg") != tex:
+	if tex == null:
+		tex = _get_fallback_tex()
+	if mat.get_shader_parameter("srcImg") != tex:
 		mat.set_shader_parameter("srcImg", tex)
 	var sc: float = SwAtlas.get_rect_scale()
 	if mat.get_shader_parameter("atlas_scale") != sc:
 		mat.set_shader_parameter("atlas_scale", sc)
 	# 图集 rect 纹理 / 信号电平纹理 / 调色板纹理（惰性注册扩容后经 MESH_GROUP 回调统一刷新）
-	if SWStyleTexture.instance != null:
-		var st: ImageTexture = SWStyleTexture.instance.texture
-		if st and mat.get_shader_parameter("styleTex") != st:
-			mat.set_shader_parameter("styleTex", st)
-	if SWSignalTexture.instance != null:
-		var stex: Texture2D = SWSignalTexture.instance.texture
-		if stex and mat.get_shader_parameter("signalBits") != stex:
-			mat.set_shader_parameter("signalBits", stex)
-		var ptex: ImageTexture = SWSignalTexture.palette_texture
-		if ptex and mat.get_shader_parameter("paletteTex") != ptex:
-			mat.set_shader_parameter("paletteTex", ptex)
-		if mat.get_shader_parameter("signalCols") != SWSignalTexture.TEX_COLS:
-			mat.set_shader_parameter("signalCols", SWSignalTexture.TEX_COLS)
+	var st: Texture2D = _get_fallback_tex()
+	if SWStyleTexture.instance != null and SWStyleTexture.instance.texture != null:
+		st = SWStyleTexture.instance.texture
+	if mat.get_shader_parameter("styleTex") != st:
+		mat.set_shader_parameter("styleTex", st)
+	var stex: Texture2D = _get_fallback_tex()
+	if SWSignalTexture.instance != null and SWSignalTexture.instance.texture != null:
+		stex = SWSignalTexture.instance.texture
+	if mat.get_shader_parameter("signalBits") != stex:
+		mat.set_shader_parameter("signalBits", stex)
+	var ptex: Texture2D = _get_fallback_tex()
+	if SWSignalTexture.palette_texture != null:
+		ptex = SWSignalTexture.palette_texture
+	if mat.get_shader_parameter("paletteTex") != ptex:
+		mat.set_shader_parameter("paletteTex", ptex)
+	if mat.get_shader_parameter("signalCols") != SWSignalTexture.TEX_COLS:
+		mat.set_shader_parameter("signalCols", SWSignalTexture.TEX_COLS)
 	# LOD 冻结：连线统一 HIGH 色（等价旧 LOD 冻结语义，由 shader 采样侧处理）
 	var frozen: float = 1.0 if SwAtlas.is_lod_active() else 0.0
 	if mat.get_shader_parameter("signalFrozen") != frozen:

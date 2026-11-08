@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scene/entity/sw_entity_layer.gd" id="1_layer"]
+[ext_resource type="PackedScene" uid="uid://ds5xu8gs4pgd2" path="res://core/manager/sw_draw_manager.tscn" id="2_draw"]
+
+[node name="SWEntityLayer" type="Node"]
+script = ExtResource("1_layer")
+
+[node name="SWDrawManager" parent="." instance=ExtResource("2_draw")]
+useName = "Entity"
+_drawMode = 1
