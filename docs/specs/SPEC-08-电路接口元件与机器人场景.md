@@ -127,7 +127,8 @@ var runtime: SWLogicRuntime          # setup(prog) 完成
 var input_slots: Dictionary = {}     # name -> 源 slot（写入口）
 var output_nets: Dictionary = {}     # name -> net slot（读出口）
 func set_input(name: String, level: int) -> void
-func tick() -> SWSimResult
+func tick() -> SWSimResult            # 带差分结果（电路场景/表现层用）
+func tick_fast() -> void              # 只推进状态（机器人每拍 2 次走它）
 func output_level(name: String) -> int   # 0/1
 func has_input(name) / has_output(name)
 ```
@@ -178,6 +179,13 @@ func rot90() -> void        # dir = (dir + 1) % 4
 - ⚠ 只跑高相位（置 1 → tick → 置 0 不 tick）会让 `last_clk` 永远停在 1：只有寄存器的电路（计数器）永远看不到上升沿，电平整拍恒 0，表现为「机器人不动也不转」；而纯组合电路（clk 直连输出）看着正常，所以只靠组合电路测不出这个缺陷。
 - 「所有机器人统一调用输入 clk」：所有机器人在同一拍、以同一 clk=1 输入跑各自电路，互不干扰（各持独立 SWLogicRuntime 状态）。
 - 移动方向语义：**按实体当前朝向**前进一格（`rotation` 输出为 1 时转 90°）。旋转先于移动执行（同一拍内 `rot90` 在 `step_forward` 之前）。
+- **多机器人性能口径**（几十台挂电路时 Physics 帧会爆，实测 50 台 × 17 条子电路曾到 46.6 ms/拍）：
+  1. 机器人侧走 `tick_fast()`：`tick()` 的差分打包（新建 `SWSimResult` + 扫全部 net/灯泡组/寄存器 + 广播信号）机器人侧没人读，却占 tick 时间的大头；
+  2. `.swcir` 常含十几条分组，`SWCircuitSet` 把「接口名 → 子电路下标」建成索引：`set_input` / `output_level` / `has_output` 只碰真正持该接口的那几条，不再广播给全部子电路；
+  3. 纯组合子电路（`prog.reg_slots` 为空）输入没变就跳过 tick：一拍两个相位里只有高相位前写过输入，低相位那次重算必然同结果（寄存器电路照旧每相位 tick）；
+  4. `output_names()` 的排序结果、`detect_res_*` 口名都缓存，不每拍现拼字符串；
+  5. `step_beat_high` 正常路径只查 `SWRobotActions.TABLE` 里登记的动作名（3 个），不再每拍遍历电路全部输出名；开 `debug_print_circuit` 时退回全量打印。
+  实测同规模 46.6 → 6.1 ms/拍。
 
 ### 3.9 机器人电路绑定面板
 
@@ -370,7 +378,7 @@ circuit/sw_gate_compiler.gd           # 接口 dev 处理（如需）
 - clk 轨：**整格电平**（高相位格整格高、低相位格整格低）→ 规整方波，占空比 50%，
   与数据 1:1 两相严格对应；早期曾把高相位格画成「前半格低、后半格高」的窄脉冲，
   占空比变成 25%，既不真实也让人怀疑波形错了，已改回整格；
-  能看出在走靠的是高低交替 + 时间栅格色块 + 刻度线 + 游标，不需要窄脉冲；
+  能看出在走靠的是高低交替 + 刻度线 + 游标，不需要窄脉冲（底色是**纯灰**，见下）；
 - clk **边沿不另加标记**：上升沿/下降沿就是方波自己的跳变竖线（与 move/rotation/act 同一条画法，
   用本轨色、2px），不画方向三角、不另换颜色。曾经试过在每个跳变处叠 ▲/▼ 三角并分色，
   结果波形被挡得看不清，用户明确要求改回**素线**；电平高低本身已经能分出是哪个沿，
@@ -379,11 +387,13 @@ circuit/sw_gate_compiler.gd           # 接口 dev 处理（如需）
   所以样本溢出窗口时最左那一格的跳变也画得出来（老写法 `if i > start` 会把它漏掉）；
 - `get_clk_edge(i)`（`+1` 上升 / `-1` 下降 / `0` 无边沿）与 `count_clk_edges(kind)` 保留下来
   供测试与诊断用，**不再参与绘制**；`edge_draw_count` 统计的是画过多少条 clk 跳变竖线；
-- 时间栅格：拍号 = 全局样本号 `>> 1`，偶数拍叠浅底色（两格同色 = 一拍一个色块），
-  每 `TICK_EVERY`（4）拍在拍首格画一根刻度线，右端一根游标（红线）；
+- 时间栅格：底色是**纯灰**（`BG_COLOR`，不带纹条）——曾经按拍号奇偶叠浅底色做交替色块，
+  用户要求改为纯灰：纹条会和波形跳变竖线混在一起，容易把格子边界当成信号边沿；
+  每 `TICK_EVERY`（4）拍在拍首格画一根刻度线，右端一根游标（红线）——
+  “看得出在走”的参照物全部交给这两样；
   相位按**全局样本号**（`_base_seq = timing_seq - 样本数`）算，不按窗口内下标，否则窗口滑动时栅格会跳；
-  栅格、色块、波形全部走同一个 `_cell_bounds(i, n, x_now)`：三者的 x 必须一致，
-  否则最新一格缩进来时底色/刻度会和波形错位；
+  刻度/游标/波形全部走同一个 `_cell_bounds(i, n, x_now)`：三者的 x 必须一致，
+  否则最新一格缩进来时刻度会和波形错位；
 - footer 的 `beats` 用 `timing_beats`（累计拍数），`win` 才是封顶的窗口拍数；
 - 入口是底部工具栏「时序图」按钮，默认关；关掉时清空样本，`_process` 里零开销。
 

@@ -10,14 +10,14 @@ extends GutTest
 #   1. 含接口电路的存档导出同名 .swcir，字段/接口名/可用性正确；普通存档不生成文件；
 #   2. round-trip：netlist 各扁平表经 JSON 往返逐字段一致（JSON 数字是浮点，必须无精度损失）；
 #   3. 加载出的 bundle 与实体电路逐拍对拍（clk 交替 4 拍）；
-#   4. 多电路文件 → 「电路不可用」；缺接口 → 不可用；两者 load_bundle 都返回 null。
+#   4. 多电路文件 / 缺接口的单电路：都算可用，load_bundle 一拍把每条电路都跑一遍。
 # 跑法：godot --headless --path . -s addons/gut/gut_cmdln.gd -gdir=res://test/circuit -gprefix test_swcir_bundle -gexit
 
 const MANAGER := preload("res://circuit/sw_cir_manager.gd")
 
 const IN_DEF: SWBuildDefine = preload("res://res/输入接口.tres")
-const OUT_MOVE_DEF: SWBuildDefine = preload("res://res/输出接口move.tres")
-const OUT_ROT_DEF: SWBuildDefine = preload("res://res/输出接口rotation.tres")
+#输出接口已合并为单一定义：move / rotation 只是实例上的 io_name
+const OUT_DEF: SWBuildDefine = preload("res://res/输出接口.tres")
 const NOT_DEF: SWBuildDefine = preload("res://res/非门.tres")
 const WIRE_DEF: SWBuildDefine = preload("res://res/电线A.tres")
 const LED_DEF: SWBuildDefine = preload("res://res/灯泡.tres")
@@ -31,8 +31,9 @@ const FILE_CLK_ONLY := "_swcir_test_clk_only"
 const FILE_TWO := "_swcir_test_two"
 const FILE_PLAIN := "_swcir_test_plain"
 const FILE_SRC := "_swcir_test_src"
+const FILE_MIX := "_swcir_test_mix"
 
-const ALL_FILES := [FILE_MAIN, FILE_CLK_ONLY, FILE_TWO, FILE_PLAIN, FILE_SRC]
+const ALL_FILES := [FILE_MAIN, FILE_CLK_ONLY, FILE_TWO, FILE_PLAIN, FILE_SRC, FILE_MIX]
 
 var _mgr: SWBuildManager = null
 var _ctrl: SWCircuitControl = null
@@ -55,11 +56,14 @@ func _new_ctrl() -> void:
 	_ctrl.gpu_backend_enabled = false
 
 
-# 按 [格子坐标, 定义] 列表放元件并建电路，返回建造对象数组
+# 按 [格子坐标, 定义, 可选 io_name] 列表放元件并建电路，返回建造对象数组
 func _place(specs: Array) -> Array[SWBuildItemDefine]:
 	var all: Array[SWBuildItemDefine] = []
 	for s: Array in specs:
 		var build := SwDefine.SWBuildCreator((s[0] as Vector2i) * GRID, s[1], 0)
+		#输出接口合并后名字靠实例属性区分（第三个元素写名字）
+		if s.size() > 2:
+			build.set("io_name", str(s[2]))
 		if not _mgr.addBuild(build):
 			push_error("放置失败: %s @ %s" % [s[1].buildName, str(s[0])])
 			continue
@@ -77,9 +81,9 @@ func _build_standard() -> void:
 		[Vector2i(0, 3), WIRE_DEF],
 		[Vector2i(0, 2), WIRE_DEF],
 		[Vector2i(0, 1), WIRE_DEF],
-		[Vector2i(0, 0), OUT_MOVE_DEF],
+		[Vector2i(0, 0), OUT_DEF],
 		[Vector2i(1, 1), WIRE_DEF],
-		[Vector2i(2, 1), OUT_ROT_DEF],
+		[Vector2i(2, 1), OUT_DEF, "rotation"],
 	])
 	assert_eq(all.size(), 8, "标准电路没放齐")
 	_in = all[0]
@@ -99,19 +103,40 @@ func _build_clk_only() -> void:
 	assert_eq(all.size(), 4)
 
 
-# 两条互不相连、各自带接口的电路
+# 两条互不相连、各自带接口的电路（输出分别命名为 move / rotation）
 func _build_two_circuits() -> void:
 	_new_ctrl()
 	_place([
 		[Vector2i(0, 3), IN_DEF],
 		[Vector2i(0, 2), WIRE_DEF],
-		[Vector2i(0, 1), OUT_MOVE_DEF],
+		[Vector2i(0, 1), OUT_DEF],
 	])
 	_place([
 		[Vector2i(20, 3), IN_DEF],
 		[Vector2i(20, 2), WIRE_DEF],
-		[Vector2i(20, 1), OUT_MOVE_DEF],
+		[Vector2i(20, 1), OUT_DEF, "rotation"],
 	])
+	_ctrl.updateBuildCircuit(_mgr.getAllBuilds())
+
+
+# 一条 clk 驱动的时序电路 + 一条没有 clk 的组合电路（开关 → detect_sig_0）：
+# 组合电路没有时钟也必须每拍跟着跑，否则机器人的方向选择信号永远是冷的
+func _build_clk_plus_combo(on: bool) -> void:
+	_new_ctrl()
+	_place([
+		[Vector2i(0, 5), IN_DEF],
+		[Vector2i(0, 4), NOT_DEF],
+		[Vector2i(0, 3), WIRE_DEF],
+		[Vector2i(0, 2), WIRE_DEF],
+		[Vector2i(0, 1), WIRE_DEF],
+		[Vector2i(0, 0), OUT_DEF],
+	])
+	var combo := _place([
+		[Vector2i(20, 3), SWITCH_DEF],
+		[Vector2i(20, 2), WIRE_DEF],
+		[Vector2i(20, 1), OUT_DEF, "detect_sig_0"],
+	])
+	combo[0].call("onPressed", on)
 	_ctrl.updateBuildCircuit(_mgr.getAllBuilds())
 
 
@@ -134,10 +159,10 @@ func _build_switch_move(on: bool) -> void:
 		[Vector2i(0, 3), WIRE_DEF],
 		[Vector2i(0, 2), WIRE_DEF],
 		[Vector2i(0, 1), WIRE_DEF],
-		[Vector2i(0, 0), OUT_MOVE_DEF],
+		[Vector2i(0, 0), OUT_DEF],
 		[Vector2i(1, 3), SWITCH_DEF],
 		[Vector2i(1, 2), WIRE_DEF],
-		[Vector2i(2, 2), OUT_ROT_DEF],
+		[Vector2i(2, 2), OUT_DEF, "rotation"],
 	])
 	assert_eq(all.size(), 8, "开关电路没放齐")
 	all[5].call("onPressed", on)
@@ -184,7 +209,7 @@ func test_export_writes_single_circuit_file() -> void:
 
 	var info: Dictionary = MANAGER.summarize(FILE_MAIN)
 	assert_true(bool(info.get("usable", false)),
-			"接口齐全的单电路文件应当可用：%s" % str(info.get("reason")))
+			"单电路文件应当可用：%s" % str(info.get("reason")))
 	assert_eq(int(info.get("circuit_count", 0)), 1)
 
 
@@ -250,7 +275,7 @@ func test_loaded_bundle_matches_live_circuit() -> void:
 	_build_standard()
 	assert_ne(MANAGER.export_all(FILE_MAIN, _mgr.getAllBuilds()), "")
 	var bundle = MANAGER.load_bundle(FILE_MAIN)
-	assert_not_null(bundle, "接口齐全的单电路文件必须能加载")
+	assert_not_null(bundle, "单电路文件必须能加载")
 	if bundle == null:
 		return
 	assert_true(bundle.has_input("clk"), "bundle 没有 clk 写入口")
@@ -315,9 +340,9 @@ func test_source_off_exports_zero() -> void:
 	assert_eq(bundle.output_level("move"), 0, "开关没按下时 move 应当是 0")
 
 
-# ===== 4. 不可用文件 =====
+# ===== 4. 多电路 / 多接口：都算可用，一拍全跑 =====
 
-func test_two_circuits_file_is_not_usable() -> void:
+func test_two_circuits_file_is_usable_and_runs_all() -> void:
 	_build_two_circuits()
 	assert_ne(MANAGER.export_all(FILE_TWO, _mgr.getAllBuilds()), "")
 	var data: Dictionary = MANAGER.load_file(FILE_TWO)
@@ -325,21 +350,63 @@ func test_two_circuits_file_is_not_usable() -> void:
 
 	var info: Dictionary = MANAGER.summarize(FILE_TWO)
 	assert_eq(int(info.get("circuit_count", 0)), 2)
-	assert_false(bool(info.get("usable", true)), "多电路文件不能算可用")
-	assert_string_contains(str(info.get("reason", "")), "不可用", "置灰理由没说清")
-	assert_null(MANAGER.load_bundle(FILE_TWO), "多电路文件不该被加载成 bundle")
+	assert_true(bool(info.get("usable", false)),
+			"多电路文件现在算可用：%s" % str(info.get("reason")))
+	assert_eq(str(info.get("reason", "")), "", "可用文件不该带置灰理由")
+	# 摘要里的接口清单是所有电路的并集
+	assert_eq(info.get("outputs", []), ["move", "rotation"], "接口摘要不是并集")
+
+	var pack = MANAGER.load_bundle(FILE_TWO)
+	assert_not_null(pack, "多电路文件必须能加载")
+	if pack == null:
+		return
+	assert_eq(int(pack.size()), 2, "两条电路都要装进复合 bundle")
+	assert_eq(pack.output_names(), ["move", "rotation"], "输出名要合并两条电路")
+	# 一拍把两条电路都跑一遍：clk=1 时 move 与 rotation 同时为 1
+	pack.set_input("clk", 1)
+	pack.tick()
+	assert_eq(pack.output_level("move"), 1, "第一条电路没被跑到")
+	assert_eq(pack.output_level("rotation"), 1, "第二条电路没被跑到")
+	pack.set_input("clk", 0)
+	pack.tick()
+	assert_eq(pack.output_level("move"), 0, "clk 回落后第一条电路输出没跟着变")
+	assert_eq(pack.output_level("rotation"), 0, "clk 回落后第二条电路输出没跟着变")
 
 
-func test_missing_outputs_is_not_usable() -> void:
+# 组合电路（没接 clk）也要每拍跑：只要电路里有接口元件，机器人就得跑它
+func test_combo_circuit_without_clk_also_runs() -> void:
+	_build_clk_plus_combo(true)
+	assert_ne(MANAGER.export_all(FILE_MIX, _mgr.getAllBuilds()), "")
+	var data: Dictionary = MANAGER.load_file(FILE_MIX)
+	assert_eq((data.get("circuits", []) as Array).size(), 2, "应当有两条电路")
+	var info: Dictionary = MANAGER.summarize(FILE_MIX)
+	assert_true(bool(info.get("usable", false)),
+			"多电路文件应当可用：%s" % str(info.get("reason")))
+	assert_eq(info.get("outputs", []), ["detect_sig_0", "move"], "接口清单取并集")
+
+	var pack = MANAGER.load_bundle(FILE_MIX)
+	assert_not_null(pack, "多电路文件必须能加载")
+	if pack == null:
+		return
+	assert_true(pack.has_output("detect_sig_0"), "组合电路的输出没被认出来")
+	# 组合电路不接 clk：一拍里同样要跑，输出直接跟着开关（源电平存在文件里）
+	pack.set_input("clk", 0)
+	pack.tick()
+	assert_eq(pack.output_level("detect_sig_0"), 1, "没有 clk 的组合电路没跟着跑")
+	assert_eq(pack.output_level("move"), 1, "clk 那条电路的输出丢了")
+
+
+# 只有一个输入接口、零个输出接口的单电路：接口名不再参与可用性判定，照样可用
+func test_missing_outputs_is_still_usable() -> void:
 	_build_clk_only()
 	assert_ne(MANAGER.export_all(FILE_CLK_ONLY, _mgr.getAllBuilds()), "")
 	var info: Dictionary = MANAGER.summarize(FILE_CLK_ONLY)
 	assert_eq(int(info.get("circuit_count", 0)), 1, "这里应当只有一条电路")
-	assert_false(bool(info.get("usable", true)), "缺 move/rotation 的文件不能算可用")
-	var reason: String = str(info.get("reason", ""))
-	assert_string_contains(reason, "move", "理由里应点名缺 move：" + reason)
-	assert_string_contains(reason, "rotation", "理由里应点名缺 rotation：" + reason)
-	assert_null(MANAGER.load_bundle(FILE_CLK_ONLY))
+	assert_true(bool(info.get("usable", false)),
+			"缺 move/rotation 的文件现在也算可用：%s" % str(info.get("reason")))
+	assert_eq(str(info.get("reason", "")), "", "可用文件不该带置灰理由")
+	assert_false((info.get("outputs", []) as Array).has("move"), "这条电路确实没有 move")
+	assert_not_null(MANAGER.load_bundle(FILE_CLK_ONLY), "单电路文件应当能加载成 bundle")
 
 
 func test_list_files_sees_exported_circuits() -> void:

@@ -27,6 +27,8 @@ test/*.xml
 # 只保留源码、SConstruct、build.ps1 与 .gdextension 清单；
 # 中间产物 / 调试符号 / SCons 缓存一律忽略。
 gdext/bin/
+# build_msvc.ps1（不依赖 Python 的构建路径）的中间产物目录
+gdext/build/
 gdext/*.pdb
 gdext/*.obj
 gdext/.sconsign.dblite

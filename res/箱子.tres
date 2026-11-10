@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://bm4xkd7rj2y1c"]
+
+[ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_atlas"]
+[ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_def"]
+[ext_resource type="Script" uid="uid://bxtyohrrnlxyw" path="res://circuit/sw_build_pin_define.gd" id="2_cwfo0"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_icon"]
+atlas = ExtResource("1_atlas")
+region = Rect2(512, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_off"]
+atlas = ExtResource("1_atlas")
+region = Rect2(512, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_on"]
+atlas = ExtResource("1_atlas")
+region = Rect2(512, 128, 128, 128)
+filter_clip = true
+
+[resource]
+script = ExtResource("1_def")
+atlasIcon = SubResource("AtlasTexture_icon")
+atlasTextureOn = SubResource("AtlasTexture_on")
+atlasTextureOff = SubResource("AtlasTexture_off")
+buildName = "箱子"
+metadata/_custom_type_script = "uid://c2bw70ox58gp4"

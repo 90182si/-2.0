@@ -36,8 +36,10 @@ func _ready() -> void:
 	if parent != null:
 		_systemManager = parent.get("system_manager") as SWSystemManager
 		
-	for layer:SWLayer in get_tree().get_nodes_in_group("SWLayer"):
-		var view := layer as SWLayer
+	#只收自己这个场景下的图层：分屏调试时机器人场景与电路场景同时在树里，
+	#直接 get_nodes_in_group 会把另一边的图层也收进来（build/entity 系统会被装配两遍）
+	for node in SwCommon.GetNodesInGroupInScene(self, "SWLayer"):
+		var view := node as SWLayer
 		if view == null:
 			continue
 		layers.append(view)
@@ -61,7 +63,7 @@ func _ready() -> void:
 			holdSystem = system
 		elif system is SWBuildLayerSystem:
 			buildSystem = system
-	for render_node:SWRenderNode in get_tree().get_nodes_in_group("SWRender"):
+	for render_node:SWRenderNode in SwCommon.GetNodesInGroupInScene(self, "SWRender"):
 		var render_system:SWRenderSystem = render_node.create_render_system()
 		if render_system == null:
 			continue
@@ -134,7 +136,9 @@ func _on_save_requested() -> void:
 		await RenderingServer.frame_post_draw
 		var builds = buildSystem.build_manager.getAllBuilds()
 		print("[Save] 获取到建筑物: ", builds.size())
-		var vp = get_tree().root.get_viewport()
+		#缩略图抓本层所在的视口：单场景时它就是根视口；分屏调试时本层在子视口里，
+		#抓根视口会把右边的电路场景一起拍进去
+		var vp = get_viewport()
 		print("[Save] viewport: ", vp)
 		var ok = SWSaveManager.save_builds(name, builds, vp, {})
 		if ok:
@@ -145,6 +149,10 @@ func _on_save_requested() -> void:
 			var cir_path: String = CIR_MANAGER.export_all(name, builds)
 			if cir_path != "":
 				print("[Save] 电路文件: ", cir_path)
+			#刚存过，文件已经是最新结构：退出时不用再整表导出一遍
+			#（上万元件跑一趟网表生成不便宜，而这个标记只为「没存就退出」兜底）
+			if SESSION.edited_save == name:
+				SESSION.edited_save = ""
 		else:
 			push_warning("[Save] 存档失败: " + name)
 	)
@@ -189,6 +197,9 @@ func load_save_by_name(name: String) -> bool:
 	data.clear()
 	#读档成功才算「当前存档」：失败时保留原来的名字，别把回填弄丢
 	current_save_name = name
+	#旧世界的结构改动跟着旧世界一起作废：不清的话退出时会拿新世界导出的结构
+	#去覆盖另一次存档的电路文件
+	SESSION.edited_save = ""
 	_hide_progress()
 	get_tree().paused = false
 	print("加载存档成功: ", name)

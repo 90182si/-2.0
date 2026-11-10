@@ -46,6 +46,23 @@ const FUNC_NOR := "NOR"
 const FUNC_XOR := "XOR"
 const FUNC_XNOR := "XNOR"
 
+# 接口元件的「接口: move（输出）」行；非接口元件返回空串
+static func _io_name_line(build:SWBuildItemDefine) -> String:
+	if build == null or build.buildDefine == null:
+		return ""
+	var comp_type:int = build.buildDefine.circuit_component_type
+	var kind := ""
+	if comp_type == SwDefine.CircuitComponentType.EXTERNAL_INPUT:
+		kind = "输入"
+	elif comp_type == SwDefine.CircuitComponentType.EXTERNAL_OUTPUT:
+		kind = "输出"
+	else:
+		return ""
+	var io_name := str(build.get("io_name"))
+	if io_name.is_empty():
+		return "接口: （未命名）"
+	return "接口: %s（%s）" % [io_name, kind]
+
 # 元件层运算函数 → 显示名（SwCommon 里的那些）
 const OP_NAMES:Dictionary = {
 	FUNC_AND: "AND",
@@ -63,12 +80,17 @@ static func dir_name(d:int) -> String:
 	return DIR_NAMES[d]
 
 # 一个建筑 → 多行文本。没有表达式（未接电路 / 纯导体 / 空壳元件）也会给出原因，
-# 免得玩家以为提示坏了
+# 免得玩家以为提示坏了。
+# 接口元件（输入/输出接口）额外补一行接口名：元件定义名已合并成「输出接口」，
+# 光看元件名分不出这是 move 还是 rotation（名字是实例属性）
 static func describe_build(build:SWBuildItemDefine) -> String:
 	if build == null or build.buildDefine == null:
 		return ""
 	var cell:Vector2i = build.buildAxisPos / SwDefine.GRID_SIZE
 	var head := "%s  (%d, %d)" % [build.buildDefine.buildName, cell.x, cell.y]
+	var io_line := _io_name_line(build)
+	if not io_line.is_empty():
+		head += "\n" + io_line
 	var comp := build.getCircuitCompoent() as SWBuildCompoentCircuit
 	if comp == null:
 		return head + "\n（没有电路组件）"

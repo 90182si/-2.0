@@ -19,6 +19,12 @@ class_name SWRobotTick extends Node
 const DEFAULT_PERIOD_SEC: float = 0.25
 const MAX_STEPS_PER_FRAME: int = 8
 
+#相位事件：分屏调试时让右边的电路场景跟着机器人同拍。
+#壳把本信号接到建筑层系统的 step_clock_phase（写 clk 电平 + 当场求值），
+#右侧的 clk 就不再按挂钟自走。
+#pause() 额外发一次 false：机器人停了，右边也该看到 clk 落低
+signal phase_changed(high: bool)
+
 #一拍多少秒（默认 250ms；测试可注入更短的节拍加速断言）
 @export var period_sec: float = DEFAULT_PERIOD_SEC
 #节拍总开关（场景切走/暂停调试时可关）
@@ -65,7 +71,10 @@ func tick_once() -> int:
 	if entity_system == null:
 		return 0
 	beat_count += 1
+	#一次走完整拍：高相位、低相位依次发出去，右侧的 clk 也会按同样两相位翻
+	phase_changed.emit(true)
 	var moved: int = entity_system.step_beat()
+	phase_changed.emit(false)
 	moved_total += moved
 	#一拍已经完整跑完（含低相位），下一个事件应当是下一拍的上升沿
 	_next_is_high = true
@@ -77,6 +86,7 @@ func tick_high() -> bool:
 	if entity_system == null:
 		return false
 	beat_count += 1
+	phase_changed.emit(true)
 	entity_system.step_beat_high()
 	return true
 
@@ -84,6 +94,7 @@ func tick_high() -> bool:
 func tick_low() -> int:
 	if entity_system == null:
 		return 0
+	phase_changed.emit(false)
 	var moved: int = entity_system.step_beat_low()
 	moved_total += moved
 	return moved
@@ -102,6 +113,8 @@ func pause() -> void:
 	#攒到一半的时间也清掉：恢复后不该立刻补一拍
 	_acc = 0.0
 	_next_is_high = true
+	#停拍时补一次低相位：分屏右侧的 clk 不能停在半空
+	phase_changed.emit(false)
 
 #恢复自动节拍
 func resume() -> void:
@@ -113,6 +126,7 @@ func is_running() -> bool:
 
 #单拍前进（时序图「步进」按钮）：先暂停再走一拍，返回本拍实际移动的机器人数；
 #返回 -1 表示没绑实体系统。先暂停是为了让它表现成「走一步然后停住」。
+#分屏时这一拍的高/低两个相位会当场把右侧电路各算一次（见 phase_changed）
 func step_once() -> int:
 	if entity_system == null:
 		return -1

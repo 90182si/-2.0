@@ -16,6 +16,12 @@ signal hover_build_changed(build:SWBuildItemDefine)
 #region 成员变量
 var sel_tunnel:bool = false
 
+#本层要不要自己处理 Ctrl+拖拽 的框选（选的是建筑）。
+#机器人场景把框选交给了实体层（选的是机器人），那边会把这个关掉：
+#不关的话 Ctrl+左键拖会同时画出两圈矩形，Ctrl+右键拖还会落到本层的擦除分支，
+#把框里的机器人全删了
+var rect_select_enabled:bool = true
+
 var _hold_builds:Array[SWBuildItemDefine] = []
 var _last_world_pos:Vector2i = Vector2i.ZERO
 var _left_mouse_pressed:bool = false
@@ -410,6 +416,9 @@ func _on_left_pressed(v:SWHoldLayer) -> bool:
 		return false
 	# Ctrl + 落在已有元件上 = 拆掉旧的再放新的（连刷与拖拽都跟这一笔一致）
 	_replace_mode = Input.is_key_pressed(KEY_CTRL)
+	#框选关闭时（机器人场景）：Ctrl+空手这一笔不归本层管，直接放手给实体层
+	if _replace_mode and _hold_builds.is_empty() and not rect_select_enabled:
+		return false
 	# 电线走「拖拽预览 + 松手落子」：按下不埋建筑，也不能置 _left_mouse_pressed（那是连续刷开关）
 	if _is_wire_tool():
 		_left_drag_started = true
@@ -440,6 +449,9 @@ func _on_right_pressed(v:SWHoldLayer) -> bool:
 	if not _can_erase_now():
 		return false
 	if _ctrl_pressed:
+		#机器人场景：Ctrl+右键拖是「取消选中」，绝不能让下面掉到擦除分支去删机器人
+		if not rect_select_enabled:
+			return false
 		_right_ctrl_dragging = true
 		var world_pos = v.get_mouse_world_pos()
 		v.set_select_rect_origin(world_pos,Color(1.0, 0.2, 0.2, 0.3))
@@ -495,6 +507,11 @@ func _handle_mouse_button(event:InputEventMouseButton) -> bool:
 			if _on_left_pressed(v):
 				return true
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			#机器人场景：Ctrl+右键拖是实体层的「取消选中」。看事件自己的 ctrl_pressed，
+			#不能只靠 _ctrl_pressed（那是键盘事件置的，可能被 UI 先吃掉）：
+			#漏掉就会掉到擦除分支，把框里的机器人全删了
+			if not rect_select_enabled and event.ctrl_pressed:
+				return false
 			_on_right_pressed(v)
 	elif event.is_released():
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -518,6 +535,9 @@ func _handle_mouse_motion(_event:InputEventMouseMotion) -> bool:
 			_paint_between(_last_world_pos, v.get_mouse_grid_world_pos())
 		return false
 	var world_pos_mouse := v.get_mouse_world_pos()
+	#机器人场景且空手：Ctrl 这一笔归实体层（框选机器人），本层什么都不做
+	if not rect_select_enabled and _hold_builds.is_empty():
+		return false
 	if _right_ctrl_dragging:
 		v.update_select_rect(_selectRectPos,world_pos_mouse)
 	elif _left_mouse_pressed:
@@ -538,7 +558,8 @@ func _handle_key(event:InputEventKey) -> bool:
 		return false
 	if Input.is_key_pressed(KEY_CTRL) and _hold_builds.size() == 0:
 		_ctrl_pressed = true
-		v.show_select_rect()
+		if rect_select_enabled:
+			v.show_select_rect()
 		return false
 	v.hide_select_rect()
 	_ctrl_pressed = false

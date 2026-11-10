@@ -90,8 +90,11 @@ func _apply_zoom_at(z: Vector2) -> void:
 func _finish_zoom() -> void:
 	_zoom_t = 1.0
 	_update_atlas_lod()
-	# 缩远时切换到简化内容 LOD（只画主体部件），避免视野变大后实例数暴涨导致的持续卡顿
-	get_tree().call_group("DrawManager", "set_scale_level", view_scale_level)
+	#缩远时切换到简化内容 LOD（只画主体部件），避免视野变大后实例数暴涨导致的持续卡顿。
+	#只通知本场景的绘制层：分屏调试时另一边的相机会有自己的 scale level，全局 call_group 会互相覆盖
+	for dm in SwCommon.GetNodesInGroupInScene(self, "DrawManager"):
+		if dm.has_method("set_scale_level"):
+			dm.call("set_scale_level", view_scale_level)
 	view_rect_changed()
 
 # ===== 帧末合并的位移 =====

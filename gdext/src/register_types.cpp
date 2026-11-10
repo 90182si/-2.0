@@ -3,6 +3,7 @@
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
 
+#include "sw_anim_batch.h"
 #include "sw_expr_eval.h"
 
 using namespace godot;
@@ -12,6 +13,8 @@ void initialize_sw_expr_eval_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 	GDREGISTER_CLASS(SWExprEval);
+	//万级机器人动画层：插值 + 实例缓冲改写
+	GDREGISTER_CLASS(SWAnimBatch);
 }
 
 void uninitialize_sw_expr_eval_module(ModuleInitializationLevel p_level) {

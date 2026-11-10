@@ -62,6 +62,16 @@ func _is_frame_build() -> bool:
 	return buildRef != null and (buildRef is SWBuildLed or buildRef is SWBuildRegister1Bit \
 			or buildRef is SWBuildNot or buildRef is SWBuildButton)
 
+# ========== 自采样槽（接口元件：主体自己点亮自己） ==========
+# 外部输入/输出接口的主体没有 net 可采样（输出口是纯读取点，输入口的 net 只挂在端子上），
+# 玩家在电路场景里看不出「这个口现在是不是 1」。这里给主体挂一个**虚拟电平槽**当 net 用：
+# shader 走非帧分支采样调色板给主体上色（高=亮绿、低=暗绿），实例缓冲零写入。
+# 虚拟槽借帧槽空间分配（从 MAX_NETS-1 向下，与 netId 从 0 向上天然隔离），
+# 所以它同时能被 set_level 写、被 shader 当 net 采样，而不会撞到真实 net。
+# 由建筑在 _sub_init 里置 self_tint = true（默认 false，其余元件行为完全不变）。
+var self_tint: bool = false
+var _self_tint_net: SWNet = null
+
 # 帧状态写入信号纹理帧槽（shader 据此选图集帧 on/off）。烘焙前调用只记录状态，
 # 首次烘焙分配帧槽后立即补写，防首帧显示旧电平。
 #
@@ -358,6 +368,35 @@ func writeInstances(target: PackedFloat32Array, startInstance: int, baseX: float
 func setBuildRef(build:SWBuildItemDefine) -> void:
 	buildRef = build
 
+# 主体要采样的 net：自采样元件返回虚拟电平槽，其余（含手持预览克隆）返回 null 走纯 tint
+func _atlas_sample_net() -> SWNet:
+	if not self_tint or buildRef == null or buildRef.is_preview:
+		return null
+	if _self_tint_net != null:
+		return _self_tint_net
+	var tex: SWSignalTexture = SWSignalTexture.instance
+	if tex == null:
+		# 纯逻辑用例里没有渲染单例：按普通元件画，别炸
+		return null
+	_self_tint_net = SWNet.new()
+	_self_tint_net.netId = tex.alloc_frame_slot()
+	# 颜色口径与默认线别一致：低=暗绿、高=亮绿（SwCommon.GetWireColor）
+	_self_tint_net.paletteId = SWSignalTexture.palette_id_for("")
+	return _self_tint_net
+
+# 把当前电平写进自采样槽。调用方（build 层每拍）已经做过「变了才写」的比对：
+# set_level 会整张信号纹理标脏，没必要重复写同一个值
+func setSelfTintLevel(high: bool) -> void:
+	if _self_tint_net == null or _self_tint_net.netId < 0:
+		return
+	var tex: SWSignalTexture = SWSignalTexture.instance
+	if tex != null:
+		tex.set_level(_self_tint_net.netId, high)
+
+# 自采样槽的纹理下标（-1 = 还没分配/本元件不需要）；测试与排障用
+func getSelfTintSlot() -> int:
+	return _self_tint_net.netId if _self_tint_net != null else -1
+
 # 追加一个部件到平行数组
 func _appendPart(rect: Rect2, offset: Vector2i, rotation: int, loopTint: bool, net: SWNet) -> void:
 	_partRect.append(rect.position.x)
@@ -404,7 +443,7 @@ func _buildRenderParts() -> void:
 					posmod(p.pin_dir+buildRef.rotation,4), true, net)
 	if buildHasAtlas:
 		var rot: int = buildRef.rotation if buildAtlasRotable else 0
-		_appendPart(drawRect, Vector2i.ZERO, rot, false, null)
+		_appendPart(drawRect, Vector2i.ZERO, rot, false, _atlas_sample_net())
 		_atlasPartIndex = _partCount() - 1
 	else:
 		_atlasPartIndex = -1

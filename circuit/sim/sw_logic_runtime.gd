@@ -131,6 +131,21 @@ func init_prev(slots: PackedInt32Array) -> void:
 func tick() -> SWSimResult:
 	if prog == null:
 		return SWSimResult.new()
+	tick_fast()
+	var res := _make_result()
+	ticked.emit(res)
+	if res.any_change:
+		outputs_changed.emit(res)
+	return res
+
+
+# 只推进状态、**不打包差分结果也不广播信号**的一拍。
+# 给「一拍要跑很多次 tick」的场合用（机器人侧：每台每拍 2 次 tick，
+# 十几条子电路，几十台机器人）。tick() 里的差分打包要扫全部 net / 灯泡组 / 寄存器
+# 并新建一个 SWSimResult，在机器人侧没人读，纯浪费。
+func tick_fast() -> void:
+	if prog == null:
+		return
 	if _expr_active:
 		var ev := _expr_vals
 		var ins := prog.input_slots
@@ -149,11 +164,6 @@ func tick() -> SWSimResult:
 		slot_vals = engine.readback()
 		reg_state = engine.read_reg_state()
 	tick_count += 1
-	var res := _make_result()
-	ticked.emit(res)
-	if res.any_change:
-		outputs_changed.emit(res)
-	return res
 
 
 # ===== 只读查询（表现层 / 测试用） =====

@@ -8,7 +8,9 @@ extends GutTest
 
 const HARNESS_SCRIPT := preload("res://test/circuit/circuit_test_harness.gd")
 const SAVE_NAME := "16x计数器"
-const LOG_PATH := "j:/godot/无限地图/_del.txt"
+#排障转储：以前写死旧盘符的绝对路径，工程搬家后 FileAccess.open 拿到 null，
+#整个用例变成「Unexpected Errors」失败。写到 user:// 跟盘符无关
+const LOG_PATH := "user://_del.txt"
 var _lines: Array[String] = []
 
 func _w(m: String) -> void:

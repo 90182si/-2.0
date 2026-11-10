@@ -26,6 +26,29 @@ static func GetGlobalPosByViewPos(viewPos: Vector2, viewport: Viewport) -> Vecto
 	var canvas_transform := viewport.get_canvas_transform()
 	return canvas_transform.affine_inverse() * viewPos
 
+#自己所属的「场景根」：SubViewport 里就是该 viewport 下的那一棵树，主视口里就是主场景根。
+#分屏调试时机器人场景与电路场景同时在树里，按组收集图层/工具按钮/绘制管理器
+#必须按它过滤，否则每个系统都会把另一边的节点也收进来（图层系统会被装配两遍）
+static func GetSceneRoot(n: Node) -> Node:
+	var cur: Node = n
+	while cur != null:
+		var p: Node = cur.get_parent()
+		if p == null or p is Viewport:
+			return cur
+		cur = p
+	return null
+
+#按组收集「同一个场景根下」的节点：分屏安全的 get_tree().get_nodes_in_group
+static func GetNodesInGroupInScene(n: Node, group: String) -> Array:
+	var out: Array = []
+	if n == null or not n.is_inside_tree():
+		return out
+	var root: Node = GetSceneRoot(n)
+	for node in n.get_tree().get_nodes_in_group(group):
+		if root == null or node == root or root.is_ancestor_of(node):
+			out.append(node)
+	return out
+
 #获取某个位置对应网格的起始坐标
 static func GetGridPos(worldPos:Vector2i) -> Vector2i:
 	var pos1 = Vector2(worldPos)/Vector2(SwDefine.GRID_SIZE)

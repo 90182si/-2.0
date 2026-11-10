@@ -277,6 +277,9 @@ static func SWBuildCreator(axisPos:Vector2i,buildDef:SWBuildDefine,rot:int = 0,p
 		"时钟":return SWBuildClockSiggen.new(axisPos,buildDef,rot,preview)
 		"1bit寄存器":return SWBuildRegister1Bit.new(axisPos,buildDef,rot,preview)
 		"输入接口":return BUILD_EXT_INPUT.new(axisPos,buildDef,rot,preview)
+		#输出接口只剩一个定义，名称（move/rotation/…）是实例属性，靠 HUD 下拉框改
+		"输出接口":return BUILD_EXT_OUTPUT.new(axisPos,buildDef,rot,preview)
+		#旧存档里的两个独立定义名：保留分支做兼容（读档时也会别名到「输出接口」）
 		"输出接口move":return BUILD_EXT_OUTPUT.new(axisPos,buildDef,rot,preview)
 		"输出接口rotation":return BUILD_EXT_OUTPUT.new(axisPos,buildDef,rot,preview)
 		_:return SWBuildNone.new(axisPos,buildDef,rot,preview)

@@ -18,8 +18,8 @@ const MANAGER := preload("res://circuit/sw_cir_manager.gd")
 const BUNDLE := preload("res://circuit/sim/sw_circuit_bundle.gd")
 
 const IN_DEF: SWBuildDefine = preload("res://res/输入接口.tres")
-const OUT_MOVE_DEF: SWBuildDefine = preload("res://res/输出接口move.tres")
-const OUT_ROT_DEF: SWBuildDefine = preload("res://res/输出接口rotation.tres")
+#输出接口已合并为单一定义：move / rotation 只是实例上的 io_name
+const OUT_DEF: SWBuildDefine = preload("res://res/输出接口.tres")
 const WIRE_DEF: SWBuildDefine = preload("res://res/电线A.tres")
 const NOT_DEF: SWBuildDefine = preload("res://res/非门.tres")
 
@@ -49,7 +49,7 @@ func _w(cell: Vector2i) -> Vector2i:
 
 # ===== 电路辅助：造一条 clk -> 输出接口 的电路并导出/加载成 bundle =====
 
-# 造电路：specs = [[格子, 定义], ...]；返回导出后的 bundle（失败返回 null）
+# 造电路：specs = [[格子, 定义, 可选 io_name], ...]；返回导出后的 bundle（失败返回 null）
 func _make_bundle(file_name: String, specs: Array):
 	var mgr := SWBuildManager.new()
 	var ctrl := SWCircuitControl.new()
@@ -58,6 +58,9 @@ func _make_bundle(file_name: String, specs: Array):
 	var all: Array[SWBuildItemDefine] = []
 	for s: Array in specs:
 		var build := SwDefine.SWBuildCreator((s[0] as Vector2i) * GRID, s[1], 0)
+		#输出接口合并后名字靠实例属性区分（第三个元素写名字）
+		if s.size() > 2:
+			build.set("io_name", str(s[2]))
 		if not mgr.addBuild(build):
 			push_error("电路元件放置失败: %s @ %s" % [s[1].buildName, str(s[0])])
 			return null
@@ -79,9 +82,9 @@ func _bundle_move() -> Variant:
 		[Vector2i(0, 7), IN_DEF],
 		[Vector2i(0, 6), WIRE_DEF],
 		[Vector2i(1, 6), WIRE_DEF],
-		[Vector2i(1, 5), OUT_MOVE_DEF],
+		[Vector2i(1, 5), OUT_DEF],
 		[Vector2i(0, 5), NOT_DEF],
-		[Vector2i(0, 4), OUT_ROT_DEF],
+		[Vector2i(0, 4), OUT_DEF, "rotation"],
 	])
 
 # rotation = clk、move = !clk
@@ -90,9 +93,9 @@ func _bundle_rot() -> Variant:
 		[Vector2i(0, 7), IN_DEF],
 		[Vector2i(0, 6), WIRE_DEF],
 		[Vector2i(1, 6), WIRE_DEF],
-		[Vector2i(1, 5), OUT_ROT_DEF],
+		[Vector2i(1, 5), OUT_DEF, "rotation"],
 		[Vector2i(0, 5), NOT_DEF],
-		[Vector2i(0, 4), OUT_MOVE_DEF],
+		[Vector2i(0, 4), OUT_DEF],
 	])
 
 # move = rotation = clk（一拍里两个输出同时为 1，用来验证「先转后走」）
@@ -103,9 +106,9 @@ func _bundle_both() -> Variant:
 		[Vector2i(0, 3), WIRE_DEF],
 		[Vector2i(0, 2), WIRE_DEF],
 		[Vector2i(0, 1), WIRE_DEF],
-		[Vector2i(0, 0), OUT_MOVE_DEF],
+		[Vector2i(0, 0), OUT_DEF],
 		[Vector2i(1, 1), WIRE_DEF],
-		[Vector2i(2, 1), OUT_ROT_DEF],
+		[Vector2i(2, 1), OUT_DEF, "rotation"],
 	])
 
 

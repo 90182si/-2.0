@@ -1,0 +1,66 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scene/sw_split_scene.gd" id="1_split"]
+
+[node name="SWSplitScene" type="Node"]
+script = ExtResource("1_split")
+
+[node name="PaneRoot" type="Control" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LeftPane" type="SubViewportContainer" parent="PaneRoot"]
+offset_right = 632.0
+offset_bottom = 720.0
+mouse_filter = 0
+stretch = true
+
+[node name="LeftView" type="SubViewport" parent="PaneRoot/LeftPane"]
+size = Vector2i(632, 720)
+render_target_update_mode = 4
+
+[node name="Handle" type="ColorRect" parent="PaneRoot"]
+offset_left = 632.0
+offset_right = 640.0
+offset_bottom = 720.0
+color = Color(0.25, 0.25, 0.25, 1)
+
+[node name="RightPane" type="SubViewportContainer" parent="PaneRoot"]
+offset_left = 640.0
+offset_right = 1280.0
+offset_bottom = 720.0
+mouse_filter = 0
+stretch = true
+
+[node name="RightView" type="SubViewport" parent="PaneRoot/RightPane"]
+size = Vector2i(640, 720)
+render_target_update_mode = 4
+
+[node name="TopBar" type="CanvasLayer" parent="."]
+
+[node name="Bar" type="PanelContainer" parent="TopBar"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 760.0
+offset_bottom = 60.0
+grow_horizontal = 0
+
+[node name="HBox" type="HBoxContainer" parent="TopBar/Bar"]
+theme_override_constants/separation = 10
+
+[node name="BackBtn" type="Button" parent="TopBar/Bar/HBox"]
+custom_minimum_size = Vector2(130, 36)
+text = "返回机器人场景"
+
+[node name="Status" type="Label" parent="TopBar/Bar/HBox"]
+custom_minimum_size = Vector2(220, 0)
+text = ""
+clip_text = true
+
+[node name="ApplyBtn" type="Button" parent="TopBar/Bar/HBox"]
+custom_minimum_size = Vector2(130, 36)
+disabled = true
+text = "应用到机器人"

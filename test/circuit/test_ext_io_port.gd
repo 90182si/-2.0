@@ -5,8 +5,8 @@ extends GutTest
 
 const GRID: Vector2i = SwDefine.GRID_SIZE
 const IN_DEF: SWBuildDefine = preload("res://res/输入接口.tres")
-const OUT_MOVE_DEF: SWBuildDefine = preload("res://res/输出接口move.tres")
-const OUT_ROT_DEF: SWBuildDefine = preload("res://res/输出接口rotation.tres")
+#输出接口已合并为单一定义：move / rotation 只是实例上的 io_name
+const OUT_DEF: SWBuildDefine = preload("res://res/输出接口.tres")
 const NOT_DEF: SWBuildDefine = preload("res://res/非门.tres")
 const LED_DEF: SWBuildDefine = preload("res://res/灯泡.tres")
 
@@ -27,11 +27,10 @@ func _new_ctrl() -> Array:
 func test_definitions_wire_component_types() -> void:
 	assert_eq(IN_DEF.circuit_component_type, SwDefine.CircuitComponentType.EXTERNAL_INPUT,
 			"输入接口定义必须用 EXTERNAL_INPUT")
-	assert_eq(OUT_MOVE_DEF.circuit_component_type, SwDefine.CircuitComponentType.EXTERNAL_OUTPUT,
+	assert_eq(OUT_DEF.circuit_component_type, SwDefine.CircuitComponentType.EXTERNAL_OUTPUT,
 			"输出接口定义必须用 EXTERNAL_OUTPUT")
 	assert_eq(IN_DEF.default_io_name, "clk")
-	assert_eq(OUT_MOVE_DEF.default_io_name, "move")
-	assert_eq(OUT_ROT_DEF.default_io_name, "rotation")
+	assert_eq(OUT_DEF.default_io_name, "move", "输出接口的默认名仍是 move")
 
 
 func test_factory_creates_ext_builds_with_default_name() -> void:
@@ -39,18 +38,20 @@ func test_factory_creates_ext_builds_with_default_name() -> void:
 	assert_eq(ext_in.get_script(), EXT_IN_SCRIPT, "输入接口应由 SWBuildExtInput 创建")
 	assert_eq(str(ext_in.get("io_name")), "clk", "输入接口默认名应为 clk")
 
-	var move := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_MOVE_DEF)
+	var move := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_DEF)
 	assert_eq(move.get_script(), EXT_OUT_SCRIPT, "输出接口应由 SWBuildExtOutput 创建")
 	assert_eq(str(move.get("io_name")), "move")
 
-	var rot := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_ROT_DEF)
+	# 合并后同一个定义也能是 rotation：名字是实例属性，不是定义属性
+	var rot := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_DEF)
+	rot.set("io_name", "rotation")
 	assert_eq(rot.get_script(), EXT_OUT_SCRIPT, "两个输出接口共用同一个建筑类")
 	assert_eq(str(rot.get("io_name")), "rotation")
 
 
 # 接口元件不应落到默认兜底类（SWBuildNone），否则既没端口也不进电路
 func test_factory_does_not_fall_back_to_none() -> void:
-	for def: SWBuildDefine in [IN_DEF, OUT_MOVE_DEF, OUT_ROT_DEF]:
+	for def: SWBuildDefine in [IN_DEF, OUT_DEF]:
 		var build := SwDefine.SWBuildCreator(Vector2i.ZERO, def)
 		assert_true(build.get_script() != SWBuildNone, "定义 %s 掉进了 SWBuildNone" % def.buildName)
 
@@ -65,7 +66,7 @@ func test_input_port_points_up_as_output() -> void:
 
 
 func test_output_port_accepts_all_four_directions() -> void:
-	var ext_out := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_MOVE_DEF)
+	var ext_out := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_DEF)
 	var comp := ext_out.getCircuitCompoent()
 	for d in 4:
 		assert_true(comp.portIsInput(d), "输出接口四向都应能接输入（dir=%d）" % d)
@@ -76,12 +77,12 @@ func test_output_port_accepts_all_four_directions() -> void:
 # ===== 名称存档往返（state 字段，不需要改 SWSaveManager） =====
 
 func test_io_name_roundtrip_through_save_state() -> void:
-	var out := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_MOVE_DEF)
+	var out := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_DEF)
 	out.set("io_name", "rotation")
 	var state: Dictionary = out.save_state()
 	assert_eq(str(state.get("io_name", "")), "rotation", "改名必须进存档 state")
 
-	var reloaded := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_ROT_DEF)
+	var reloaded := SwDefine.SWBuildCreator(Vector2i.ZERO, OUT_DEF)
 	reloaded.load_state(state)
 	assert_eq(str(reloaded.get("io_name")), "rotation", "读档必须还原实例上的 io_name")
 
@@ -124,7 +125,7 @@ func test_output_port_reads_driving_level() -> void:
 	var mgr: SWBuildManager = pair[0]
 	var ctrl: SWCircuitControl = pair[1]
 	var ext_in := SwDefine.SWBuildCreator(Vector2i(0, 1) * GRID, IN_DEF, 0)
-	var ext_out := SwDefine.SWBuildCreator(Vector2i(0, 0) * GRID, OUT_MOVE_DEF, 0)
+	var ext_out := SwDefine.SWBuildCreator(Vector2i(0, 0) * GRID, OUT_DEF, 0)
 	var all: Array[SWBuildItemDefine] = [ext_in, ext_out]
 	for b in all:
 		assert_true(mgr.addBuild(b))

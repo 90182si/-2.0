@@ -1,5 +1,8 @@
 class_name SWBuildLayerSystem extends SWLayerSystem
 
+#跨场景会话：电路结构改动要记进去，机器人场景回来看它决定「先停节拍、重载最新电路」
+const SESSION := preload("res://core/manager/sw_session.gd")
+
 #左键点到接口元件（外部输入/输出）：请求 HUD 打开名称编辑面板
 signal edit_build_requested(build:SWBuildItemDefine)
 
@@ -515,6 +518,10 @@ func _eval_placed_batch(batch:Array[SWBuildItemDefine], tree:SceneTree) -> void:
 	for build in notify_builds:
 		if build is SWBuildClockSiggen:
 			addClockBuild(build)
+		else:
+			_register_io_port(build)
+	#放完就是改过结构了：机器人场景回来要按最新电路重绑
+	_mark_circuit_edited()
 	_report_place_progress("求解电路 %d/%d" % [_place_evaluated, _place_total])
 
 # 进度条口径：入图与求值各占一半；任务中途追加时分母变大，进度会略微回退，符合「合并所有任务」
@@ -562,6 +569,9 @@ func _flush_place_jobs_sync() -> void:
 	for build in notify_builds:
 		if build is SWBuildClockSiggen:
 			addClockBuild(build)
+		else:
+			_register_io_port(build)
+	_mark_circuit_edited()
 #endregion
 
 #region 外部调用操作地图
@@ -593,6 +603,8 @@ func clear_all_builds() -> void:
 	_selected_builds.clear()
 	_clip_states.clear()
 	clockBuildArr.clear()
+	io_input_arr.clear()
+	io_output_arr.clear()
 	#上一份世界的电路/编译产物/求值引擎必须跟着一起释放：它们反引用着旧建筑，
 	#只清建筑表的话，换几次存档就残留几份完整世界（这是内存冲上 2GB 的主因）
 	if circuit_control:
@@ -750,6 +762,12 @@ func _sum_prog_field(progs:Dictionary, field:String) -> int:
 			total += int(prog.get(field))
 	return total
 
+#存档里的旧定义名 -> 现定义名（合并过的元件：旧存档不能因此读不回来）
+const DEF_NAME_ALIAS:Dictionary = {
+	"输出接口move":"输出接口",
+	"输出接口rotation":"输出接口",
+}
+
 #存档的一条建筑记录 -> 建筑对象并加入地图；失败返回 null
 func _add_build_from_save(b:Dictionary, unpaired_tunnels:Array[SWBuildWireTunnel]) -> SWBuildItemDefine:
 	var pos_dict = b.get("pos", {})
@@ -760,8 +778,12 @@ func _add_build_from_save(b:Dictionary, unpaired_tunnels:Array[SWBuildWireTunnel
 	var signal_state = b.get("signal_state", 0)
 	var in_loop = b.get("in_loop", false)
 	var pos = Vector2i(pos_dict.get("x", 0), pos_dict.get("y", 0))
-	var def_path = "res://res/" + def_name + ".tres"
-	var build_def = load(def_path) as SWBuildDefine
+	#定义资源已被合并：先按名字直取，取不到再走别名表（旧存档里的 move/rotation 两个定义）。
+	#必须先 ResourceLoader.exists：旧定义名对应的 .tres 已删，直接 load 会往控制台喷一条错误
+	var def_path = "res://res/" + str(def_name) + ".tres"
+	if not ResourceLoader.exists(def_path) and DEF_NAME_ALIAS.has(def_name):
+		def_path = "res://res/" + str(DEF_NAME_ALIAS[def_name]) + ".tres"
+	var build_def = load(def_path) as SWBuildDefine if ResourceLoader.exists(def_path) else null
 	if not build_def:
 		return null
 	var build = SwDefine.SWBuildCreator(pos, build_def, rot)
@@ -825,6 +847,8 @@ func _notify_circuit_after_removed(removed:Array[SWBuildItemDefine],
 		_append_affected_chunks(affected, notifyChunkPosArr)
 	# 2) 清时钟注册
 	_cleanup_clocks_after_removed(removed)
+	# 3) 结构改过了
+	_mark_circuit_edited()
 
 # 把受影响的建筑并进通知区块集（去重用字典：affected 可能上万，在数组上 has() 是平方级）
 func _append_affected_chunks(affected:Array[SWBuildItemDefine], notifyChunkPosArr:Array) -> void:
@@ -845,17 +869,30 @@ func _cleanup_clocks_after_removed(removed:Array[SWBuildItemDefine]) -> void:
 	for build in removed:
 		if build is SWBuildClockSiggen:
 			delClockBuild(build)
+		else:
+			io_input_arr.erase(build)
+			io_output_arr.erase(build)
 	# 兜底：注册表里凡是已经不在建筑表内的时钟一律清掉。
 	# 只遍历注册表（通常只有几个时钟），代价可忽略；
 	# 这样可以覆盖「时钟被间接删除」等没走到上面分支的情况。
-	if clockBuildArr.is_empty():
-		return
-	var stale:Array[SWBuildItemDefine] = []
-	for build in clockBuildArr.keys():
+	if not clockBuildArr.is_empty():
+		var stale:Array[SWBuildItemDefine] = []
+		for build in clockBuildArr.keys():
+			if build == null or build.bIsToBeRemoved() or build_manager.getBuild(build.buildAxisPos) != build:
+				stale.append(build)
+		for build in stale:
+			delClockBuild(build)
+	# 接口元件同样兜底清一遍：删掉的输入/输出口留着会让每拍白跑一次 writeInstances
+	var stale_ports:Array = []
+	for build in io_input_arr.keys():
 		if build == null or build.bIsToBeRemoved() or build_manager.getBuild(build.buildAxisPos) != build:
-			stale.append(build)
-	for build in stale:
-		delClockBuild(build)
+			stale_ports.append(build)
+	for build in io_output_arr.keys():
+		if build == null or build.bIsToBeRemoved() or build_manager.getBuild(build.buildAxisPos) != build:
+			stale_ports.append(build)
+	for build in stale_ports:
+		io_input_arr.erase(build)
+		io_output_arr.erase(build)
 
 # 删除善后入口（建筑已经离表，比如右键擦除）：小批量同步跑完，大批量转分帧。
 # 需要「先标 TO_BE_REMOVED、再分帧真正离表」的路径（Delete / 剪切）请走 _start_remove_and_followup。
@@ -965,6 +1002,7 @@ func _run_remove_job(removed:Array[SWBuildItemDefine], notifyChunkPosArr:Array,
 		circuit_control.dropCircuits(circuit_control.detachRemoved(removed))
 	# 7) 清时钟注册 + 补刷受影响区块
 	_cleanup_clocks_after_removed(removed)
+	_mark_circuit_edited()
 	_append_affected_chunks(affected, notifyChunkPosArr)
 	if v != null:
 		v.sw_draw_manager.updataChunks(notifyChunkPosArr)
@@ -1105,15 +1143,165 @@ var _last_tick_frame:int = -1
 var _last_clock_usec:int = 0
 func addClockBuild(build:SWBuildItemDefine) -> void:
 	clockBuildArr[build]=true
+	_register_io_port(build)
 func delClockBuild(build:SWBuildItemDefine) -> void:
 	clockBuildArr.erase(build)
+	io_input_arr.erase(build)
+	io_output_arr.erase(build)
+
+# ===== 接口调试（外部输入/输出接口在电路场景里持续输入输出） =====
+# 电路场景没有机器人：没人给外部输入口喂电平、也没人读外部输出，
+# 结果就是电路整片不动、接口元件永远是个死图标，玩家改完电路无从验证。
+# 这里按与机器人节拍同口径的方波自己喂**clk**，并把输出口读到的电平写回元件自身。
+#
+# 只喂 clk：detect_res_0..7 是**机器人每拍写进来的真实检测码**（不是时钟），
+# 给它们翻方波会让解码电路乱跑、8 个元件一起闪，看上去像电路在发疯（实际是假信号）。
+# 没有机器人时这些数据位就该是静止的，玩家要验证解码逻辑得回机器人场景看时序图。
+# 关掉（排查用）时整段空转，输入口电平停在最后一次的值。
+const IO_HALF_USEC:int = 125000   # 半拍：SWRobotTick 是 250ms 一拍，一拍两个相位
+#只有叫这个名字的输入口才当钟。其余输入名（detect_res_*）是数据位，一律不碰
+const IO_CLOCK_NAME:String = "clk"
+var interface_debug_enabled:bool = true
+#外部输入接口（喂方波）与外部输出接口（读电平点亮自己），注册时机与时钟一致
+var io_input_arr:Dictionary = {}
+var io_output_arr:Dictionary = {}
+var _io_level:bool = false
+var _io_last_usec:int = 0
+#分屏调试：右侧时序整个交给机器人节拍（见 step_clock_phase）。
+#开着时 tick 直接早退：既不自翻时钟元件，也不按挂钟扫方波
+var external_clock:bool = false
+#刚被 apply_clock_level 写过电平的 clk 口：step_clock_phase 就地消费成求值种子
+var _io_pending_seeds:Array[SWBuildItemDefine] = []
+#本系统被机器人节拍推着算了多少个相位（排障 / 用例断言用）
+var phase_steps_total:int = 0
+
+#把建筑按「接口元件」登记进来；不是接口的直接忽略（放置路径每个元件都会过一遍，很便宜）
+func _register_io_port(build:SWBuildItemDefine) -> void:
+	if build == null or build.buildDefine == null:
+		return
+	match build.buildDefine.circuit_component_type:
+		SwDefine.CircuitComponentType.EXTERNAL_INPUT:
+			io_input_arr[build] = true
+		SwDefine.CircuitComponentType.EXTERNAL_OUTPUT:
+			io_output_arr[build] = true
+
+#把外部输入里的**钟**口抬/落到方波电平，返回本次真正翻了的输入口（当本轮求值种子）。
+#按挂钟时间判定（同 clockBuildArr 的理由）：慢帧不补拍，电平不会被一帧里叠好几下。
+#非 clk 的数据位（detect_res_*）跳过：它们由机器人按真实检测结果写，
+#在电路场景里拿方波去碰它们只会让解码电路和元件一起乱闪
+func _drive_io_inputs(now:int) -> Array[SWBuildItemDefine]:
+	var out:Array[SWBuildItemDefine] = []
+	if not interface_debug_enabled or io_input_arr.is_empty():
+		return out
+	if _io_last_usec == 0:
+		_io_last_usec = now
+		return out
+	if now - _io_last_usec < IO_HALF_USEC:
+		return out
+	_io_last_usec = now
+	_io_level = not _io_level
+	var lv:int = 1 if _io_level else 0
+	for build in io_input_arr.keys():
+		if build == null or build.bIsToBeRemoved():
+			continue
+		if str(build.get("io_name")) != IO_CLOCK_NAME:
+			continue
+		build.setLevel(lv)
+		out.append(build)
+	return out
+
+#外部时钟（分屏调试时由机器人节拍驱动）写 clk 口电平：只碰 io_name == "clk" 的输入口，
+#真正翻了的口攒成下一次求值的种子。与 _drive_io_inputs 互斥（external_clock 一开，
+#那边就不再按挂钟扫方波）。返回本次改动的口数（0 = 没有 clk 口或电平没变）
+func apply_clock_level(lv:int) -> int:
+	var changed:int = 0
+	for build in io_input_arr.keys():
+		if build == null or build.bIsToBeRemoved():
+			continue
+		if str(build.get("io_name")) != IO_CLOCK_NAME:
+			continue
+		if int(build.level) == lv:
+			continue
+		build.setLevel(lv)
+		_io_pending_seeds.append(build)
+		changed += 1
+	return changed
+
+#分屏调试：把机器人本拍的数据输入位（detect_res_0..7）镜到本场景同名输入接口。
+#levels 是 {口名: 0/1}；只写真的变了的，变化的进 _io_pending_seeds，
+#随下一个相位一起求值（否则灯要等到下一拍才亮）。返回改动口数
+func apply_input_levels(levels:Dictionary) -> int:
+	var changed:int = 0
+	if levels.is_empty():
+		return changed
+	for build in io_input_arr.keys():
+		if build == null or build.bIsToBeRemoved():
+			continue
+		var name:String = str(build.get("io_name"))
+		#clk 归相位锁管（step_clock_phase），这里不能碰
+		if name == IO_CLOCK_NAME or not levels.has(name):
+			continue
+		var lv:int = 1 if int(levels[name]) != 0 else 0
+		if int(build.level) == lv:
+			continue
+		build.setLevel(lv)
+		_io_pending_seeds.append(build)
+		changed += 1
+	return changed
+
+#分屏调试：机器人每来一个相位事件，当场把这一相位算完（不等本场景自己的帧 tick）。
+#步进时高/低两相位落在同一帧里，靠帧 tick 只消费得到最后一次写入的电平，
+#上升沿那次求值被吃掉——电路看上去一步都不走。
+#右侧的时钟元件也在这里翻：一拍「高+低」两相位 = 一个完整方波周期，与 clk 口同口径。
+func step_clock_phase(high:bool) -> void:
+	if not tick_enabled:
+		return
+	#放置任务 / 删除善后的电路重建是分帧进行的：中间态求值会把电路写坏（与 tick 同一口径）
+	if _place_running or _remove_busy:
+		return
+	if circuit_control == null:
+		return
+	var clocks:Array[SWBuildItemDefine] = []
+	clocks.assign(clockBuildArr.keys())
+	for build in clocks:
+		build.onPressed(true)
+	var seeds:Array[SWBuildItemDefine] = clocks.duplicate()
+	apply_clock_level(1 if high else 0)
+	seeds.append_array(_io_pending_seeds)
+	_io_pending_seeds.clear()
+	#两侧都没东西可翻（没有 clk 口、也没有时钟元件）：这一相位无事可做
+	if seeds.is_empty():
+		return
+	#与 tick 同一口径：cull=true 只刷视野内，want_builds=false 不回填 build 数组
+	var changedBuilds := circuit_control.buildSignalsChanged(seeds, true, false)
+	phase_steps_total += 1
+	_refresh_io_displays()
+	refresh_signal_chunks(changedBuilds)
+
+#读出外部输出接口的电平并写进它自己的采样槽（元件主体跟着变色）。
+#必须在求值之后调：这样点亮的是本拍刚算出来的结果
+func _refresh_io_displays() -> void:
+	for build in io_input_arr.keys():
+		if build != null and not build.bIsToBeRemoved():
+			build.refresh_display_level()
+	for build in io_output_arr.keys():
+		if build != null and not build.bIsToBeRemoved():
+			build.refresh_display_level()
+
+#电路结构改过了（放置/删除）：记进会话。回机器人场景时据此先把绑着它的机器人停住、
+#按最新结构重载电路，电路场景退出时据此把当前结构导出成 .swcir
+func _mark_circuit_edited() -> void:
+	SESSION.mark_circuit_edited(SESSION.current_save_name)
 
 #按当前建筑表重建时钟注册表：加载存档、批量删除后调用
 func _rebuild_clock_registry() -> void:
 	clockBuildArr.clear()
+	io_input_arr.clear()
+	io_output_arr.clear()
 	for build in build_manager.getAllBuilds():
 		if build is SWBuildClockSiggen:
 			clockBuildArr[build] = true
+		_register_io_port(build)
 
 #加载存档后重建隧道配对：addBuild 的 on_idled 依赖放置顺序，
 #批量加载时同一对隧道可能互相错过甚至配错，这里按几何位置确定性地重配。
@@ -1176,6 +1364,10 @@ func tick(_delta: float,_tick_index:int) -> void:
 	_set_display_throttled(throttle)
 	if not tick_enabled:
 		return
+	if external_clock:
+		#分屏调试：右侧一切时序都由机器人节拍推（clk 口与时钟元件都在
+		#step_clock_phase 里），这里不再按帧自走，否则两边不同拍
+		return
 	if moving and pause_tick_while_moving:
 		return
 	#放置任务 / 删除善后的电路重建是分帧进行的：中间态下跑时钟增量求值会把电路写坏
@@ -1200,12 +1392,18 @@ func tick(_delta: float,_tick_index:int) -> void:
 	clocks.assign(clockBuildArr.keys())
 	for build in clocks:
 		build.onPressed(true)
+	var seeds:Array[SWBuildItemDefine] = clocks.duplicate()
+	#接口调试：给外部输入接口喂方波，这一拍真正翻了的输入口也当本轮求值种子，
+	#否则没有时钟的电路在电路场景里一步都不会走
+	seeds.append_array(_drive_io_inputs(now))
 	# cull=true：这一拍的显示只刷视野内的东西（产品要求）。
 	# 视野外的电线与非门不刷显示，视野外且不含寄存器的电路连求值都跳过；
 	# 含寄存器的电路看不见也照算，Q 得跟着时钟继续走（计数器不能停在半路）。
 	# 第三个参数 want_builds=false：时钟 tick 不读返回值（refresh_signal_chunks 只用
 	# dirty net 与信号纹理），没必要每拍把 _notify 里几百上千个组件回填成 build 数组。
-	var changedBuilds := circuit_control.buildSignalsChanged(clocks, true, false)
+	var changedBuilds := circuit_control.buildSignalsChanged(seeds, true, false)
+	#求值之后才读输出口：点亮的是这一拍刚算出来的结果
+	_refresh_io_displays()
 	#for build in clocks:
 		#build.onPressed(true)
 	#changedBuilds = circuit_control.buildSignalsChanged(clocks)

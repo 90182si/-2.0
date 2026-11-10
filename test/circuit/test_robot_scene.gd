@@ -16,14 +16,14 @@ const SESSION := preload("res://core/manager/sw_session.gd")
 const STATE_PATH: String = "user://saves/_robot_scene.json"
 
 const IN_DEF: SWBuildDefine = preload("res://res/输入接口.tres")
-const OUT_MOVE_DEF: SWBuildDefine = preload("res://res/输出接口move.tres")
-const OUT_ROT_DEF: SWBuildDefine = preload("res://res/输出接口rotation.tres")
+const OUT_DEF: SWBuildDefine = preload("res://res/输出接口.tres")
 const WIRE_DEF: SWBuildDefine = preload("res://res/电线A.tres")
 const NOT_DEF: SWBuildDefine = preload("res://res/非门.tres")
 
-#绑定面板用例专用的两个电路文件：一个可用、一个缺 rotation
+#绑定面板用例专用的电路文件：clk->move + !clk->rotation / 只有 clk->move / 两条电路各一条
 const FILE_OK := "_robot_scene_ok"
 const FILE_PARTIAL := "_robot_scene_partial"
+const FILE_TWO_CIRCUITS := "_robot_scene_two"
 
 var scene: Node = null
 var lm: SWLayerManager = null
@@ -54,6 +54,7 @@ func after_each() -> void:
 		sys.clear_entities()
 	CIR_MANAGER.delete_file(FILE_OK)
 	CIR_MANAGER.delete_file(FILE_PARTIAL)
+	CIR_MANAGER.delete_file(FILE_TWO_CIRCUITS)
 	SESSION.reset()
 	_clear_state_file()
 	sys = null
@@ -66,7 +67,7 @@ func _clear_state_file() -> void:
 		DirAccess.remove_absolute(STATE_PATH)
 
 
-# 造一条 .swcir：specs = [[格子, 定义], ...]；返回是否导出成功
+# 造一条 .swcir：specs = [[格子, 定义, 可选 io_name], ...]；返回是否导出成功
 func _export_circuit(name: String, specs: Array) -> bool:
 	var mgr := SWBuildManager.new()
 	var ctrl := SWCircuitControl.new()
@@ -75,6 +76,9 @@ func _export_circuit(name: String, specs: Array) -> bool:
 	var all: Array[SWBuildItemDefine] = []
 	for s: Array in specs:
 		var b := SwDefine.SWBuildCreator((s[0] as Vector2i) * GRID, s[1], 0)
+		#输出接口合并后名字靠实例属性区分（第三个元素写名字）
+		if s.size() > 2:
+			b.set("io_name", str(s[2]))
 		if not mgr.addBuild(b):
 			ctrl.free()
 			return false
@@ -85,25 +89,62 @@ func _export_circuit(name: String, specs: Array) -> bool:
 	ctrl.free()
 	return ok
 
-# clk -> move、!clk -> rotation：三件套齐全，面板上可点
+# clk -> move、!clk -> rotation：两条输出都接着，面板上可点
 func _make_usable_circuit() -> bool:
 	return _export_circuit(FILE_OK, [
 		[Vector2i(0, 7), IN_DEF],
 		[Vector2i(0, 6), WIRE_DEF],
 		[Vector2i(1, 6), WIRE_DEF],
-		[Vector2i(1, 5), OUT_MOVE_DEF],
+		[Vector2i(1, 5), OUT_DEF],
 		[Vector2i(0, 5), NOT_DEF],
-		[Vector2i(0, 4), OUT_ROT_DEF],
+		[Vector2i(0, 4), OUT_DEF, "rotation"],
 	])
 
-# 只有 clk 与 move，缺 rotation：面板上必须置灰
+# 只有 clk -> move，没接 rotation：可用性不再看接口，所以同样可点
 func _make_partial_circuit() -> bool:
 	return _export_circuit(FILE_PARTIAL, [
 		[Vector2i(0, 7), IN_DEF],
 		[Vector2i(0, 6), WIRE_DEF],
 		[Vector2i(1, 6), WIRE_DEF],
-		[Vector2i(1, 5), OUT_MOVE_DEF],
+		[Vector2i(1, 5), OUT_DEF],
 	])
+
+
+# 一个文件里两条互不相连的电路：clk->move 与 clk->rotation。
+# 同一位 clk 同时驱动两条，用来验证一拍里所有含接口的电路都要跑
+func _export_two_circuit_file() -> bool:
+	var mgr := SWBuildManager.new()
+	var ctrl := SWCircuitControl.new()
+	ctrl.setBuildManager(mgr)
+	ctrl.gpu_backend_enabled = false
+	var groups: Array = [
+		[
+			[Vector2i(0, 7), IN_DEF],
+			[Vector2i(0, 6), WIRE_DEF],
+			[Vector2i(1, 6), WIRE_DEF],
+			[Vector2i(1, 5), OUT_DEF],
+		],
+		[
+			[Vector2i(20, 7), IN_DEF],
+			[Vector2i(20, 6), WIRE_DEF],
+			[Vector2i(21, 6), WIRE_DEF],
+			[Vector2i(21, 5), OUT_DEF, "rotation"],
+		],
+	]
+	for g: Array in groups:
+		var part: Array[SWBuildItemDefine] = []
+		for s: Array in g:
+			var b := SwDefine.SWBuildCreator((s[0] as Vector2i) * GRID, s[1], 0)
+			if s.size() > 2:
+				b.set("io_name", str(s[2]))
+			if not mgr.addBuild(b):
+				ctrl.free()
+				return false
+			part.append(b)
+		ctrl.updateBuildCircuit(part)
+	var ok: bool = CIR_MANAGER.export_all(FILE_TWO_CIRCUITS, mgr.getAllBuilds()) != ""
+	ctrl.free()
+	return ok
 
 
 # ===== 装配 =====
@@ -157,6 +198,31 @@ func test_robot_tool_goes_into_hold() -> void:
 	assert_eq(str(held[0].buildDefine.buildName), "机器人",
 			"手持里拿到的不是机器人定义（res/机器人.tres 名字对不上）")
 
+
+# 箱子工具：同一条选中链，落子后实体层里就是箱子（不再一律当机器人）
+func test_box_tool_spawns_box() -> void:
+	var btn: TextureButton = lm.hudLayer.call("get_box_tool_button")
+	assert_not_null(btn, "HUD 没有箱子工具按钮")
+	if btn == null:
+		return
+	assert_true(btn.is_in_group("SelTool"), "箱子按钮没进 SelTool 组")
+	assert_eq(btn.name, "箱子", "按钮名必须等于 res/箱子.tres 的文件名")
+
+	btn.pressed.emit()
+	var held: Array = lm.holdSystem.get("_hold_builds")
+	assert_gt(held.size(), 0, "点了箱子工具，手持还是空的")
+	if held.is_empty():
+		return
+	assert_eq(str(held[0].buildDefine.buildName), "箱子", "手持里拿到的不是箱子定义")
+
+	var world_pos: Vector2i = Vector2i(12, 10) * GRID
+	lm.holdSystem.hold_idle_builds.emit(held, [world_pos], false)
+	var e = sys.get_entity_at(world_pos)
+	assert_not_null(e, "手持箱子落子没生成实体")
+	if e == null:
+		return
+	assert_eq(str(e.kind), "box", "手持箱子放出来的却是机器人")
+	assert_false(e.has_bundle(), "箱子不该绑上电路")
 
 # ===== 放置链路：手持落子 -> 实体系统 =====
 
@@ -285,10 +351,10 @@ func test_click_robot_opens_bind_panel() -> void:
 	assert_false(bool(lm.hudLayer.call("is_bind_panel_visible")), "点空地面板没收起来")
 
 
-# 列表内容：第 0 项恒为「不绑定」，接口齐全的不置灰，缺接口的置灰并写出缺什么
+# 列表内容：第 0 项恒为「不绑定」；可用性只看「单电路」，接口名不参与判定
 func test_bind_panel_lists_files_and_disables_unusable() -> void:
 	assert_true(_make_usable_circuit(), "可用电路没造出来")
-	assert_true(_make_partial_circuit(), "缺接口的电路没造出来")
+	assert_true(_make_partial_circuit(), "缺 rotation 的电路没造出来")
 	assert_not_null(_spawn_at(Vector2i(9, 9)))
 	sys.select_at(Vector2i(9, 9) * GRID)
 	var list: ItemList = lm.hudLayer.call("get_bind_list")
@@ -296,16 +362,46 @@ func test_bind_panel_lists_files_and_disables_unusable() -> void:
 	#列表下标 = 文件下标 + 1（0 被「不绑定」占了）
 	var i_ok: int = files.find(FILE_OK) + 1
 	var i_part: int = files.find(FILE_PARTIAL) + 1
-	assert_gt(i_ok, 0, "面板没列出可用的电路文件")
-	assert_gt(i_part, 0, "面板没列出缺接口的电路文件")
+	assert_gt(i_ok, 0, "面板没列出接口齐全的电路文件")
+	assert_gt(i_part, 0, "面板没列出缺 rotation 的电路文件")
 	assert_true(list.get_item_text(0).contains("不绑定"), "列表第 0 项不是「不绑定」")
 	assert_false(list.is_item_disabled(i_ok), "接口齐全的电路被置灰了")
-	assert_true(list.is_item_disabled(i_part), "缺 rotation 的电路没置灰（不可用必须标出来）")
-	assert_true(list.get_item_text(i_part).contains("rotation"),
-			"置灰项没写出缺哪个接口：" + list.get_item_text(i_part))
+	#缺 rotation 不再算不可用：接口名怎么接是玩家的事
+	assert_false(list.is_item_disabled(i_part), "缺 rotation 的电路不该再置灰")
 	#每项两行：档名 + 接口摘要
 	assert_true(list.get_item_text(i_ok).contains("\n"), "列表项没做成两行（档名 + 接口摘要）")
 	assert_true(list.get_item_text(i_ok).contains("move"), "可用项没显示出输出接口")
+	assert_true(list.get_item_text(i_part).contains("in:"), "缺 rotation 的项也要显示接口摘要")
+
+
+# 缺 rotation 的电路能绑上，跑一拍照 clk->move 走一格（绑定不看接口名）
+func test_partial_circuit_can_bind_and_tick() -> void:
+	assert_true(_make_partial_circuit(), "缺 rotation 的电路没造出来")
+	var e = _spawn_at(Vector2i(10, 10))
+	assert_not_null(e)
+	assert_true(sys.bind_circuit(e, FILE_PARTIAL), "缺 rotation 的电路现在应当能绑")
+	assert_true(e.has_bundle(), "绑定后实体上没有 bundle")
+	assert_eq(str(e.circuit_file), FILE_PARTIAL)
+	var tick: Node = scene.get_node_or_null("SWRobotTick")
+	assert_not_null(tick, "场景里没有节拍器")
+	tick.call("tick_once")
+	assert_eq(e.grid_pos, Vector2i(10, 9) * GRID, "缺 rotation 不影响 move=clk 走一格")
+
+
+# 多电路文件：一拍里**每条含接口的电路**都要跑（这里 clk 同时驱动 move 与 rotation）
+func test_multi_circuit_file_runs_all_circuits() -> void:
+	assert_true(_export_two_circuit_file(), "多电路文件没造出来")
+	var e = _spawn_at(Vector2i(12, 12))
+	assert_not_null(e)
+	assert_true(sys.bind_circuit(e, FILE_TWO_CIRCUITS), "多电路文件现在应当能绑")
+	assert_eq(int(e.dir), 0, "初始朝上")
+	var tick: Node = scene.get_node_or_null("SWRobotTick")
+	assert_not_null(tick, "场景里没有节拍器")
+	tick.call("tick_once")
+	#两条电路都被跑到：先转（dir 0->1）再沿新朝向走一格。
+	#只跑 move 那条的话方向不变、只走不转；只跑 rotation 那条则不动
+	assert_eq(int(e.dir), 1, "rotation 那条电路没被跑到")
+	assert_eq(e.grid_pos, Vector2i(13, 12) * GRID, "move 那条电路没被跑到（或没按转后朝向走）")
 
 
 # 选中可用电路 -> 绑到这台机器人 -> 面板自动关 -> 下一拍真的按电路走
@@ -359,6 +455,185 @@ func test_removing_selected_robot_hides_panel() -> void:
 	assert_null(sys.get_selected(), "删掉后还挂着选中")
 	assert_false(bool(lm.hudLayer.call("is_bind_panel_visible")),
 			"选中的机器人被删了，面板还开着")
+
+
+# ===== Ctrl 框选 + 批量绑定 =====
+
+#在一条横排上摆 n 台机器人，返回实体数组
+func _spawn_row(from: Vector2i, n: int) -> Array:
+	var out: Array = []
+	for i in n:
+		var e = _spawn_at(from + Vector2i(i, 0))
+		if e != null:
+			out.append(e)
+	return out
+
+#用世界坐标做一次完整拖拽（按下 -> 拖到 -> 松手），绕开视口坐标换算
+func _drag_box(from_cell: Vector2i, to_cell: Vector2i, right_button: bool = false) -> void:
+	var btn: int = MOUSE_BUTTON_RIGHT if right_button else MOUSE_BUTTON_LEFT
+	var from_pos := Vector2(from_cell * GRID)
+	var to_pos := Vector2(to_cell * GRID)
+	assert_true(sys.box_select_begin(btn, from_pos), "框选没起来")
+	assert_true(sys.is_box_selecting(), "按下后没进入框选态")
+	sys.box_select_update(to_pos)
+	assert_true(sys.box_select_end(to_pos), "松手没被吃掉")
+	assert_false(sys.is_box_selecting(), "松手后还挂在框选态")
+
+
+# Ctrl+左键拖：框住的机器人全部进选区，面板变成「已选 N 台」
+func test_ctrl_drag_box_selects_robots_in_rect() -> void:
+	var row: Array = _spawn_row(Vector2i(60, 60), 3)
+	assert_eq(row.size(), 3, "三台机器人没摆上")
+	#框外还有一台：不能被框进去
+	var outside = _spawn_at(Vector2i(70, 70))
+	assert_not_null(outside)
+	_drag_box(Vector2i(59, 59), Vector2i(63, 63))
+	assert_eq(sys.get_selection_count(), 3, "框选没选中三台机器人")
+	var sel: Array = sys.get_selected_entities()
+	assert_false(sel.has(outside), "框外的机器人被框进来了")
+	for e in row:
+		assert_true(sel.has(e), "框里的机器人漏掉了")
+	#面板跟着弹出来，并且对着整批
+	assert_true(bool(lm.hudLayer.call("is_bind_panel_visible")), "框选后面板没弹出来")
+	var title: Label = lm.hudLayer.call("get_bind_panel_title")
+	assert_true(title.text.contains("3"), "面板标题没显示台数：" + title.text)
+	assert_eq((lm.hudLayer.call("get_bind_entities") as Array).size(), 3,
+			"面板拿到的不是整批机器人")
+
+
+# Ctrl+右键拖：把框里的从选区去掉，而且**不能**删掉机器人
+# （手持层那套 Ctrl+右键框选在机器人场景里会把框内建筑擦掉，所以必须抢在它前面）
+func test_ctrl_right_drag_deselects_without_erasing() -> void:
+	var row: Array = _spawn_row(Vector2i(80, 80), 3)
+	assert_eq(row.size(), 3)
+	_drag_box(Vector2i(79, 79), Vector2i(83, 83))
+	assert_eq(sys.get_selection_count(), 3, "前置条件：三台都得先选上")
+	#只框住中间那台（81,80）
+	_drag_box(Vector2i(81, 80), Vector2i(82, 81), true)
+	assert_eq(sys.get_selection_count(), 2, "Ctrl+右键拖没把中间那台移出选区")
+	assert_false(sys.get_selected_entities().has(row[1]), "中间那台还留在选区里")
+	#关键：减选不能变成删机器人
+	assert_eq(sys.get_entity_count(), 3, "Ctrl+右键拖把机器人删掉了（落到手持层擦除分支了）")
+	assert_true(sys.has_entity_at(Vector2i(81, 80) * GRID), "中间那台被删了")
+
+
+# 减选减空了：选区没了、面板收起（不能留一个对着空气的面板）
+func test_subtract_all_clears_selection() -> void:
+	var row: Array = _spawn_row(Vector2i(120, 120), 2)
+	assert_eq(row.size(), 2)
+	_drag_box(Vector2i(119, 119), Vector2i(123, 123))
+	assert_eq(sys.get_selection_count(), 2)
+	_drag_box(Vector2i(119, 119), Vector2i(123, 123), true)
+	assert_eq(sys.get_selection_count(), 0, "减选没清空")
+	assert_null(sys.get_selected(), "清空后还挂着主选")
+	assert_false(bool(lm.hudLayer.call("is_bind_panel_visible")), "选区空了面板还开着")
+	assert_eq(sys.get_entity_count(), 2, "减选不该删机器人")
+
+
+# 框选只认机器人：箱子不绑电路，框进去也没意义（与单击选中同一口径）
+func test_box_select_ignores_boxes() -> void:
+	var box_btn: TextureButton = lm.hudLayer.call("get_box_tool_button")
+	assert_not_null(box_btn, "HUD 没有箱子工具按钮")
+	box_btn.pressed.emit()
+	var held: Array = lm.holdSystem.get("_hold_builds")
+	assert_gt(held.size(), 0, "箱子手持没装上")
+	lm.holdSystem.hold_idle_builds.emit(held, [Vector2i(111, 111) * GRID], false)
+	lm.holdSystem.set_hold_tool(null)
+	var box_e = sys.get_entity_at(Vector2i(111, 111) * GRID)
+	assert_not_null(box_e, "箱子没放上")
+	assert_true(bool(box_e.is_box), "放下的应该是箱子")
+	var rob = _spawn_at(Vector2i(112, 111))
+	assert_not_null(rob)
+	_drag_box(Vector2i(110, 110), Vector2i(114, 114))
+	assert_eq(sys.get_selection_count(), 1, "框选把箱子也算进去了")
+	assert_true(sys.get_selected_entities().has(rob), "框里的机器人没选中")
+
+
+# 框选之后点其中某一台：回到单选（否则会变成「N+1 台」）
+func test_click_after_box_select_keeps_single() -> void:
+	var row: Array = _spawn_row(Vector2i(100, 100), 3)
+	assert_eq(row.size(), 3)
+	_drag_box(Vector2i(99, 99), Vector2i(103, 103))
+	assert_eq(sys.get_selection_count(), 3)
+	sys.select_at(Vector2i(101, 100) * GRID)
+	assert_eq(sys.get_selection_count(), 1, "点一下没把选区收成单选")
+	assert_same(sys.get_selected(), row[1], "单选的主选不对")
+	var title: Label = lm.hudLayer.call("get_bind_panel_title")
+	assert_true(title.text.contains("(101, 100)"), "面板没切回单台显示：" + title.text)
+
+
+# 手上拿着机器人/箱子时，Ctrl+左键那一笔是拿去放置的，不该起框选
+func test_box_select_gate_blocks_while_holding_tool() -> void:
+	var btn: TextureButton = lm.hudLayer.call("get_robot_tool_button")
+	assert_not_null(btn)
+	btn.pressed.emit()
+	assert_false(sys.box_select_begin(MOUSE_BUTTON_LEFT, Vector2.ZERO),
+			"手持工具时还起框选（那一笔应当留给放置）")
+	lm.holdSystem.set_hold_tool(null)
+	assert_true(sys.box_select_begin(MOUSE_BUTTON_LEFT, Vector2.ZERO),
+			"工具清掉后起不了框选")
+	sys.box_select_end(Vector2.ZERO)
+
+
+# 框选后点面板里的一条电路：整批都绑上，下一拍一起按电路走
+func test_batch_bind_from_box_selection() -> void:
+	assert_true(_make_usable_circuit(), "可用电路没造出来")
+	var row: Array = _spawn_row(Vector2i(90, 90), 3)
+	assert_eq(row.size(), 3)
+	_drag_box(Vector2i(89, 89), Vector2i(93, 93))
+	assert_eq(sys.get_selection_count(), 3, "框选没选中三台")
+	var list: ItemList = lm.hudLayer.call("get_bind_list")
+	var idx: int = (lm.hudLayer.call("get_bind_files") as Array).find(FILE_OK) + 1
+	assert_gt(idx, 0, "面板里找不到可用的电路文件")
+	list.select(idx)
+	list.item_selected.emit(idx)
+	for e in row:
+		assert_eq(str(e.circuit_file), FILE_OK, "这台没绑上：%s" % str(e.cell()))
+	assert_eq(sys.get_bound_count(), 3, "绑定台数不对")
+	assert_false(bool(lm.hudLayer.call("is_bind_panel_visible")), "绑完面板没收起来")
+	#一起走：这条电路是 move = clk，机器人初始朝上
+	var tick: Node = scene.get_node_or_null("SWRobotTick")
+	assert_not_null(tick, "场景里没有节拍器")
+	tick.call("tick_once")
+	for i in 3:
+		assert_eq(row[i].grid_pos, Vector2i(90 + i, 89) * GRID,
+				"第 %d 台没按电路走" % i)
+
+
+# 真实输入路径：Ctrl+右键每一笔都要留给实体层做「减选」，
+# 绝不能掉到手持层的擦除分支去删机器人（本场景已经把 rect_select_enabled 关了）
+func test_ctrl_right_press_does_not_erase_robot() -> void:
+	assert_false(bool(lm.holdSystem.rect_select_enabled),
+			"机器人场景没关掉手持层的框选（Ctrl+右键拖会删机器人）")
+	#鼠标位置的格子（headless 下就是原点那格）：放一台在这里才好分辨是否被擦掉
+	var cell: Vector2i = sys.call("_mouse_grid")
+	assert_not_null(_spawn_at(cell), "鼠标位置那格没摆上机器人")
+	assert_eq(sys.get_entity_count(), 1)
+	#带 Ctrl 的右键：不能擦
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_RIGHT
+	ev.pressed = true
+	ev.ctrl_pressed = true
+	lm.holdSystem.handle_input(ev)
+	assert_eq(sys.get_entity_count(), 1, "Ctrl+右键按下把机器人擦掉了（应当留给实体层减选）")
+	#对照：不带 Ctrl 的右键拖是原有的擦除玩法，应当照旧删掉
+	var ev2 := InputEventMouseButton.new()
+	ev2.button_index = MOUSE_BUTTON_RIGHT
+	ev2.pressed = true
+	lm.holdSystem.handle_input(ev2)
+	assert_eq(sys.get_entity_count(), 0, "不带 Ctrl 的右键应该照旧擦除（原玩法被改坏了）")
+
+
+# 框选后把其中一台删掉：选区自己把它们剔掉，不能带着死实体去批量绑定
+func test_deleting_box_selected_robot_updates_selection() -> void:
+	var row: Array = _spawn_row(Vector2i(130, 130), 3)
+	assert_eq(row.size(), 3)
+	_drag_box(Vector2i(129, 129), Vector2i(133, 133))
+	assert_eq(sys.get_selection_count(), 3)
+	lm.holdSystem.hold_remove_builds.emit([Vector2i(130, 130) * GRID])
+	assert_eq(sys.get_selection_count(), 2, "删掉的那台还在选区里")
+	assert_eq(sys.get_entity_count(), 2)
+	assert_false(sys.get_selected_entities().has(row[0]), "删掉的那台还在选区里")
 
 
 # ===== 修改电路（进电路场景打开这条电路所在的存档） =====
@@ -586,6 +861,149 @@ func test_timing_scope_cursor_stays_put_while_wave_flows() -> void:
 	assert_almost_eq(float(scope.get("_frac")), 1.0, 0.001, "停住时最新一格没画满")
 
 
+# 绑定电路里的其它输出（push / detect_sig_*）要能各占一轨：
+# 轨道名由实体侧给（entity.trace_names），电平按位图（entity.trace_masks）查；
+# move/rotation 已经是固定四轨之二，不能再重复成新轨
+func test_timing_scope_shows_extra_output_tracks() -> void:
+	var scope = lm.hudLayer.call("get_timing_scope")
+	assert_not_null(scope, "时序面板里没有绘制控件")
+	var samples: Array = []
+	var masks: Array = []
+	for i in range(4):
+		samples.append(Vector4i(1 if (i % 2) == 0 else 0, 0, 0, 0))
+		masks.append(1 if i == 1 else 0)   # 只有第 2 条样本上 push 为高
+	assert_true(bool(scope.call("set_samples", samples, samples.size(), 1.0,
+			["push", "detect_sig_1"], masks)), "换了轨道却没要求重画")
+	assert_eq(int(scope.call("track_count")), 6, "额外输出没加成轨道（4 固定 + 2）")
+	assert_eq(str(scope.call("track_name", 4)), "push", "第 5 条轨应当是 push")
+	assert_eq(str(scope.call("track_name", 5)), "detect_sig_1")
+	#位图第 0 位 = push 轨、第 1 位 = detect_sig_1 轨
+	assert_eq(int(scope.call("_level_at", 1, 4)), 1, "位图里的 push 电平没被读出来")
+	assert_eq(int(scope.call("_level_at", 0, 4)), 0, "第 1 条样本上 push 不该是高")
+	#固定轨仍走原来的 Vector4i 字段，不能被额外轨道串掉
+	assert_eq(int(scope.call("_level_at", 0, 0)), 1, "clk 轨读错了")
+	assert_eq(int(scope.call("_level_at", 1, 0)), 0, "clk 轨读错了")
+
+	#move/rotation 再传一遍不能被加成额外轨（否则会出现两条一模一样的波形）
+	scope.call("set_samples", samples, samples.size(), 1.0,
+			["move", "rotation", "push"], masks)
+	assert_eq(int(scope.call("track_count")), 5, "move/rotation 不该重复成额外轨")
+	#轨道多了要能缩行高：不然 13 条轨在固定面板里只能挤出界面（最小 12）
+	assert_gte(float(scope.call("_row_h", 13)), 12.0, "行高被压到比最小行高还小")
+	scope.call("clear_samples")
+
+
+# ===== 时序面板：监测信号勾选菜单（多选） =====
+
+# 模拟玩家在勾选菜单里点某一项（真实点击也是发 index_pressed；
+# 勾选态一律由会话清单重排出来，不在控件上读）
+func _toggle_signal(menu: MenuButton, name: String) -> void:
+	var popup: PopupMenu = menu.get_popup()
+	for i in popup.item_count:
+		var meta = popup.get_item_metadata(i)
+		if meta != null and str(meta) == name:
+			popup.index_pressed.emit(i)
+			return
+	fail_test("勾选菜单里没有信号：" + name)
+
+
+# 勾选菜单要列出所有输入/输出接口名；固定轨（clk）恒勾选且置灰
+func test_timing_panel_has_signal_picker() -> void:
+	var hud = lm.hudLayer
+	var menu: MenuButton = hud.call("get_timing_signal_menu")
+	var popup: PopupMenu = hud.call("get_timing_signal_popup")
+	var clear_btn: Button = hud.call("get_timing_clear_button")
+	assert_not_null(menu, "时序面板上没有监测信号菜单")
+	assert_not_null(popup, "监测信号菜单没有弹窗")
+	assert_not_null(clear_btn, "时序面板上没有「清空」按钮")
+	assert_eq(clear_btn.text, "清空")
+	#多选的前提：勾一项后菜单不收起，否则一次只能勾一个
+	assert_false(popup.hide_on_checkable_item_selection, "勾选后菜单不该收起（否则不能多选）")
+
+	var items: Array = []
+	for i in popup.item_count:
+		items.append(popup.get_item_text(i))
+	assert_true(items.has("clk"), "菜单要列出输入接口 clk")
+	assert_true(items.has("detect_res_0"), "菜单要列出输入接口 detect_res_0")
+	assert_true(items.has("detect_res_7"), "菜单要列出输入接口 detect_res_7")
+	assert_true(items.has("detect_sig_0"), "菜单要列出输出接口 detect_sig_0")
+	assert_true(items.has("push"), "菜单要列出输出接口 push")
+
+	#第 0 项是 clk（已是固定轨）：恒勾选 + 置灰
+	assert_eq(str(popup.get_item_metadata(0)), "clk", "菜单第 1 项应当是输入接口 clk")
+	assert_true(popup.is_item_checked(0), "clk 是固定轨，应当恒勾选")
+	assert_true(popup.is_item_disabled(0), "clk 是固定轨，应当置灰")
+	#自动模式下没有额外轨：按钮显示「自动」、清空不可点
+	assert_true(menu.text.contains("自动"), "自动模式下菜单标题该显示「自动」")
+	assert_true(clear_btn.disabled, "没监测任何信号时「清空」不该可点")
+
+
+# 勾选即生效：多选同时监测；取消勾选 / 清空回自动；固定轨与上限拦截
+func test_timing_signal_menu_multi_select() -> void:
+	assert_true(_make_usable_circuit(), "可用电路没造出来")
+	var e = _spawn_at(Vector2i(34, 34))
+	assert_not_null(e)
+	assert_true(sys.bind_circuit(e, FILE_OK), "绑定失败")
+	sys.select_at(Vector2i(34, 34) * GRID)
+	var hud = lm.hudLayer
+	assert_true(bool(hud.call("toggle_timing_panel")), "时序面板没打开")
+	var menu: MenuButton = hud.call("get_timing_signal_menu")
+	var popup: PopupMenu = hud.call("get_timing_signal_popup")
+	var clear_btn: Button = hud.call("get_timing_clear_button")
+	var scope = hud.call("get_timing_scope")
+	assert_not_null(scope, "时序面板里没有绘制控件")
+
+	#勾一个输出名：立刻多一条轨，无需再点「添加」
+	_toggle_signal(menu, "detect_sig_3")
+	assert_eq(hud.call("get_timing_signals"), ["detect_sig_3"], "勾选后清单不对")
+	assert_eq(e.trace_names, ["detect_sig_3"], "清单没推给实体")
+	assert_true(e.trace_names_manual, "勾选后应当进入手动模式")
+	assert_eq(int(scope.call("track_count")), 5, "勾选的信号没变成一条额外轨")
+	assert_eq(str(scope.call("track_name", 4)), "detect_sig_3")
+	assert_true(popup.is_item_checked(int(hud.call("get_timing_signal_index", "detect_sig_3"))),
+			"已监测的信号在菜单里应当勾上")
+
+	#不关菜单接着勾第二个（这就是多选），顺序按勾选顺序
+	_toggle_signal(menu, "detect_res_1")
+	assert_eq(hud.call("get_timing_signals"), ["detect_sig_3", "detect_res_1"])
+	assert_eq(e.trace_names, ["detect_sig_3", "detect_res_1"], "输入口也要能监测")
+	assert_eq(int(scope.call("track_count")), 6, "两条自选信号应当占两条轨")
+	assert_eq(menu.text, "监测信号（2）", "菜单标题该带当前条数")
+
+	#取消勾选：该项消失，其余顺序不变
+	_toggle_signal(menu, "detect_sig_3")
+	assert_eq(hud.call("get_timing_signals"), ["detect_res_1"])
+	assert_false(popup.is_item_checked(int(hud.call("get_timing_signal_index", "detect_sig_3"))),
+			"取消勾选后应当没勾上")
+	assert_eq(int(scope.call("track_count")), 5, "取消勾选后应当少一条轨")
+
+	#固定轨点不动：clk 永远在波形里，不该进自选清单
+	_toggle_signal(menu, "clk")
+	assert_eq(hud.call("get_timing_signals"), ["detect_res_1"], "固定轨不该被加进清单")
+
+	#清空 = 回到自动模式（这条电路只有 move/rotation）
+	clear_btn.pressed.emit()
+	assert_eq((hud.call("get_timing_signals") as Array).size(), 0, "清空后清单该空")
+	assert_false(e.trace_names_manual, "清空清单应当回到自动模式")
+	assert_eq(int(scope.call("track_count")), 4, "自动模式下这条电路没有额外输出")
+	assert_true(clear_btn.disabled, "清空后「清空」该置灰")
+
+	#上限拦截：16 条额外轨封顶，第 17 条点了也不进清单
+	var all: Array = []
+	for i in popup.item_count:
+		var meta = popup.get_item_metadata(i)
+		var n: String = str(meta) if meta != null else ""
+		if not n.is_empty() and not n in ["clk", "move", "rotation", "act"]:
+			all.append(n)
+	assert_true(all.size() >= 17, "接口名清单应当够测上限")
+	for k in 16:
+		_toggle_signal(menu, str(all[k]))
+	assert_eq((hud.call("get_timing_signals") as Array).size(), 16, "应当刚好填到上限 16 条")
+	_toggle_signal(menu, str(all[16]))
+	assert_eq((hud.call("get_timing_signals") as Array).size(), 16, "超过上限的信号不该被加进来")
+	assert_eq(int(scope.call("track_count")), 20, "16 条额外轨 + 固定 4 轨")
+
+
 # ===== 时序面板上的运行 / 暂停 / 步进 =====
 
 func test_timing_panel_has_tick_control_buttons() -> void:
@@ -724,6 +1142,43 @@ func test_rotate_plays_angle_transition() -> void:
 	assert_false(bool(visual.is_busy(e)), "转完还在跑")
 	assert_almost_eq(float(visual.get_unit_angle_delta(e)), 0.0, 0.01, "转完还有残留补角")
 	assert_true(bool(visual.has_unit(e)), "转完就把动画层记录抹了（末帧会闪一下）")
+
+
+# 第二次转向：补角归零后画出来得是**新**朝向。
+# 朝向是烘在模板里的，模板只生成一次；漏了重铺就会在第二次转向之后弹回
+# 进动画层那一刻的旧朝向 —— 表现是「机器人一直朝一个方向」。
+func test_second_rotate_keeps_new_orientation() -> void:
+	var e = _spawn_at(Vector2i(56, 58))
+	assert_not_null(e, "机器人没放上")
+	var visual = entity_layer.call("get_visual")
+	assert_not_null(visual)
+
+	# 第一次转（这一下是新建行，模板本来就按新朝向烘）
+	sys.rotate_entity(e, 1)
+	sys.frame(0.30)
+	assert_almost_eq(float(visual.get_unit_angle_delta(e)), 0.0, 0.01, "第一次转向没收尾")
+	# 批处理是懒建的（第一次接管才 new），所以得在这之后才拿得到
+	var batch = visual.get("_batch")
+	assert_not_null(batch, "动画批处理没建起来")
+	var first: PackedFloat32Array = batch.get_buffer().duplicate()
+
+	# 第二次转：动画跑完以后，实例基向量必须跟着变成 180°，否则就是还画着旧朝向
+	sys.rotate_entity(e, 1)
+	assert_eq(int(e.dir), 2, "前置条件：应当转到朝左")
+	sys.frame(0.30)
+	assert_almost_eq(float(visual.get_unit_angle_delta(e)), 0.0, 0.01, "第二次转向没收尾")
+	var after: PackedFloat32Array = batch.get_buffer()
+	var basis_changed: bool = false
+	var i: int = 0
+	while i + 5 < after.size():
+		#[0..1] 与 [4..5] 是两根基向量分量；位置/颜色不该参与比较
+		if absf(after[i] - first[i]) > 0.001 or absf(after[i + 1] - first[i + 1]) > 0.001 \
+				or absf(after[i + 4] - first[i + 4]) > 0.001 \
+				or absf(after[i + 5] - first[i + 5]) > 0.001:
+			basis_changed = true
+			break
+		i += 16
+	assert_true(basis_changed, "第二次转向后实例基向量没变：模板还烘着旧朝向，画面会一直朝一个方向")
 
 
 # 动画还没走完就被删：不能对分区块表再删一次（delBuilds 删不到会 assert，整条用例直接崩）
@@ -889,3 +1344,60 @@ func test_logic_scene_hud_has_robot_switch() -> void:
 	assert_not_null(job, "HUD 上找不到任务进度条")
 	if job != null:
 		assert_lt(job.offset_bottom, btn.offset_top, "任务进度条压到场景切换按钮上了")
+
+
+# ===== 电路改结构后返回：先停节拍 → 按最新电路重绑 → 继续运行 =====
+# 实际流程：机器人面板点「修改电路」→ 电路场景里改元件（不管存不存盘，退出时按当前结构
+# 覆盖同名 .swcir）→ 回机器人场景。回来时必须按**最新**电路重绑，否则机器人还在跑旧指令。
+func test_return_after_circuit_edit_reloads_latest_circuit() -> void:
+	assert_true(_make_partial_circuit(), "起点要给一个 clk->move 的电路文件")
+	var e = _spawn_at(Vector2i(60, 60))
+	assert_not_null(e, "机器人没放上")
+	assert_true(sys.bind_circuit(e, FILE_PARTIAL), "绑电路要成功")
+	assert_true((e.bundle.output_names() as Array).has("move"), "前置条件：现在是 clk->move")
+
+	# 玩家在电路场景里把这条电路改了结构：同名文件换成 clk->rotation
+	assert_true(_export_circuit(FILE_PARTIAL, [
+		[Vector2i(0, 7), IN_DEF],
+		[Vector2i(0, 6), WIRE_DEF],
+		[Vector2i(1, 6), WIRE_DEF],
+		[Vector2i(1, 5), OUT_DEF, "rotation"],
+	]), "改过的电路要能重新导出")
+
+	# 切场景时机器人状态落盘，回来时实体是重建的
+	assert_true(sys.save_state(), "场景状态要能落盘")
+	sys.clear_entities()
+	assert_eq(sys.get_entity_count(), 0, "前置条件：实体已清空（模拟重进场景）")
+
+	# 电路场景退出时留下的「结构改过」标记
+	SESSION.edited_save = FILE_PARTIAL
+	var tick: Node = scene.get_node("SWRobotTick")
+	assert_not_null(tick, "场景里没有 SWRobotTick")
+	# 先手动暂停：能证明下面确实是「重载完再恢复运行」，而不是恰好默认就是开的
+	tick.call("pause")
+	scene.call("_restore_scene_state")
+
+	assert_eq(sys.get_entity_count(), 1, "机器人要按存档状态恢复")
+	var back = sys.get_entities()[0]
+	assert_eq(str(back.circuit_file), FILE_PARTIAL, "恢复后还绑着同一条电路")
+	var names: Array = back.bundle.output_names()
+	assert_true(names.has("rotation"), "重绑用的还是旧电路（应该跑最新的 rotation）")
+	assert_false(names.has("move"), "重绑用的还是旧电路（旧接口还在）")
+	assert_true(bool(tick.get("enabled")), "重载完成后节拍要恢复运行")
+	assert_eq(SESSION.edited_save, "", "标记要被取走，不能留着反复重载")
+
+
+# 没改电路（SESSION 没有标记）时，恢复场景不该动运行状态：玩家自己暂停的保持暂停
+func test_return_without_edit_keeps_tick_state() -> void:
+	var e = _spawn_at(Vector2i(62, 62))
+	assert_not_null(e, "机器人没放上")
+	assert_true(sys.save_state(), "场景状态要能落盘")
+	sys.clear_entities()
+	scene.call("_restore_scene_state")
+	var tick: Node = scene.get_node("SWRobotTick")
+	tick.call("pause")
+	sys.clear_entities()
+	scene.call("_restore_scene_state")
+	assert_eq(sys.get_entity_count(), 1, "没改电路也要恢复机器人")
+	assert_false(bool(tick.get("enabled")), "没改电路就擅自把节拍打开了")
+	tick.call("resume")

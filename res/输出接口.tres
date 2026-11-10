@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://bgqcubej6fedw"]
+[gd_resource type="Resource" script_class="SWBuildDefine" format=3 uid="uid://dq7k2nar4xv3n"]
 
 [ext_resource type="Texture2D" uid="uid://b3texpl6mxocj" path="res://atlas/atlasTexture/SWtexture2D.tres" id="1_atlas"]
 [ext_resource type="Script" uid="uid://c2bw70ox58gp4" path="res://res/sw_build_define.gd" id="1_def"]
@@ -47,7 +47,7 @@ script = ExtResource("1_def")
 atlasIcon = SubResource("AtlasTexture_icon")
 atlasTextureOn = SubResource("AtlasTexture_on")
 atlasTextureOff = SubResource("AtlasTexture_off")
-buildName = "输出接口move"
+buildName = "输出接口"
 circuit_component_type = 14
 default_io_name = "move"
 build_pin = Array[ExtResource("2_pin")]([SubResource("Pin_up"), SubResource("Pin_right"), SubResource("Pin_down"), SubResource("Pin_left")])

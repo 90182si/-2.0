@@ -11,19 +11,19 @@ class_name SWCirManager extends RefCounted
 # 只导出「含 EXTERNAL_INPUT / EXTERNAL_OUTPUT 的电路」：普通存档不生成文件，
 # 已有同名 .swcir 会被删掉（否则会留下上一次保存的旧电路）。
 #
-# 机器人可用性合同（与 SPEC-08 §3.9 一致）：
-#   必须**恰好 1 条电路**（多电路 → 「电路不可用」），且含输入 clk、输出 move 与 rotation。
+# 可用性判定：只要文件能读、且至少含 1 条电路就算可用。
+# 接口名（clk / move / rotation / detect_* ...）和电路条数都不参与判定：一条电路接哪些
+# 接口、一个文件里有几条电路，全交给玩家自己接线——机器人一拍会把文件内**所有含接口
+# 的电路分组**都跑一遍（见 SWCircuitSet）。
 # ==========================================================================
 
 const BUNDLE := preload("res://circuit/sim/sw_circuit_bundle.gd")
+# 多电路文件的复合 bundle（接口与 SWCircuitBundle 同名，实体层不用区分）
+const CIRCUIT_SET := preload("res://circuit/sim/sw_circuit_set.gd")
 
 const DIR_PATH := "user://saves"
 const FILE_EXT := ".swcir"
 const VERSION := 1
-
-# 机器人能驱动的最小接口合同
-const REQUIRED_INPUT := "clk"
-const REQUIRED_OUTPUTS: Array[String] = ["move", "rotation"]
 
 
 # ===== 路径 =====
@@ -193,6 +193,7 @@ static func load_file(name: String) -> Dictionary:
 
 
 # 面板用摘要：能不能加载、为什么不能、接口清单
+# 注意：接口清单是**所有电路的并集**，只给面板显示用，不作为可用性依据
 static func summarize(name: String) -> Dictionary:
 	var info: Dictionary = {
 		"name": name,
@@ -209,23 +210,11 @@ static func summarize(name: String) -> Dictionary:
 		return info
 	var circuits: Array = data.get("circuits", [])
 	info["circuit_count"] = circuits.size()
-	if circuits.size() != 1:
-		info["reason"] = "电路不可用（含 %d 条电路）" % circuits.size()
+	if circuits.is_empty():
+		info["reason"] = "文件里没有电路"
 		return info
-	var c: Dictionary = circuits[0]
-	var ins: Array = _names_of(c.get("inputs", []))
-	var outs: Array = _names_of(c.get("outputs", []))
-	info["inputs"] = ins
-	info["outputs"] = outs
-	var missing: Array[String] = []
-	if not ins.has(REQUIRED_INPUT):
-		missing.append(REQUIRED_INPUT)
-	for o in REQUIRED_OUTPUTS:
-		if not outs.has(o):
-			missing.append(o)
-	if not missing.is_empty():
-		info["reason"] = "缺少接口：" + ", ".join(missing)
-		return info
+	info["inputs"] = _names_of_all(circuits, "inputs")
+	info["outputs"] = _names_of_all(circuits, "outputs")
 	info["usable"] = true
 	return info
 
@@ -249,16 +238,24 @@ static func build_bundle(circuit: Dictionary):
 	return bundle
 
 
-# 按文件加载：不可用的文件返回 null（调用方用 summarize 拿原因）
+# 按文件加载：不可用的文件返回 null（不可用只指文件缺失 / 解析失败 / 文件里没有电路）
+# 单电路 → 原生 SWCircuitBundle；多电路 → SWCircuitSet（一拍里逐条跑，输出取并集），
+# 两者方法名一致，调用方无感
 static func load_bundle(name: String):
-	var info: Dictionary = summarize(name)
-	if not bool(info.get("usable", false)):
-		return null
+	#不要先 summarize 再 load_file：两者都会把整份文件读出来 + 解析一遍 JSON，
+	#而放置一台机器人就要跑一次 load_bundle，白读的那一遍纯浪费（~1ms/台）
 	var data: Dictionary = load_file(name)
 	var circuits: Array = data.get("circuits", [])
-	if circuits.size() != 1:
+	if circuits.is_empty():
 		return null
-	return build_bundle(circuits[0])
+	if circuits.size() == 1:
+		return build_bundle(circuits[0])
+	var pack = CIRCUIT_SET.new()
+	for c: Dictionary in circuits:
+		var b = build_bundle(c)
+		if b != null:
+			pack.add_bundle(b)
+	return pack if not pack.is_empty() else null
 
 
 static func delete_file(name: String) -> bool:
@@ -273,4 +270,17 @@ static func _names_of(list) -> Array:
 	for e in list:
 		if e is Dictionary:
 			out.append(str(e.get("name", "")))
+	return out
+
+
+# 多条电路的接口名 → 并集（去重 + 排序，面板显示用）
+static func _names_of_all(circuits: Array, key: String) -> Array:
+	var seen: Dictionary = {}
+	for c in circuits:
+		if not (c is Dictionary):
+			continue
+		for n in _names_of((c as Dictionary).get(key, [])):
+			seen[n] = true
+	var out: Array = seen.keys()
+	out.sort()
 	return out

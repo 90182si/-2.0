@@ -135,6 +135,23 @@ func _process(delta: float) -> void:
 			_print_circuit_pending = -1
 
 
+## 分屏调试壳里右半屏用：右上角让给壳的顶栏，只收起统计面板本身。
+## 注意不能整块隐藏这个 CanvasLayer —— 跟随鼠标的建筑信息提示（HBoxContainer/BuildInfoLabel）
+## 是它的子节点，整块藏了「鼠标悬浮看元件信息」就彻底没了
+func set_split_mode(on: bool) -> void:
+	if stats_container != null:
+		stats_container.visible = not on
+
+## 分屏壳的顶栏占住了半屏顶部那一条：统计面板整体下移让开。
+## stats_container 锚在左上角，改 offset_top 就能整体下滑，面板自己按 min size 往下长
+func set_top_inset(px: float) -> void:
+	if stats_container == null:
+		return
+	var top: float = maxf(0.0, px)
+	stats_container.offset_top = top
+	stats_container.offset_bottom = top
+
+
 ## 窗口到期才结算一次，读数滞后约 0.5s，换来不抖动的稳定值
 func _update_physics_fps() -> void:
 	var now_usec: int = Time.get_ticks_usec()
@@ -269,7 +286,15 @@ func _on_crash_log_viewer_visibility_changed() -> void:
 
 
 func _get_window_id() -> int:
-	return get_viewport().get_window_id()
+	#分屏调试时本节点在 SubViewport 里，而 SubViewport 没有 window id（只有 Window 有）：
+	#一律退到根窗口，它才对应真正向 DisplayServer 提交的那个窗口
+	var vp := get_viewport()
+	if vp is Window:
+		return (vp as Window).get_window_id()
+	var tree := get_tree()
+	if tree != null and tree.root != null:
+		return tree.root.get_window_id()
+	return 0
 
 
 func _is_vsync_enabled() -> bool:
@@ -508,6 +533,11 @@ func _format_build_info(build: SWBuildItemDefine) -> String:
 	var lines:PackedStringArray = []
 	if build.buildDefine:
 		lines.append("名称: %s" % build.buildDefine.buildName)
+	#接口元件的名字是实例属性（可在 HUD 里改），光看元件定义名分不出 move / rotation
+	var _ct:int = build.buildDefine.circuit_component_type if build.buildDefine else 0
+	if _ct == SwDefine.CircuitComponentType.EXTERNAL_INPUT \
+			or _ct == SwDefine.CircuitComponentType.EXTERNAL_OUTPUT:
+		lines.append("接口名: %s" % str(build.get("io_name")))
 	lines.append("ID: %d" % build.id)
 	lines.append("位置: (%d, %d)" % [build.buildAxisPos.x, build.buildAxisPos.y])
 	lines.append("朝向: %s" % _dir_to_text(build.rotation))
@@ -589,6 +619,8 @@ func _comp_type_to_text(comp_type: int) -> String:
 		SwDefine.CircuitComponentType.CLOCK: return "时钟"
 		SwDefine.CircuitComponentType.ONE_BIT_REGISTER: return "1bit寄存器"
 		SwDefine.CircuitComponentType.AND_GATE: return "与门"
+		SwDefine.CircuitComponentType.EXTERNAL_INPUT: return "外部输入接口"
+		SwDefine.CircuitComponentType.EXTERNAL_OUTPUT: return "外部输出接口"
 	return "无"
 
 

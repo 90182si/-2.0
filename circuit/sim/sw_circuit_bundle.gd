@@ -31,6 +31,13 @@ var output_slots: Dictionary = {}
 # name -> netlist 里的 dev 下标（排障与存档回放用）
 var dev_of_input: Dictionary = {}
 var dev_of_output: Dictionary = {}
+# 这个 bundle 是否**纯组合**（没有寄存器）：纯组合只要输入没变，重算必然同结果
+var _stateless: bool = false
+# 输入自上次 tick 以来是否真的变过（纯组合靠它跳过无意义的重算）
+var _src_dirty: bool = true
+# 上面两个清单的排序缓存（见 input_names / output_names）
+var _names_in: Array = []
+var _names_out: Array = []
 
 
 # ins / outs 的元素：{"name": String, "dev": int}
@@ -61,6 +68,9 @@ func setup_from_netlist(nl: SWNetlist, ins: Array, outs: Array, src_levels: Arra
 			continue
 		dev_of_output[oname] = odev
 		output_slots[oname] = _net_slots_of(odev)
+	#有没有寄存器决定了能不能走「输入没变就不重算」的快路径
+	_stateless = prog.reg_slots.is_empty()
+	_src_dirty = true
 
 
 # ===== 接口查询 =====
@@ -72,16 +82,20 @@ func has_output(name: String) -> bool:
 	return output_slots.has(name)
 
 
+# 名字清单缓存：每拍都要问一次（实体层收集高电平输出名、算时序额外轨），
+# 而 keys()+sort() 是每次都新建数组，没必要；返回的数组**调用方只读、不要改**
 func input_names() -> Array:
-	var names: Array = input_slots.keys()
-	names.sort()
-	return names
+	if _names_in.is_empty() and not input_slots.is_empty():
+		_names_in = input_slots.keys()
+		_names_in.sort()
+	return _names_in
 
 
 func output_names() -> Array:
-	var names: Array = output_slots.keys()
-	names.sort()
-	return names
+	if _names_out.is_empty() and not output_slots.is_empty():
+		_names_out = output_slots.keys()
+		_names_out.sort()
+	return _names_out
 
 
 # ===== 命令入 / 结果出 =====
@@ -90,7 +104,11 @@ func set_input(name: String, level: int) -> void:
 	var i: int = int(input_slots.get(name, -1))
 	if i < 0:
 		return
-	runtime.set_source(i, level)
+	var v: int = 1 if level != 0 else 0
+	#只有真的变了才置脏：纯组合子电路靠这个跳过「输入没动还重算」
+	if runtime.src_levels[i] != v:
+		_src_dirty = true
+	runtime.set_source(i, v)
 
 
 # 读回当前写入的输入电平（0/1，调试用）
@@ -105,6 +123,7 @@ func input_level(name: String) -> int:
 func set_source_level(dev: int, level: int) -> void:
 	if runtime == null or prog == null:
 		return
+	_src_dirty = true
 	runtime.set_source(_source_index_of(dev), level)
 
 
@@ -121,14 +140,30 @@ func reg_q_text() -> String:
 
 
 func tick() -> SWSimResult:
+	_src_dirty = false
 	return runtime.tick()
+
+
+# 只推进状态、不打包差分结果（机器人每拍跑两次 tick 走它：没人读结果，
+# 但 tick() 要扫全部 net/灯泡/寄存器，几十台机器人时是纯浪费）。
+# 纯组合（无寄存器）且输入自上次 tick 后没变过 → 直接跳过：
+#   一个 .swcir 常带十几条分组（用户实测 17 条），多数是「开关 -> detect_sig_k」
+#   这类组合分组；一拍两个相位里只有高相位前写过输入，低相位那次重算必然同结果。
+# 寄存器电路不吃这套（时间与锁存要推进），照旧每相位 tick。
+func tick_fast() -> void:
+	if runtime == null:
+		return
+	if _stateless and not _src_dirty:
+		return
+	runtime.tick_fast()
+	_src_dirty = false
 
 
 # 读输出电平（0/1）：所连 net 任一为高即 1
 func output_level(name: String) -> int:
-	if not output_slots.has(name):
+	var slots = output_slots.get(name, null)
+	if slots == null:
 		return 0
-	var slots: PackedInt32Array = output_slots[name]
 	var vals: PackedInt32Array = runtime.slot_vals
 	for s in slots:
 		if s >= 0 and s < vals.size() and vals[s] != 0:
@@ -136,8 +171,47 @@ func output_level(name: String) -> int:
 	return 0
 
 
+# 批量读：返回位图，第 i 位 = names[i] 的输出电平。
+# 机器人每拍要读 move/rotation/push（开时序时还有十几条监测轨），
+# 逐个 output_level 就是 N 次函数调用 + N 次「名字 -> slot」查表，这里一次循环搞定
+func read_output_bits(names: Array) -> int:
+	var m: int = 0
+	if runtime == null:
+		return 0
+	var vals: PackedInt32Array = runtime.slot_vals
+	var n: int = vals.size()
+	for i in names.size():
+		var slots = output_slots.get(str(names[i]), null)
+		if slots == null:
+			continue
+		for s in slots:
+			if s >= 0 and s < n and vals[s] != 0:
+				m |= 1 << i
+				break
+	return m
+
+
+# 批量写位：names[i] 对应的输入口写 (code >> (bit_base - i)) & 1。
+# 机器人每拍要写 8 个 detect_res 口（编号小的在左 = 高位），
+# 改成一次循环比 8 次 set_input 省掉一大半函数调用与查表
+func write_input_bits(names: Array, code: int, bit_base: int) -> void:
+	if runtime == null:
+		return
+	var levels: PackedInt32Array = runtime.src_levels
+	var n: int = levels.size()
+	for i in names.size():
+		var s: int = int(input_slots.get(str(names[i]), -1))
+		if s < 0 or s >= n:
+			continue
+		var v: int = (code >> (bit_base - i)) & 1
+		if levels[s] != v:
+			levels[s] = v
+			_src_dirty = true
+
+
 # 复位到上电态（换了绑定电路 / 重新开始时用）
 func reset() -> void:
+	_src_dirty = true
 	if runtime != null:
 		runtime.reset()
 

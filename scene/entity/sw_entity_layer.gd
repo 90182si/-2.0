@@ -34,6 +34,9 @@ func attach_entity_manager(manager: SWBuildManager) -> void:
 	sw_draw_manager.setBuildManager(manager)
 	#系统已经接上了，动画层要拿到它（写实例时要查渲染代理）
 	_ensure_visual()
+	#系统可能晚一拍才接上（SWLayerManager 在父节点的 _ready 里才 attach_view），
+	#所以在这里补绑一次；不能放在 _ensure_visual 里每次绑 —— 那是一台一次的热路径
+	_bind_visual_system()
 
 #兜底：系统侧没注入（单独实例化 / 测试）时从自己的 layer_system 补一次
 func _ensure_entity_manager() -> void:
@@ -63,15 +66,20 @@ func on_view_rect_changed(viewRect: Rect2, speedVec: Vector2) -> void:
 #region 动画层转发（实体系统 -> SWEntityVisual）
 #动画层在 SWDrawManager 之后 add_child：同 z_index 下靠树序排在烘焙区块上面
 func _ensure_visual():
-	if _visual == null or not is_instance_valid(_visual):
-		_visual = VISUAL.new()
-		_visual.name = "SWEntityVisual"
-		add_child(_visual)
-	#系统可能晚一拍才接上（SWLayerManager 在父节点的 _ready 里才 attach_view），
-	#所以每次走到这里都重新绑一遍：bind_system 只是赋个引用，重绑无副作用
+	if _visual != null and is_instance_valid(_visual):
+		return _visual
+	_visual = VISUAL.new()
+	_visual.name = "SWEntityVisual"
+	add_child(_visual)
+	_bind_visual_system()
+	return _visual
+
+#把宿主系统告知动画层。只在「新建 / 系统接上」这两个时刻调：
+#早期每次 _ensure_visual 都绑一遍，而 _ensure_visual 在一拍几千台的路径上 ——
+#一万台就是一万次白调
+func _bind_visual_system() -> void:
 	if _visual != null and layer_system != null:
 		_visual.bind_system(layer_system)
-	return _visual
 
 func get_visual():
 	return _ensure_visual()
@@ -105,7 +113,24 @@ func set_visual_glow(e, on: bool) -> void:
 	if v != null:
 		v.set_glow(e, on)
 
+#框选矩形：实体系统全程推世界坐标，真正落笔在动画层（这层是 Node，没 _draw）
+func set_box_rect(rect: Rect2, active: bool, subtract: bool = false) -> void:
+	var v = _ensure_visual()
+	if v != null:
+		v.set_box_rect(rect, active, subtract)
+
+#框选/多选后把一批台的实例底色重铺一次（底色烘在 tint 里）
+func refresh_visual_tints(ents: Array) -> void:
+	var v = _ensure_visual()
+	if v != null:
+		v.refresh_tints(ents)
+
 func cancel_visual() -> void:
 	if _visual != null and is_instance_valid(_visual):
 		_visual.cancel_all()
+
+#节拍末尾：把本拍攒下的滑动登记一次提交给批处理
+func flush_visual() -> void:
+	if _visual != null and is_instance_valid(_visual):
+		_visual.flush_pending()
 #endregion

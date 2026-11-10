@@ -6,20 +6,27 @@ signal load_requested()
 
 const selToolPath:String = "res://res/"
 const ROBOT_SCENE_PATH: String = "res://scene/sw_robot_scene.tscn"
+#接口元件可选名清单（输入/输出分开，手动扩展都在这一个文件里）
+const IO_CATALOG := preload("res://circuit/sw_io_name_catalog.gd")
 var selTools:Array = []
 
 func _ready() -> void:
-	selTools = get_tree().get_nodes_in_group("SelTool")
+	#只收本场景的工具栏按钮：分屏调试时两边的 HUD 同时在树里，
+	#直接 get_nodes_in_group 会把另一边的工具也接管（图标与点击都串）
+	selTools = SwCommon.GetNodesInGroupInScene(self, "SelTool")
 	_apply_atlas()
 	for tool:TextureButton in selTools:
 		tool.pressed.connect(_on_sel_tool_pressed.bind(tool.name))
 	var save_btn = get_node_or_null("HBoxContainer/MarginContainer/MarginContainer/HBoxContainer/保存")
 	if save_btn:
+		save_btn.tooltip_text = "把当前电路存成存档，并导出同名的 .swcir 纯电路文件给机器人用"
 		save_btn.pressed.connect(_on_save_pressed)
 	var load_btn = get_node_or_null("HBoxContainer/MarginContainer/MarginContainer/HBoxContainer/加载")
 	if load_btn:
+		load_btn.tooltip_text = "从存档列表里读回电路（读档后接口名与元件状态一起还原）"
 		load_btn.pressed.connect(_on_load_pressed)
 	#机器人场景的 HUD 会在 super._ready() 之前把它关掉，避免两个场景互相冒按钮
+	#分屏调试的右侧也不需要它：切回机器人场景由分屏壳的顶栏负责
 	if scene_switch_enabled:
 		_build_scene_switch()
 	_build_job_panel()
@@ -34,6 +41,7 @@ func _build_scene_switch() -> void:
 	var btn := Button.new()
 	btn.name = "机器人场景"
 	btn.text = "机器人场景"
+	btn.tooltip_text = "切到机器人场景：摆机器人/箱子，给机器人绑一条 .swcir 电路让它自己跑"
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.add_theme_font_size_override("font_size", 18)
 	#贴左下角：底部工具栏在屏幕中下方，左下方原本只有任务进度条（已给它上移避让）
@@ -56,6 +64,12 @@ func switch_to_robot_scene() -> void:
 
 func get_scene_switch_button() -> Button:
 	return _robot_scene_btn
+
+#分屏模式下隐掉「机器人场景」按钮：整体换场景由分屏壳的顶栏负责。
+#子类（机器人场景 HUD）重写时先藏自己的重复按钮再调 super
+func set_split_mode(on: bool) -> void:
+	if _robot_scene_btn != null:
+		_robot_scene_btn.visible = not on
 
 # ========== 左下角任务进度条（复制/剪切准备、放置队列） ==========
 # 位置在「机器人场景」切换按钮上方：两者都在左下角，不能让它们叠在一起
@@ -171,6 +185,15 @@ func set_expr_enabled(enabled:bool) -> void:
 	if not enabled:
 		hide_build_expr()
 
+#分屏时右上角被分屏壳的「返回 / 应用」顶栏占住了：表达式面板整体下移让开这一段高度。
+#（只在分屏壳里调；普通场景右上角只有面板自己，保持 12px 贴边）
+func set_top_right_inset(px:float) -> void:
+	if _expr_panel == null:
+		return
+	var top:float = 12.0 + maxf(0.0, px)
+	_expr_panel.offset_top = top
+	_expr_panel.offset_bottom = top
+
 # 悬浮到某个元件就显示它的表达式；build 为 null 表示鼠标离开，收面板
 func show_build_expr(build: SWBuildItemDefine) -> void:
 	if _expr_panel == null or not expr_enabled:
@@ -199,7 +222,8 @@ func is_build_expr_visible() -> bool:
 func get_build_expr_text() -> String:
 	return _expr_text
 
-# 把 HUD 图标用的 AtlasTexture 切到全局选中的图集
+# 把 HUD 图标用的 AtlasTexture 切到全局选中的图集；顺手给按钮写悬停说明
+# （工具栏按钮的说明全由元件定义推出来：名称 + 接口可选名 + 每方向引脚类型）
 func _apply_atlas() -> void:
 	for tool in selTools:
 		var resPath = selToolPath+tool.name+".tres"
@@ -210,6 +234,7 @@ func _apply_atlas() -> void:
 		if btn == null:
 			continue
 		btn.set_texture_normal(buildDefine.atlasIcon)
+		btn.tooltip_text = IO_CATALOG.describe_define(buildDefine)
 
 func on_view_rect_changed(_viewRect:Rect2,_speedVec:Vector2) -> void:
 	pass
@@ -229,11 +254,16 @@ func _on_load_pressed() -> void:
 	load_requested.emit()
 
 # ========== 接口元件名称编辑面板（左键点击输入/输出接口时弹出） ==========
-# 名称是实例属性（建筑上的 io_name），下拉框固定三选，不开放自定义文本
-const IO_NAME_OPTIONS: Array[String] = ["clk", "move", "rotation"]
+# 名称是实例属性（建筑上的 io_name），下拉项按元件类型给：
+#   输入接口 -> SWIOCatalog.INPUT_NAMES（现在只有 clk）
+#   输出接口 -> SWIOCatalog.OUTPUT_NAMES（现在 move / rotation）
+# 想加新名字只改那个清单文件，这里每次弹面板都重建下拉项
 var _io_panel: PanelContainer = null
+var _io_title: Label = null
 var _io_option: OptionButton = null
 var _io_build: SWBuildItemDefine = null
+# 当前面板正在展示的名称清单（与下拉项一一对应）
+var _io_options: Array[String] = []
 
 func _build_io_panel() -> void:
 	var panel := PanelContainer.new()
@@ -263,11 +293,11 @@ func _build_io_panel() -> void:
 	title.text = "接口名称"
 	title.add_theme_font_size_override("font_size", 18)
 	box.add_child(title)
+	_io_title = title
 
+	# 下拉项不在这里填：每次弹面板按被点元件的类型重建
 	_io_option = OptionButton.new()
 	_io_option.add_theme_font_size_override("font_size", 18)
-	for opt: String in IO_NAME_OPTIONS:
-		_io_option.add_item(opt)
 	_io_option.item_selected.connect(_on_io_name_selected)
 	box.add_child(_io_option)
 
@@ -278,13 +308,24 @@ func _build_io_panel() -> void:
 	box.add_child(close_btn)
 	_io_panel = panel
 
-# 点开某个接口元件的名称面板：当前名称不在三选里时先落到第一项
+# 点开某个接口元件的名称面板：按元件类型重建下拉项，再定位到当前名。
+# 当前名不在清单里（老存档 / 别的存档加了名字）时落到第一项，但不改实例上的名字
 func show_io_name_panel(build: SWBuildItemDefine) -> void:
 	if _io_panel == null or build == null:
 		return
 	_io_build = build
+	var comp_type: int = 0
+	if build.buildDefine != null:
+		comp_type = build.buildDefine.circuit_component_type
+	_io_options = IO_CATALOG.options_for(comp_type)
+	_io_option.clear()
+	for opt: String in _io_options:
+		_io_option.add_item(opt)
+	if _io_title != null:
+		var kind: String = IO_CATALOG.kind_name(comp_type)
+		_io_title.text = ("接口名称（%s接口）" % kind) if not kind.is_empty() else "接口名称"
 	var current: String = str(build.get("io_name"))
-	var idx: int = IO_NAME_OPTIONS.find(current)
+	var idx: int = _io_options.find(current)
 	_io_option.select(idx if idx >= 0 else 0)
 	_io_panel.visible = true
 
@@ -301,12 +342,12 @@ func get_io_name_panel_build() -> SWBuildItemDefine:
 	return _io_build
 
 func get_io_name_options() -> Array[String]:
-	return IO_NAME_OPTIONS.duplicate()
+	return _io_options.duplicate()
 
 func _on_io_name_selected(index: int) -> void:
-	if _io_build == null or index < 0 or index >= IO_NAME_OPTIONS.size():
+	if _io_build == null or index < 0 or index >= _io_options.size():
 		return
-	_io_build.set("io_name", IO_NAME_OPTIONS[index])
+	_io_build.set("io_name", _io_options[index])
 
 func create_layer_system() -> SWLayerSystem:
 	return SWHudLayerSystem.new()
