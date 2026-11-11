@@ -168,17 +168,27 @@ func _get_view() -> SWLayer:
 
 #region 放置 / 删除
 #手持层落子入口（与 SWBuildLayerSystem.on_hold_idle_builds 同签名，可直接连线）。
-#builds 是手持模板（定的是「放的什么东西」）：按元件定义名分派机器人/箱子
+#builds 是手持模板（定的是「放的什么东西」）：按元件定义名分派机器人/箱子。
+#positions 是锚点格（鼠标那一格），不是模板自己的格子：手持旋转会把模板的局部偏移
+#buildAxisPos 挪走（旋转是绕模板原点转的），建筑层落子时是「锚点 + 模板偏移」一起用的
+#（见 sw_build_layer_system 里 tmpl.buildAxisPos + grid_pos），这里也必须补上：
+#不补的话转一次就整体偏一格、转几次偏几格，且预览里已经转好的朝向也丢了
 func on_hold_idle_builds(builds: Array, positions: Array, _replace: bool = false) -> void:
 	if positions.is_empty():
 		return
 	var is_box: bool = _is_box_tool(builds)
+	var tmpl = builds[0] if not builds.is_empty() else null
+	var tmpl_off: Vector2i = Vector2i.ZERO
+	var tmpl_dir: int = 0
+	if tmpl != null and tmpl.buildDefine != null:
+		tmpl_off = tmpl.buildAxisPos
+		tmpl_dir = posmod(int(tmpl.rotation), 4)
 	for p in positions:
-		var cell: Vector2i = p
+		var cell: Vector2i = SwCommon.GetGridPos(Vector2i(p) + tmpl_off)
 		if is_box:
 			spawn_box(cell)
 		else:
-			spawn_robot(cell)
+			spawn_robot(cell, tmpl_dir)
 	flush_render()
 
 #手持放的是不是箱子（空手持/其它工具都按机器人处理，保持原行为）
@@ -851,6 +861,8 @@ func bind_circuit(e, file_name: String) -> bool:
 	#虽然读不到它，但它会占着平面白烧位运算）
 	_release_batch(e)
 	if file_name.is_empty():
+		#半拍空档里解绑：本拍已经排好的动作一并撤掉，否则低相位还会让它走一格
+		_drop_pending_act(e)
 		e.set_bundle(null)
 		entities_changed.emit()
 		return true
@@ -878,6 +890,18 @@ func _release_batch(e) -> void:
 	e.batch_grp.clear_bit(e.batch_bit)
 	e.batch_grp = null
 	e.batch_bit = -1
+
+# 把实体从本拍待执行队列里摘掉（解绑用）。
+# 一拍分成高/低两个相位、中间隔半拍：玩家正好在这半拍里点「解除绑定」，
+# 高相位读到的动作位图就还留在这台身上，低相位会把解绑前决定的那一步执行掉。
+# 低相位正在遍历数组时不能改它（真撞上也由 step_beat_low 的 bundle 判空兜底）
+func _drop_pending_act(e) -> void:
+	if _in_beat_low or _act_ents.is_empty():
+		return
+	for i in range(_act_ents.size() - 1, -1, -1):
+		if _act_ents[i] == e:
+			_act_ents.remove_at(i)
+			_act_masks.remove_at(i)
 
 # 取/建某个电路文件的批量组：同一份网表只加载一次、表达式只编译一次。
 # 返回 null = 这条电路跑不了批量（表达式后端不可用/文件缺失），调用方退回逐台
@@ -916,6 +940,7 @@ func unbind_circuit(e) -> void:
 	if e == null or not e.has_bundle():
 		return
 	_release_batch(e)
+	_drop_pending_act(e)
 	e.set_bundle(null)
 	entities_changed.emit()
 
@@ -1074,8 +1099,10 @@ func step_beat_low() -> int:
 			continue
 		var mask: int = _act_masks[i]
 		#批量的 clk 整组共用一个平面，这里不能单台写（会把整组拨回 0，
-		#而那些已经轮到下一拍的台会丢上升沿）；下一拍高相位本来就会重写一次
-		if e.batch_grp == null:
+		#而那些已经轮到下一拍的台会丢上升沿）；下一拍高相位本来就会重写一次。
+		#bundle 判空：高相位到低相位之间隔了半拍，玩家可能在这期间解绑这台
+		#（外面若没来得及把实体从 _act_ents 摘掉，这里也不能对着 null 调方法）
+		if e.batch_grp == null and e.bundle != null:
 			e.bundle.set_input("clk", 0)
 		var acted: int = 0
 		#按 SWRobotActions.TABLE 的顺序执行：顺序即同一拍内多个事件同时为 1 时的先后。

@@ -394,6 +394,12 @@ func request_edit_circuit() -> void:
 	if prepare_edit_circuit().is_empty():
 		return
 	hide_bind_panel()
+	#优先「接管当前机器人场景」进分屏：机器人界面不重新加载，直接展开并滑入电路界面。
+	#只有当前场景不支持时才退回整体换场景（老路径/直接打开分屏壳的情况）
+	var cur: Node = get_tree().current_scene if is_inside_tree() else null
+	if cur != null and cur.has_method("enter_split_mode"):
+		if bool(cur.call("enter_split_mode")):
+			return
 	if is_inside_tree():
 		get_tree().change_scene_to_file(SPLIT_SCENE_PATH)
 

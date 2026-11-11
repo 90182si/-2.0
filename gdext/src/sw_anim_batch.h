@@ -152,6 +152,8 @@ private:
 	void _move_row(int32_t src, int32_t dst);
 	void _ensure_cap(int32_t need);
 	int32_t _alloc_slot(int32_t pa);
+	// 回收贴着可见区末尾的空洞（否则反复增删会把可见实例数越留越大）
+	void _reclaim_tail_holes();
 	void _paint_tpl(int32_t r);
 	void _flush_hides();
 	// force_rot = true 时即使 rt_dur 已归零也走「重铺 scale」分支：

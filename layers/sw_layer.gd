@@ -1,6 +1,10 @@
 @abstract
 class_name SWLayer extends Node
 
+#场景树内部搬迁（分屏接管）：搬迁也会发一次 _exit_tree，要能分辨「真退出」与「换个父」。
+#名字不能叫 SESSION：子类（如 HUD 层）自己已经有同名常量，GDScript 不允许遮蔽父类成员
+const SW_SESSION := preload("res://core/manager/sw_session.gd")
+
 var layer_system:SWLayerSystem = null
 
 func _ready() -> void:
@@ -10,6 +14,10 @@ func _enter_tree() -> void:
 	add_to_group("SWLayer")
 	
 func _exit_tree() -> void:
+	#搬进分屏壳的左视口：节点还要继续用，而且重入树不会再走 _ready，
+	#这里一 detach 图层系统就再也接不回来了
+	if SW_SESSION.relocating_scene:
+		return
 	if layer_system != null:
 		layer_system.detach_view()
 		layer_system = null

@@ -9,6 +9,7 @@ extends GutTest
 #       -gdir=res://test/circuit -gprefix=test_split_scene -gexit
 
 const SPLIT_SCENE_PATH: String = "res://scene/sw_split_scene.tscn"
+const ROBOT_SCENE_PATH: String = "res://scene/sw_robot_scene.tscn"
 const GRID: Vector2i = SwDefine.GRID_SIZE
 const CIR_MANAGER := preload("res://circuit/sw_cir_manager.gd")
 const SESSION := preload("res://core/manager/sw_session.gd")
@@ -534,3 +535,132 @@ func test_exit_without_apply_exports_latest_structure() -> void:
 	assert_eq(SESSION.edited_save, "", "退出后「结构改过」标记没清")
 	#左侧退出时会把机器人状态落盘，回机器人场景才能把机器人摆回原位
 	assert_true(FileAccess.file_exists(STATE_PATH), "退出分屏时没把机器人状态落盘")
+
+
+# ===== 7. 修改电路：「不重载机器人界面」接管现成场景 + 展开动画 =====
+
+# 起一个「正在玩的」机器人场景（模拟主场景已经跑起来的样子）
+func _boot_robot() -> Node:
+	var packed: PackedScene = load(ROBOT_SCENE_PATH)
+	assert_not_null(packed, "机器人场景加载失败: " + ROBOT_SCENE_PATH)
+	if packed == null:
+		return null
+	var robot: Node = packed.instantiate()
+	add_child_autofree(robot)
+	await wait_frames(3)
+	return robot
+
+
+# 在机器人场景里摆一台机器人（走手持落子那条真实链路）
+func _spawn_in(robot: Node, cell: Vector2i):
+	var lm := robot.get_node("SWLayerManager") as SWLayerManager
+	lm.holdSystem.hold_idle_builds.emit([], [cell * GRID], false)
+	return robot.call("get_entity_system").get_entity_at(cell * GRID)
+
+
+# 让现成的机器人场景进分屏。动画关掉（headless 等 0.35s 等于白烧二十多帧），
+# 并顺手把 _ready 里已经起跑的入场 tween kill 掉，后面手调的几何断言才不会被它覆盖
+func _enter_split(robot: Node) -> Node:
+	assert_true(bool(robot.call("enter_split_mode")), "没能进分屏（接管机器人场景失败）")
+	var shell = robot.get("_split_shell")
+	assert_not_null(shell, "机器人场景没记下所在的分屏壳")
+	if shell == null:
+		return null
+	#壳是在 enter_split_mode 里挂到本测试节点下的，用完必须一起回收：
+	#留着的话它的子场景会跟下一个用例新建的场景混在同一个“场景根”里，
+	#SWLayerManager 按组收图层时会把它们全收进来（系统名重复报错）
+	autofree(shell)
+	shell.set("anim_sec", 0.0)
+	shell.call("play_intro")
+	await wait_frames(1)
+	return shell
+
+
+# 点「修改电路」不能再重建机器人场景：机器人/层系统/选中状态都得留着
+func test_edit_circuit_reuses_running_robot_scene() -> void:
+	assert_true(_make_move_circuit(FILE_SPLIT), "电路档没造出来")
+	var robot: Node = await _boot_robot()
+	if robot == null:
+		return
+	var e = _spawn_in(robot, Vector2i(8, 8))
+	assert_not_null(e, "机器人没摆上")
+	var shell: Node = await _enter_split(robot)
+	if shell == null:
+		return
+	assert_same(shell.get("left_scene"), robot,
+			"分屏壳没有接管正在跑的机器人场景（又重新加载了一份）")
+	var left_vp: SubViewport = shell.get_node("PaneRoot/LeftPane/LeftView")
+	assert_true(left_vp.is_ancestor_of(robot), "机器人场景没搬进左侧视口")
+	#搬家会触发一次 _exit_tree：图层系统必须还接得上（重入树不会再走 _ready）
+	var lm := robot.get_node("SWLayerManager") as SWLayerManager
+	assert_not_null(lm.get_layer_system("SWEntityLayer"),
+			"接管后图层系统表被清空了")
+	var sys = robot.call("get_entity_system")
+	assert_not_null(sys, "接管后实体系统丢了")
+	assert_eq(int(sys.call("get_entity_count")), 1, "接管后机器人没了")
+	assert_not_null(sys.get_entity_at(Vector2i(8, 8) * GRID), "接管后机器人换了位置")
+
+
+# 展开动画：起点机器人界面占满全屏、电路界面整块在窗口右边缘外；终点左右各半
+func test_split_intro_geometry() -> void:
+	var robot: Node = await _boot_robot()
+	if robot == null:
+		return
+	var shell: Node = await _enter_split(robot)
+	if shell == null:
+		return
+	var pane_root: Control = shell.get_node("PaneRoot")
+	pane_root.size = Vector2(1280.0, 720.0)
+	var left_pane: Control = shell.get_node("PaneRoot/LeftPane")
+	var right_pane: Control = shell.get_node("PaneRoot/RightPane")
+	#入场起点
+	shell.call("_set_intro", 0.0)
+	assert_almost_eq(left_pane.size.x, 1280.0, 0.5, "入场起点机器人界面不是全屏")
+	assert_true(right_pane.position.x >= 1279.5,
+			"入场起点电路界面不在窗口右侧外（x=%f）" % right_pane.position.x)
+	#终点
+	shell.call("_set_intro", 1.0)
+	assert_almost_eq(left_pane.size.x + 8.0 + right_pane.size.x, 1280.0, 1.0,
+			"终点没铺成左右各半")
+	assert_true(right_pane.position.x < 1279.5, "终点电路界面还在屏幕外")
+	assert_almost_eq(left_pane.size.x, right_pane.size.x, 10.0, "左右没大致各半")
+
+
+# 点「返回」：机器人场景原路搬回去，不重建、不读存档；壳与右侧电路释放
+func test_back_returns_same_robot_scene() -> void:
+	var robot: Node = await _boot_robot()
+	if robot == null:
+		return
+	var e = _spawn_in(robot, Vector2i(9, 9))
+	assert_not_null(e)
+	var shell: Node = await _enter_split(robot)
+	if shell == null:
+		return
+	var back: Button = shell.get_node("TopBar/Bar/HBox/BackBtn")
+	back.pressed.emit()
+	await wait_frames(3)
+	assert_false(SESSION.split_mode, "返回后 split_mode 没复位")
+	assert_same(robot.get_parent(), self, "机器人场景没搬回原来的宿主节点")
+	assert_true(robot.get("_split_shell") == null, "机器人场景还记着旧的分屏壳")
+	assert_eq(int(robot.call("get_entity_system").call("get_entity_count")), 1,
+			"返回后机器人丢了")
+	assert_not_null(robot.call("get_entity_system").get_entity_at(Vector2i(9, 9) * GRID),
+			"返回后机器人换了位置")
+	#分屏时藏起来的入口要重新露出来（机器人场景是原样留下来的，不重置就永远消失）
+	var hud = robot.get("sw_layer_manager").get("hudLayer")
+	assert_not_null(hud, "返回后 HUD 不见了")
+	if hud != null:
+		var logic_btn: Button = hud.call("get_logic_scene_button")
+		assert_true(logic_btn.visible, "返回全屏后「电路场景」按钮还是隐的（分屏模式没撤掉）")
+		var edit_btn = hud.get("_bind_edit_btn")
+		assert_true(edit_btn != null and (edit_btn as Button).visible,
+				"返回全屏后「修改电路」按钮还是隐的（分屏模式没撤掉）")
+		var expr_panel = hud.get("_expr_panel")
+		assert_almost_eq((expr_panel as Control).offset_top, 12.0, 0.5,
+				"返回全屏后表达式面板还让着分屏顶栏那一条")
+	var perf = robot.get_node_or_null("SWPerformanceMonitor")
+	if perf != null:
+		var stats = perf.get("stats_container")
+		assert_almost_eq((stats as Control).offset_top, 0.0, 0.5,
+				"返回全屏后性能面板还让着分屏顶栏那一条")
+	assert_false(is_instance_valid(shell) and shell.is_inside_tree(), "分屏壳返回后没释放")

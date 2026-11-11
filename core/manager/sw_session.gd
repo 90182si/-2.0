@@ -26,6 +26,10 @@ static var edited_save: String = ""
 #分屏时两个子场景同时在树里，渲染纹理单例与区块对象池必须只由壳持有一次，
 #子场景退出时也不能把共享的对象池清掉（否则先退出的那边会把另一边的池清空）
 static var split_mode: bool = false
+#场景树内部搬迁中：HUD「修改电路」把正在跑的机器人场景从根视口搬进分屏壳的左视口。
+#搬迁会触发一次 _exit_tree，但节点并没有销毁、也不会再走 _ready，
+#所以图层管理器/图层/场景根在那次退出里都不能做「真退出」的清理
+static var relocating_scene: bool = false
 
 #取走待加载存档（取完即清，避免下次切场景又读一遍上次的意图）
 static func take_pending_load() -> String:
@@ -52,3 +56,4 @@ static func reset() -> void:
 	timing_signals = []
 	edited_save = ""
 	split_mode = false
+	relocating_scene = false

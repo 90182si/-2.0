@@ -201,20 +201,26 @@ func remove_unit(r: int) -> void:
 	#  last 的了，被删的那台会一直画在原地（实例段泄漏）
 	var st: int = _start[r]
 	var pa: int = _parts[r]
+	#last 若正在滑动/转向，搬到 r 之后必须接着推进（_move_row 不搬推进登记）
+	var last_moving: bool = last != r and _inact[last] != 0
 	_drop_from_active(r)
 	if last != r:
 		_drop_from_active(last)
 	_move_row(last, r)
 	_row = last
+	#_tpl 不是 Packed 数组，_move_row 只覆盖不缩容：不减到 _row 的话，下一台
+	#add_unit 会 append 到 _row 之后，取 _tpl[行号] 拿到的是上一台留下的旧模板
+	if _tpl.size() > _row:
+		_tpl.resize(_row)
+	if last_moving:
+		_add_active(r)
 	_hide_slot(st, pa)
-	var pool = _free.get(pa, null)
-	if pool == null:
-		pool = []
-		_free[pa] = pool
-	(pool as Array).append(st)
-	_inst_total -= pa
-	if _inst_total <= 0:
+	_free_slot(st, pa)
+	if _row <= 0:
 		reset()
+		return
+	_reclaim_tail_holes()
+	_dirty = true
 
 
 func reset() -> void:
@@ -443,12 +449,48 @@ func _alloc_slot(parts: int) -> int:
 		#复用前先把「待隐藏」抹掉：否则那一段的 0 会盖掉新台刚铺好的数据
 		_flush_hides()
 		var s: int = int((pool as Array).pop_back())
-		_inst_total += parts
+		#洞按定义都在可见区内，这里只是兜底。不能用 _inst_total += parts：
+		#洞本来就占着位置，再往上加会把可见区撑出一段空实例
+		if s + parts > _inst_total:
+			_inst_total = s + parts
+			_ensure_cap(_inst_total)
 		return s
 	var s2: int = _inst_total
 	_inst_total += parts
 	_ensure_cap(_inst_total)
 	return s2
+
+
+#槽段归还到空洞池，等下一台同部件数的台复用
+func _free_slot(start: int, parts: int) -> void:
+	var pool = _free.get(parts, null)
+	if pool == null:
+		pool = []
+		_free[parts] = pool
+	(pool as Array).append(start)
+
+
+#回收贴着可见区末尾的空洞。
+#可见区（_inst_total）是「所有在用槽位的高水位」，删台只在被删槽位正好贴着
+#末尾时才允许收缩 —— 无条件 _inst_total -= parts 会让「被 swap 到末尾槽位的
+#那一台」掉出可见范围：数据还在、格子还占着，画面上却成片消失。
+func _reclaim_tail_holes() -> void:
+	var changed: bool = true
+	while changed and _inst_total > 0:
+		changed = false
+		for key in _free.keys():
+			var pa: int = int(key)
+			var pool: Array = _free[key]
+			var i: int = pool.size() - 1
+			while i >= 0:
+				if int(pool[i]) + pa == _inst_total:
+					pool.remove_at(i)
+					_inst_total -= pa
+					changed = true
+					break
+				i -= 1
+			if changed:
+				break
 
 
 func _ensure_cap(need: int) -> void:

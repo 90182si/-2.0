@@ -224,6 +224,43 @@ func test_box_tool_spawns_box() -> void:
 	assert_eq(str(e.kind), "box", "手持箱子放出来的却是机器人")
 	assert_false(e.has_bundle(), "箱子不该绑上电路")
 
+
+# 手持转过再落子：落点要跟模板一起转（错点 = 锚点 + 模板偏移），朝向也要跟着转。
+# 曾经的 bug：转一次整体偏右一格、放下去还是原朝向（实体层把锚点格直接当落点用了）
+func test_rotated_hold_applies_template_offset_and_dir() -> void:
+	var btn: TextureButton = lm.hudLayer.call("get_robot_tool_button")
+	assert_not_null(btn)
+	if btn == null:
+		return
+	btn.pressed.emit()
+	var held: Array = lm.holdSystem.get("_hold_builds")
+	assert_gt(held.size(), 0, "手持建筑表是空的")
+	if held.is_empty():
+		return
+	var tmpl = held[0]
+	#转一次：模板偏移不再为 0，此时落点必须是「锚点 + 模板偏移」（与建筑层同一个口径）
+	lm.holdSystem.rotate_hold(1)
+	assert_eq(int(tmpl.rotation), 1, "手持模板没转起来")
+	var off: Vector2i = tmpl.buildAxisPos
+	assert_ne(off, Vector2i.ZERO, "转一次之后模板偏移还是 0（旋转没作用到模板格子位上）")
+	var anchor: Vector2i = Vector2i(16, 10) * GRID
+	lm.holdSystem.hold_idle_builds.emit(held, [anchor], false)
+	var e = sys.get_entity_at(anchor + off)
+	assert_not_null(e, "旋转后落点没按「锚点 + 模板偏移」走（偏了格子）")
+	if e == null:
+		return
+	assert_eq(Vector2i(e.grid_pos), anchor + off, "落子格不对")
+	assert_eq(int(e.dir), 1, "旋转后放出来的机器人朝向没跟着手持模板")
+	#转满四圈回到原位：偏移归零、朝向也回到 0
+	lm.holdSystem.rotate_hold(3)
+	assert_eq(Vector2i(tmpl.buildAxisPos), Vector2i.ZERO, "转满四圈模板偏移没回到原点")
+	var anchor2: Vector2i = Vector2i(18, 10) * GRID
+	lm.holdSystem.hold_idle_builds.emit(held, [anchor2], false)
+	var e2 = sys.get_entity_at(anchor2)
+	assert_not_null(e2, "转满四圈后落点不对（没回到锚点那一格）")
+	if e2 != null:
+		assert_eq(int(e2.dir), 0, "转满四圈后朝向没回到 0")
+
 # ===== 放置链路：手持落子 -> 实体系统 =====
 
 func test_hold_idle_builds_spawns_robot() -> void:
@@ -443,6 +480,27 @@ func test_unbind_button_clears_bundle() -> void:
 	assert_false(e.has_bundle(), "点了「解除绑定」实体上还挂着电路")
 	assert_eq(str(e.circuit_file), "", "解绑后电路文件名没清")
 	assert_eq(sys.get_bound_count(), 0)
+
+
+# 高相位之后、低相位之前解绑：低相位不能再对着已经摘掉的 bundle 调 set_input。
+# 实时节拍是半拍发一个相位，玩家正好在这半拍里点「解除绑定」就撞上了
+func test_unbind_between_phases_does_not_crash() -> void:
+	assert_true(_make_usable_circuit(), "可用电路没造出来")
+	var e = _spawn_at(Vector2i(23, 23))
+	assert_not_null(e)
+	assert_true(sys.bind_circuit(e, FILE_OK), "绑定失败")
+	var tick: Node = scene.get_node_or_null("SWRobotTick")
+	assert_not_null(tick, "场景里没有节拍器")
+	#关掉自动节拍，相位完全由本用例手发，避免物理帧插进来打乱时序
+	tick.call("pause")
+	#上升沿相位：跑两次 tick、读输出，把这台排进本拍动作队列
+	tick.call("tick_high")
+	#玩家在低相位到来之前点了「解除绑定」（面板走 bind_circuit(e, "")）
+	assert_true(sys.bind_circuit(e, ""), "解绑失败")
+	assert_false(e.has_bundle(), "解绑后实体上还挂着电路")
+	#下降沿相位：不能报 set_input in base Nil，也不该再执行解绑前决定的那一步
+	tick.call("tick_low")
+	assert_eq(e.grid_pos, Vector2i(23, 23) * GRID, "解绑后这一拍不该再动")
 
 
 # 选中后把机器人删掉：面板必须自己收起来，否则会对着一个已经不在的实体

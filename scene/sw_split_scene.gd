@@ -30,6 +30,8 @@ const MAX_RATIO: float = 0.8
 #顶栏：距半屏边缘留白 / 状态文字的理想宽度（放不下时按实际可用宽度收窄）
 const BAR_MARGIN: float = 8.0
 const STATUS_MIN_WIDTH: float = 220.0
+#入场/退场动画时长：左机器人界面从全屏缩到左半屏，右电路界面从窗口右边缘滑入
+const ANIM_SEC: float = 0.35
 
 @onready var _pane_root: Control = $PaneRoot
 @onready var _left_pane: SubViewportContainer = $PaneRoot/LeftPane
@@ -59,6 +61,22 @@ var ratio: float = 0.5
 #左侧是否已因「电路结构改动」停拍
 var _paused: bool = false
 var _dragging: bool = false
+
+# ===== 入场/退场动画 =====
+# _intro 是布局进度：0 = 机器人界面占满全屏、电路界面整块停在窗口右边缘外；
+# 1 = 左右各半（最终布局）。只插值三个矩形，不动子场景本身：
+# 左视口尺寸随容器走（机器人界面重排，视口缩小到半屏），
+# 右视口宽度固定、只平移（电路界面从右边缘滑入／滑出）
+#测试可以设 0 直接到位（headless 里等 0.35s 等于白烧二十多帧）
+var anim_sec: float = ANIM_SEC
+var _intro: float = 1.0
+var _anim: Tween = null
+var _leaving: bool = false
+#左侧场景是外面交过来的（HUD「修改电路」已把正在跑的机器人场景注入）：
+#这种路径下不 instantiate 新的、也不 _ready 重来
+var _adopted_left: bool = false
+#左侧场景已经交还宿主（正常返回路径）：壳的 _exit_tree 不要再做收尾
+var _vacated_left: bool = false
 
 func _init() -> void:
 	#渲染纹理单例必须先于任何烘焙/补丁创建一个（与两个子场景同口径）。
@@ -106,9 +124,15 @@ func _ready() -> void:
 	#窗口尺寸变了要重摆三个矩形（子场景的相机各自跟自己的 viewport 走）
 	_pane_root.resized.connect(_layout)
 	_spawn_scenes()
+	#接管进来的机器人场景先按「左满屏」摆好，再滑到左右各半：
+	#玩家看到的是界面展开，而不是整块场景重建后重新加载
+	if _adopted_left:
+		_intro = 0.0
 	_layout()
 	_wire_split()
 	_refresh_status()
+	if _adopted_left:
+		play_intro()
 
 func _process(_delta: float) -> void:
 	check_circuit_edited()
@@ -144,14 +168,54 @@ func _layout() -> void:
 	var total: float = _pane_root.size.x
 	var height: float = _pane_root.size.y
 	var handle_w: float = maxf(0.0, minf(HANDLE_WIDTH, total))
-	var left_w: float = clampf(total * ratio - handle_w * 0.5, 0.0, maxf(0.0, total - handle_w))
+	var final_left_w: float = clampf(total * ratio - handle_w * 0.5, 0.0, maxf(0.0, total - handle_w))
+	var final_right_x: float = final_left_w + handle_w
+	var final_right_w: float = maxf(0.0, total - final_right_x)
+	#入场进度插值：起点时左侧占满全宽（与进分屏前的视口尺寸一致，画面不跳）、
+	#右侧整块停在窗口右边缘外；k=1 就是平常的左右各半。
+	#右侧宽度全程不变（只平移）：电路场景的布局不会跟着动画每帧重排
+	var k: float = clampf(_intro, 0.0, 1.0)
+	var left_w: float = lerpf(total, final_left_w, k)
+	var right_x: float = lerpf(total, final_right_x, k)
 	_set_rect(_left_pane, Rect2(0.0, 0.0, left_w, height))
 	_set_rect(_handle, Rect2(left_w, 0.0, handle_w, height))
-	var right_x: float = left_w + handle_w
-	var right_w: float = maxf(0.0, total - right_x)
 	_pane_left_w = left_w
-	_set_rect(_right_pane, Rect2(right_x, 0.0, right_w, height))
+	_set_rect(_right_pane, Rect2(right_x, 0.0, final_right_w, height))
+	#顶栏在动画期间随左半屏右边界左移，同时淡入
+	if _bar != null:
+		_bar.modulate.a = k
 	_place_topbar()
+
+#入场：机器人界面从全屏缩到左半屏，电路界面从窗口右边缘滑进右半屏
+func play_intro() -> void:
+	if _anim != null:
+		_anim.kill()
+		_anim = null
+	_set_intro(0.0)
+	if anim_sec <= 0.0:
+		_set_intro(1.0)
+		return
+	_anim = create_tween()
+	_anim.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_anim.tween_method(_set_intro, 0.0, 1.0, anim_sec)
+
+#退场：反向播完再执行收尾（中途搬节点会黑一下，所以交给回调）
+func _play_outro_then(cb: Callable) -> void:
+	if _anim != null:
+		_anim.kill()
+		_anim = null
+	if anim_sec <= 0.0:
+		_set_intro(0.0)
+		cb.call()
+		return
+	_anim = create_tween()
+	_anim.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_IN)
+	_anim.tween_method(_set_intro, _intro, 0.0, anim_sec)
+	_anim.finished.connect(cb, CONNECT_ONE_SHOT)
+
+func _set_intro(p: float) -> void:
+	_intro = clampf(p, 0.0, 1.0)
+	_layout()
 
 #顶栏贴左半屏的右上角：左半屏左上角是机器人场景自己的性能面板，顶栏压过去两边都看不清。
 #宽度取子控件的合最小宽（Status 固定最小宽 + clip_text，长文案只会被截断）。
@@ -187,6 +251,8 @@ func _drag_to_mouse() -> void:
 	var total: float = _pane_root.size.x
 	if total <= 1.0:
 		return
+	#拖分隔条一定是在动画结束后：进度拉满，否则拖完还会被入场插值拉回去
+	_intro = 1.0
 	#用控件自己的局部鼠标坐标：拖到窗口边缘外也能算对，不用去接窗口坐标变换
 	var x: float = _pane_root.get_local_mouse_position().x
 	ratio = clampf(x / total, MIN_RATIO, MAX_RATIO)
@@ -195,9 +261,21 @@ func _drag_to_mouse() -> void:
 
 #region 装配
 func _spawn_scenes() -> void:
-	#左侧先建：机器人场景是默认主场景，进来之前它已经把单例/池预热过了
-	left_scene = ROBOT_SCENE.instantiate()
+	#左侧：调用方可能已经把「正在跑的机器人场景」交过来（HUD「修改电路」走这条路：
+	#不重载机器人界面，机器人/相机/区块/选中状态全部沿用）。
+	#没有的话自己起一份（直接进分屏壳的兜底路径，测试也是这条）
+	var robot_owned: bool = left_scene == null or not is_instance_valid(left_scene)
+	if not robot_owned:
+		_adopted_left = true
+	else:
+		left_scene = ROBOT_SCENE.instantiate()
 	left_scene.name = "LeftRobotScene"
+	#交付过来的实例目前还挂在别的父节点下：Godot 4 的 add_child 不会自动搬家，
+	#必须先摘下来再挂（搬家会触发 _exit_tree，靠 SESSION.relocating_scene 区分于真退出）
+	if not robot_owned:
+		var old_parent: Node = left_scene.get_parent()
+		if old_parent != null:
+			old_parent.remove_child(left_scene)
 	_left_view.add_child(left_scene)
 	right_scene = LOGIC_SCENE.instantiate()
 	right_scene.name = "RightLogicScene"
@@ -321,13 +399,54 @@ func _on_apply_pressed() -> void:
 		_status.text = "已应用：重绑 %d 台机器人" % bound
 
 func _on_back_pressed() -> void:
-	if not is_inside_tree():
+	if _leaving or not is_inside_tree():
 		return
 	#这里**不要**清 SESSION.split_mode：两个子场景的 _exit_tree 还要靠它跳过清池，
-	#子场景先退（存机器人状态 / 导出电路），轮到本壳退时才清池并复位标记
-	get_tree().change_scene_to_file(ROBOT_SCENE_PATH)
+	#等机器人场景交还出去、壳要退的时候再复位。
+	#先播退场动画（机器人界面放大回全屏、电路界面滑出窗口右侧），再搬节点
+	_leaving = true
+	_play_outro_then(_vacate_left_scene)
+
+#正常返回：把机器人场景原路交还宿主（不重建、不读存档），然后释放壳与右侧电路。
+#动画播完之后才调它
+func _vacate_left_scene() -> void:
+	if left_scene == null or not is_instance_valid(left_scene):
+		_vacated_left = true
+		SESSION.split_mode = false
+		queue_free()
+		return
+	#1) 右边改了电路又直接返回：先按当前结构导出同名 .swcir，再让左侧按最新电路重绑。
+	#原来是靠「重载机器人场景 → 读状态 → 重绑」补救的，现在不重载了就必须当场做，
+	#否则机器人会拿着旧电路接着跑
+	var path: String = ""
+	if right_scene != null and is_instance_valid(right_scene):
+		path = str(right_scene.call("_export_edited_circuit"))
+	if not path.is_empty() and left_entity_sys != null and left_entity_sys.has_method("reload_circuit"):
+		left_entity_sys.call("reload_circuit", path.get_file().get_basename())
+	#2) 因为改电路被暂停过的话恢复运行
+	if _paused and left_tick != null:
+		left_tick.call("resume")
+	_paused = false
+	#3) 左侧 HUD/性能面板在进分屏时被改过（藏了场景切换入口、整体让开了顶栏那一条）：
+	#机器人场景是原样留下来的，这些改动必须显式撤掉，否则回到全屏后按钮还是隐的
+	_set_hud_split_mode(left_scene, false)
+	var left_perf := left_scene.get_node_or_null("SWPerformanceMonitor")
+	if left_perf != null and left_perf.has_method("set_top_inset"):
+		left_perf.call("set_top_inset", 0.0)
+	var left_hud = _hud_of(left_scene)
+	if left_hud != null and left_hud.has_method("set_top_right_inset"):
+		left_hud.call("set_top_right_inset", 0.0)
+	#4) 交还机器人场景：只换父节点，实例不重建
+	left_scene.call("return_from_split")
+	_vacated_left = true
+	#5) 机器人场景还活着、还在用共享对象池：这里不能清池
+	SESSION.split_mode = false
+	queue_free()
 
 func _exit_tree() -> void:
+	#正常返回路径：机器人场景已经交还宿主，收尾都在 _vacate_left_scene 做完了
+	if _vacated_left:
+		return
 	#退出顺序不要依赖引擎（父子的 _exit_tree 先后不一定）：这里先显式把两个子场景的
 	#收尾跑完：存机器人状态 + 导出改过的电路。两只都是幂等的（导出会 get 走标记），
 	#子场景自己的 _exit_tree 再跑一遍也是空转

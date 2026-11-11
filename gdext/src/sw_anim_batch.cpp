@@ -158,20 +158,26 @@ void SWAnimBatch::remove_unit(int32_t r) {
 	//   取错会「泄漏一段实例」（被删的那台一直画在原地）。
 	const int32_t st = slot_start[r];
 	const int32_t pa = slot_parts[r];
+	// last 若正在滑动/转向，搬到 r 之后必须接着推进（_move_row 不搬 in_act）
+	const bool last_moving = (last != r) && (in_act[last] != 0);
 	_drop_act(r);
 	if (last != r) {
 		_drop_act(last);
 		_move_row(last, r);
 	}
 	row_count = last;
+	if (last_moving) {
+		in_act[r] = 1;
+		act.push_back(r);
+	}
 	hide_pairs.push_back(st);
 	hide_pairs.push_back(pa);
 	free_pool[pa].push_back(st);
-	inst_total -= pa;
-	if (inst_total <= 0) {
+	if (row_count <= 0) {
 		reset();
 		return;
 	}
+	_reclaim_tail_holes();
 	buf_dirty = true;
 }
 
@@ -423,13 +429,44 @@ int32_t SWAnimBatch::_alloc_slot(int32_t pa) {
 		_flush_hides();
 		const int32_t s = it->second.back();
 		it->second.pop_back();
-		inst_total += pa;
+		// 洞按定义都在可见区内，这里只是兜底。不能用 inst_total += pa：
+		// 洞本来就占着位置，再往上加会把可见区撑出一段空实例
+		if (s + pa > inst_total) {
+			inst_total = s + pa;
+			_ensure_cap(inst_total);
+		}
 		return s;
 	}
 	const int32_t s = inst_total;
 	inst_total += pa;
 	_ensure_cap(inst_total);
 	return s;
+}
+
+// 回收贴着可见区末尾的空洞。
+// 可见区（inst_total）是「所有在用槽位的高水位」，删台只在被删槽位正好贴着
+// 末尾时才允许收缩 —— 无条件 inst_total -= pa 会让「被 swap 到末尾槽位的
+// 那一台」掉出可见范围：数据还在、格子还占着，画面上却成片消失。
+void SWAnimBatch::_reclaim_tail_holes() {
+	bool changed = true;
+	while (changed && inst_total > 0) {
+		changed = false;
+		for (auto &kv : free_pool) {
+			const int32_t pa = kv.first;
+			std::vector<int32_t> &v = kv.second;
+			for (size_t i = v.size(); i-- > 0;) {
+				if (v[i] + pa == inst_total) {
+					v.erase(v.begin() + (std::ptrdiff_t)i);
+					inst_total -= pa;
+					changed = true;
+					break;
+				}
+			}
+			if (changed) {
+				break;
+			}
+		}
+	}
 }
 
 void SWAnimBatch::_ensure_cap(int32_t need) {

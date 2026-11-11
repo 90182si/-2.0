@@ -73,6 +73,10 @@ func _ready() -> void:
 	_wire_systems()
 			
 func _exit_tree() -> void:
+	#搬进分屏壳的左视口：节点还要继续用，而且重入树不会再走 _ready，
+	#这里把系统表清掉就再也装不回来了
+	if SESSION.relocating_scene:
+		return
 	if _systemManager != null:
 		_systemManager.clear()
 		_systemManager = null
